@@ -45,7 +45,7 @@ export async function encodeConfig(cfg) {
 // 連結內容是別人給的 → 每個欄位都檢查、限制長度與範圍
 export async function decodeConfig(token) {
   const m = /^g1([zn])\.([A-Za-z0-9_-]+)$/.exec(token || '');
-  if (!m) throw new Error('連結格式不對');
+  if (!m) throw new Error('e.format');
   let buf;
   let j;
   try {
@@ -56,7 +56,7 @@ export async function decodeConfig(token) {
     j = JSON.parse(td.decode(buf.subarray(4, 4 + jl)));
     j.__off = 4 + jl;
   } catch (e) {
-    throw new Error('連結不完整，可能複製時被截斷了');
+    throw new Error('e.truncated');
   }
   let off = j.__off;
   const items = (Array.isArray(j.i) ? j.i : []).slice(0, LIMITS.items).map((r) => {
@@ -67,16 +67,16 @@ export async function decodeConfig(token) {
       off += len;
     }
     return {
-      name: str(name, LIMITS.name) || '獎品',
+      name: str(name, LIMITS.name) || '?',
       rarity: clampInt(rarity, 0, 3, 0),
       qty: clampInt(qty, 1, LIMITS.qty, 1),
       img,
     };
   });
-  if (!items.length) throw new Error('這台機器裡沒有獎品');
+  if (!items.length) throw new Error('e.empty');
   const p = Array.isArray(j.p) ? j.p : [];
   return {
-    name: str(j.n, LIMITS.title) || '轉蛋機',
+    name: str(j.n, LIMITS.title) || 'Gacha',
     shop: str(j.s, LIMITS.title),
     theme: THEME_KEYS.includes(j.t) ? j.t : 'red',
     price: {

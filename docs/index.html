@@ -5,6 +5,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Huninn&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap">
 <style>
 /* 版面：左邊是轉蛋機舞台（three.js），右邊是開店表單；玩家模式舞台全滿，UI 浮在上面。
    風格＝卡通描線（toon）：深藍粗線、硬邊陰影，跟 Gemini 貼紙同一套線條 */
@@ -49,6 +50,8 @@
   --r-n: #a9b4c4; --r-r: #5aa0ff; --r-sr: #c08bff; --r-ssr: #ffc233;
   color-scheme: dark;
 }
+/* 日文用日本字形（同一個漢字，日文和繁中字形不同） */
+:root[lang="ja"] { --font-body: "Noto Sans JP", "Noto Sans TC", system-ui, sans-serif; }
 html, body { height: 100%; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; overflow: hidden; }
 * { box-sizing: border-box; }
@@ -66,6 +69,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .modes { display: flex; gap: 4px; margin-left: auto; background: var(--surface-2); border: 2px solid var(--stroke); border-radius: 999px; padding: 3px; }
 .modes button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .modes button[aria-selected="true"] { background: var(--ink); color: var(--surface); }
+.lang { display: flex; align-items: center; gap: 4px; height: 40px; padding: 0 6px 0 10px; border: 2px solid var(--stroke); border-radius: 999px; background: var(--surface); flex: none; }
+.lang svg { width: 18px; height: 18px; flex: none; }
+.lang select { border: 0; background: transparent; font-weight: 700; cursor: pointer; padding: 4px 2px; max-width: 92px; }
 .icon-btn { width: 40px; height: 40px; flex: none; border-radius: 50%; border: 2px solid var(--stroke); background: var(--surface); display: grid; place-items: center; cursor: pointer; }
 .icon-btn svg { width: 20px; height: 20px; }
 .icon-btn[aria-pressed="false"] .on, .icon-btn[aria-pressed="true"] .off { display: none; }
@@ -220,6 +226,9 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
   .brand .full { display: none; }
   .modes button { padding: 5px 10px; font-size: 14px; }
   .icon-btn { width: 36px; height: 36px; }
+  .lang { height: 36px; padding: 0 4px 0 8px; }
+  .lang svg { display: none; }
+  .lang select { max-width: 74px; font-size: 13px; }
   .bottom { grid-template-columns: minmax(0, 1fr); gap: 8px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
   .wallet { min-width: 0; padding: 6px 10px; gap: 4px; border-radius: 14px; }
   .wallet-top { gap: 8px; }
@@ -240,6 +249,10 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
   .top-right .stamp em { font-size: 10px; }
   .side-btns .btn { padding: 4px 10px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
 }
+@media (max-width: 430px) {
+  .brand-name { display: none; }
+  .modes { margin-left: auto; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
@@ -247,53 +260,57 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
 
 <div class="app" id="app" data-mode="create">
   <header class="bar">
-    <div class="brand"><span class="mark" aria-hidden="true"></span><span><b>Clatter</b><span class="full"> 轉蛋鋪</span></span></div>
-    <nav class="modes" role="tablist" aria-label="模式">
-      <button id="tab-create" role="tab" aria-selected="true">開店設定</button>
-      <button id="tab-play" role="tab" aria-selected="false">轉轉看</button>
+    <div class="brand"><span class="mark" aria-hidden="true"></span><span class="brand-name"><b>Clatter</b><span class="full" data-i18n="brand.suffix"> 轉蛋鋪</span></span></div>
+    <nav class="modes" role="tablist" data-i18n-aria="mode.label" aria-label="模式">
+      <button id="tab-create" role="tab" aria-selected="true" data-i18n="tab.create">開店設定</button>
+      <button id="tab-play" role="tab" aria-selected="false" data-i18n="tab.play">轉轉看</button>
     </nav>
-    <button class="icon-btn" id="btn-sound" aria-pressed="true" aria-label="音效">
+    <label class="lang" data-i18n-aria="lang.label" aria-label="語言">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18"/></svg>
+      <select id="lang"></select>
+    </label>
+    <button class="icon-btn" id="btn-sound" aria-pressed="true" data-i18n-aria="sound" aria-label="音效">
       <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/></svg>
       <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>
     </button>
   </header>
 
   <main>
-    <section class="stage" id="stage" aria-label="轉蛋機">
-      <div class="loading" id="loading"><div class="cap" aria-hidden="true"></div><span id="loading-text">機台搬進來中…</span></div>
-      <p class="stage-tip">拖曳空白處可以轉機台看側面</p>
+    <section class="stage" id="stage" data-i18n-aria="stage" aria-label="轉蛋機">
+      <div class="loading" id="loading"><div class="cap" aria-hidden="true"></div><span id="loading-text" data-i18n="loading">機台搬進來中…</span></div>
+      <p class="stage-tip" data-i18n="stageTip">拖曳空白處可以轉機台看側面</p>
 
       <div class="hud" id="hud">
         <div class="plate">
           <span class="shop" id="p-shop"></span>
-          <h2 id="p-name">轉蛋機</h2>
+          <h2 id="p-name"></h2>
           <div class="chips">
-            <span class="chip" id="p-kinds">全 0 種</span>
-            <span class="chip" id="p-left">剩 0 顆</span>
-            <button class="chip" id="p-odds">機率公開</button>
+            <span class="chip" id="p-kinds"></span>
+            <span class="chip" id="p-left"></span>
+            <button class="chip" id="p-odds" data-i18n="oddsBtn">機率公開</button>
           </div>
         </div>
         <div class="top-right">
-          <div class="stamp" id="p-stamp" aria-label="價錢"><small>1回</small><strong id="p-price">NT$50</strong><em id="p-coins">投 5 枚</em></div>
+          <div class="stamp" id="p-stamp" data-i18n-aria="price" aria-label="價錢"><small data-i18n="oneSpin">1回</small><strong id="p-price">NT$50</strong><em id="p-coins"></em></div>
           <div class="side-btns">
-            <button class="btn" id="btn-lineup">獎品一覽</button>
-            <button class="btn" id="btn-collection">我的扭蛋<span class="badge-count" id="got-count">0</span></button>
+            <button class="btn" id="btn-lineup" data-i18n="lineup">獎品一覽</button>
+            <button class="btn" id="btn-collection"><span data-i18n="myCaps">我的扭蛋</span><span class="badge-count" id="got-count">0</span></button>
           </div>
         </div>
         <div class="bottom">
-          <div class="wallet" aria-label="錢包">
+          <div class="wallet" data-i18n-aria="wallet" aria-label="錢包">
             <div class="wallet-top">
-              <button class="coin-chip" id="coin-chip" aria-label="投入一枚硬幣（也可以拖到投幣口）"></button>
-              <div class="coin-count"><span id="coin-n">0</span><small>枚試玩硬幣</small></div>
-              <button class="btn sun" id="btn-topup" style="margin-left:auto;padding:6px 12px;font-size:13px">＋5 枚</button>
+              <button class="coin-chip" id="coin-chip" data-i18n-aria="coinChip" aria-label="投入一枚硬幣（也可以拖到投幣口）"></button>
+              <div class="coin-count"><span id="coin-n">0</span><small data-i18n="trialCoins">枚試玩硬幣</small></div>
+              <button class="btn sun" id="btn-topup" style="margin-left:auto;padding:6px 12px;font-size:13px" data-i18n="topup">＋5 枚</button>
             </div>
             <div class="pips" id="pips" aria-live="polite"></div>
           </div>
           <div class="hint" id="hint" aria-live="polite">
             <span class="stepno" id="h-step">STEP 1 / 4</span>
-            <h3 id="h-title">投幣</h3>
+            <h3 id="h-title"></h3>
             <p id="h-text"></p>
-            <button class="btn primary" id="h-btn">投入 1 枚</button>
+            <button class="btn primary" id="h-btn"></button>
           </div>
         </div>
       </div>
@@ -301,42 +318,42 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
 
     <aside class="panel" id="panel">
       <div class="panel-inner">
-        <h1>開一台你的轉蛋機</h1>
-        <p class="lede">放進想賣的東西、訂好一回多少錢，就會得到一條連結。拿到連結的人打開就能投幣、轉把手、開扭蛋。</p>
+        <h1 data-i18n="h1">開一台你的轉蛋機</h1>
+        <p class="lede" data-i18n="lede"></p>
         <ol class="steps">
           <li class="step">
-            <header><span class="num">1</span><h2>放進獎品</h2><span class="aside" id="items-sum"></span></header>
+            <header><span class="num">1</span><h2 data-i18n="step1">放進獎品</h2><span class="aside" id="items-sum"></span></header>
             <ul class="items" id="items"></ul>
-            <button class="btn ghost" id="add-item">＋ 新增獎品</button>
-            <p class="hint-text">數量＝機器裡的扭蛋顆數，數量越多越容易轉到，機率會公開給玩家。點縮圖可以換成商品照片。</p>
+            <button class="btn ghost" id="add-item" data-i18n="addItem">＋ 新增獎品</button>
+            <p class="hint-text" data-i18n="itemsHint"></p>
           </li>
           <li class="step">
-            <header><span class="num">2</span><h2>設定價錢</h2></header>
+            <header><span class="num">2</span><h2 data-i18n="step2">設定價錢</h2></header>
             <div class="price-grid">
               <div class="price-inputs">
-                <label for="coins">每轉一次投 <input id="coins" type="number" min="1" max="20" step="1"> 枚</label>
-                <label for="unit">每枚 <select id="cur" aria-label="幣別"></select><input id="unit" type="number" min="0" step="1"></label>
+                <label for="coins"><span data-i18n="pricePer">每轉一次投</span> <input id="coins" type="number" min="1" max="20" step="1"> <span data-i18n="priceCoinsUnit">枚</span></label>
+                <label for="unit"><span data-i18n="pricePerCoin">每枚</span> <select id="cur" data-i18n-aria="currency" aria-label="幣別"></select><input id="unit" type="number" min="0" step="1"></label>
               </div>
-              <div class="stamp" aria-live="polite"><small>1回</small><strong id="price-out">NT$50</strong><em id="price-coins">投 5 枚</em></div>
+              <div class="stamp" aria-live="polite"><small data-i18n="oneSpin">1回</small><strong id="price-out">NT$50</strong><em id="price-coins"></em></div>
             </div>
-            <div class="field"><label for="m-name">機台名稱</label><input id="m-name" maxlength="24"></div>
-            <div class="field"><label for="m-shop">店名（選填）</label><input id="m-shop" maxlength="24"></div>
-            <div class="field"><span id="sw-label">機台顏色</span><div class="swatches" id="swatches" role="radiogroup" aria-labelledby="sw-label"></div></div>
+            <div class="field"><label for="m-name" data-i18n="machineName">機台名稱</label><input id="m-name" maxlength="24"></div>
+            <div class="field"><label for="m-shop" data-i18n="shopName">店名（選填）</label><input id="m-shop" maxlength="24"></div>
+            <div class="field"><span id="sw-label" data-i18n="machineColor">機台顏色</span><div class="swatches" id="swatches" role="radiogroup" aria-labelledby="sw-label"></div></div>
           </li>
           <li class="step">
-            <header><span class="num">3</span><h2>產生連結</h2></header>
-            <button class="btn primary big" id="make-link">產生轉蛋連結</button>
+            <header><span class="num">3</span><h2 data-i18n="step3">產生連結</h2></header>
+            <button class="btn primary big" id="make-link" data-i18n="makeLink">產生轉蛋連結</button>
             <div class="link-box" id="link-out" hidden>
-              <textarea id="link" readonly rows="3" aria-label="轉蛋連結"></textarea>
+              <textarea id="link" readonly rows="3" data-i18n-aria="link" aria-label="轉蛋連結"></textarea>
               <div class="row">
-                <button class="btn sun" id="copy">複製連結</button>
-                <button class="btn" id="try">用買家畫面試玩</button>
+                <button class="btn sun" id="copy" data-i18n="copy">複製連結</button>
+                <button class="btn" id="try" data-i18n="try">用買家畫面試玩</button>
               </div>
               <p class="meta-line" id="link-meta"></p>
             </div>
           </li>
         </ol>
-        <p class="note">體驗版：玩家投的是試玩硬幣，不會真的收款；庫存與收藏記在各自的裝置上。照片會縮成小圖放進連結裡。</p>
+        <p class="note" data-i18n="note"></p>
       </div>
     </aside>
   </main>
@@ -344,22 +361,22 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
 
 <div class="sheet" id="sheet-result" hidden>
   <div class="sheet-card result" id="result-card" role="dialog" aria-modal="true" aria-labelledby="r-name">
-    <span class="ribbon" id="r-rank">N 一般</span>
+    <span class="ribbon" id="r-rank"></span>
     <div class="prize"><img id="r-img" alt=""></div>
-    <span class="new" id="r-new" hidden>新收藏！</span>
-    <h2 id="r-name">獎品</h2>
+    <span class="new" id="r-new" hidden data-i18n="newGet">新收藏！</span>
+    <h2 id="r-name"></h2>
     <p class="sub" id="r-sub"></p>
     <div class="row" style="justify-content:center">
-      <button class="btn primary big" id="r-again">再轉一次</button>
-      <button class="btn" id="r-col">看收藏</button>
+      <button class="btn primary big" id="r-again" data-i18n="again">再轉一次</button>
+      <button class="btn" id="r-col" data-i18n="toCollection">看收藏</button>
     </div>
   </div>
 </div>
 
 <div class="sheet" id="sheet-lineup" hidden>
   <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="l-title">
-    <button class="icon-btn close-x" data-close aria-label="關閉">✕</button>
-    <h2 id="l-title">獎品一覽</h2>
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="l-title" data-i18n="lineup">獎品一覽</h2>
     <p class="meta-line" id="l-meta"></p>
     <ul class="list" id="l-list"></ul>
   </div>
@@ -367,11 +384,11 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
 
 <div class="sheet" id="sheet-collection" hidden>
   <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="c-title">
-    <button class="icon-btn close-x" data-close aria-label="關閉">✕</button>
-    <h2 id="c-title">我的扭蛋</h2>
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="c-title" data-i18n="myCaps">我的扭蛋</h2>
     <p class="meta-line" id="c-meta"></p>
     <div class="grid" id="c-grid"></div>
-    <button class="btn" id="c-reset">重新補貨（清掉這台的試玩紀錄）</button>
+    <button class="btn" id="c-reset" data-i18n="restock">重新補貨（清掉這台的試玩紀錄）</button>
   </div>
 </div>
 

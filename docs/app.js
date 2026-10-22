@@ -3,6 +3,7 @@ import { Machine, THEMES } from './machine.js';
 import { unlock, setMuted, sfx } from './sfx.js';
 import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS } from './codec.js';
 import { RARITY, placeholderThumb, priceText, fontsReady } from './decor.js';
+import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -10,22 +11,25 @@ const PUBLIC_URL = 'https://leo70962001-lgtm.github.io/gacha-web/';
 
 const $ = (id) => document.getElementById(id);
 const app = $('app');
-const THEME_NAMES = { red: '經典紅', white: '白', yellow: '黃', blue: '藍', mint: '薄荷', pink: '粉紅', black: '黑' };
 
-// 範例機台（第一次打開時的樣子；標明是範例）
-const SAMPLE = () => ({
-  name: '手作小物轉蛋',
-  shop: '範例小舖',
-  theme: 'red',
-  price: { coins: 5, unit: 10, cur: 'NT$' },
-  items: [
-    { name: '貓咪鑰匙圈', rarity: 1, qty: 8, img: null },
-    { name: '限定貼紙組', rarity: 0, qty: 12, img: null },
-    { name: '壓克力小立牌', rarity: 0, qty: 9, img: null },
-    { name: '刺繡徽章', rarity: 2, qty: 3, img: null },
-    { name: '簽名明信片', rarity: 3, qty: 1, img: null },
-  ],
-});
+// 範例機台（第一次打開時的樣子；標明是範例）。還沒改過就跟著語言換
+const SAMPLES = {
+  zh: { name: '手作小物轉蛋', shop: '範例小舖', price: { coins: 5, unit: 10, cur: 'NT$' }, items: ['貓咪鑰匙圈', '限定貼紙組', '壓克力小立牌', '刺繡徽章', '簽名明信片'] },
+  ja: { name: '手づくり雑貨ガチャ', shop: 'サンプル商店', price: { coins: 3, unit: 100, cur: '¥' }, items: ['ねこのキーホルダー', '限定ステッカー', 'アクリルスタンド', '刺しゅうワッペン', 'サイン入りポストカード'] },
+  en: { name: 'Handmade Goodies Gacha', shop: 'Sample Shop', price: { coins: 2, unit: 1, cur: 'US$' }, items: ['Cat keychain', 'Limited sticker set', 'Mini acrylic stand', 'Embroidered patch', 'Signed postcard'] },
+};
+const SAMPLE = () => {
+  const S = SAMPLES[lang];
+  const shape = [[1, 8], [0, 12], [0, 9], [2, 3], [3, 1]];
+  return {
+    sample: true,
+    name: S.name,
+    shop: S.shop,
+    theme: 'red',
+    price: { ...S.price },
+    items: S.items.map((name, i) => ({ name, rarity: shape[i][0], qty: shape[i][1], img: null })),
+  };
+};
 
 const store = {
   get(k) {
@@ -59,28 +63,28 @@ const thumbCache = new WeakMap(); // item.img → { url, bmp }
 function thumbOf(cfg, i) {
   const it = cfg.items[i];
   if (it.img) {
-    let t = thumbCache.get(it.img);
-    if (!t) {
+    let th = thumbCache.get(it.img);
+    if (!th) {
       const blob = new Blob([it.img.bytes], { type: it.img.mime });
-      t = { url: URL.createObjectURL(blob), bmp: null };
+      th = { url: URL.createObjectURL(blob), bmp: null };
       createImageBitmap(blob)
         .then((b) => {
-          t.bmp = b;
+          th.bmp = b;
           scheduleDecor();
         })
         .catch(() => {});
-      thumbCache.set(it.img, t);
+      thumbCache.set(it.img, th);
     }
-    return t;
+    return th;
   }
   const key = `${i}|${it.name}`;
-  let t = placeholderCache.get(key);
-  if (!t) {
+  let th = placeholderCache.get(key);
+  if (!th) {
     const c = placeholderThumb(it.name, i);
-    t = { url: c.toDataURL(), bmp: c };
-    placeholderCache.set(key, t);
+    th = { url: c.toDataURL(), bmp: c };
+    placeholderCache.set(key, th);
   }
-  return t;
+  return th;
 }
 const placeholderCache = new Map();
 
@@ -103,7 +107,7 @@ function loadDraft() {
   const d = store.get('clatter.draft');
   if (!d || !Array.isArray(d.items) || !d.items.length) return SAMPLE();
   d.items = d.items.slice(0, LIMITS.items).map((it) => ({
-    name: String(it.name || '獎品').slice(0, LIMITS.name),
+    name: String(it.name || t('defaultPrize')).slice(0, LIMITS.name),
     rarity: Math.min(3, Math.max(0, it.rarity | 0)),
     qty: Math.min(LIMITS.qty, Math.max(1, it.qty | 0)),
     img: it.img ? { bytes: Uint8Array.from(atob(it.img.b64), (ch) => ch.charCodeAt(0)), mime: it.img.mime } : null,
@@ -134,7 +138,7 @@ function renderItems() {
     const th = document.createElement('button');
     th.className = 'thumb';
     th.type = 'button';
-    th.setAttribute('aria-label', `換「${it.name}」的照片`);
+    th.setAttribute('aria-label', t('changePhoto', { name: it.name }));
     const img = document.createElement('img');
     img.alt = '';
     img.src = thumbOf(draft, i).url;
@@ -143,18 +147,18 @@ function renderItems() {
     name.className = 'name';
     name.value = it.name;
     name.maxLength = LIMITS.name;
-    name.setAttribute('aria-label', '獎品名稱');
+    name.setAttribute('aria-label', t('prizeName'));
     const del = document.createElement('button');
     del.className = 'del';
     del.type = 'button';
     del.textContent = '✕';
-    del.setAttribute('aria-label', `刪除「${it.name}」`);
+    del.setAttribute('aria-label', t('deleteItem', { name: it.name }));
     del.disabled = draft.items.length <= 1;
     const meta = document.createElement('div');
     meta.className = 'meta';
     const sel = document.createElement('select');
     sel.className = 'rarity';
-    sel.setAttribute('aria-label', '稀有度');
+    sel.setAttribute('aria-label', t('rarity'));
     RARITY.forEach((r, k) => sel.append(new Option(`${r.key} ${r.label}`, k, false, k === it.rarity)));
     const qw = document.createElement('label');
     qw.className = 'qty-wrap';
@@ -164,16 +168,16 @@ function renderItems() {
     qty.min = 1;
     qty.max = LIMITS.qty;
     qty.value = it.qty;
-    qty.setAttribute('aria-label', '數量（顆）');
-    qw.append(qty, '顆');
+    qty.setAttribute('aria-label', t('qty'));
+    qw.append(qty, t('qtyUnit'));
     const odds = document.createElement('span');
     odds.className = 'odds';
-    odds.textContent = `機率 ${pct(it.qty / total)}`;
+    odds.textContent = t('odds', { p: pct(it.qty / total) });
     meta.append(sel, qw, odds);
     li.append(th, name, del, meta);
     ul.append(li);
   });
-  $('items-sum').textContent = `${draft.items.length} 種 · 共 ${total} 顆`;
+  $('items-sum').textContent = t('itemsSum', { n: draft.items.length, q: total });
   $('add-item').disabled = draft.items.length >= LIMITS.items;
 }
 
@@ -188,7 +192,7 @@ function renderPrice() {
   $('cur').value = draft.price.cur;
   $('unit').hidden = draft.price.cur === '代幣';
   $('price-out').textContent = priceText(draft.price);
-  $('price-coins').textContent = `投 ${draft.price.coins} 枚`;
+  $('price-coins').textContent = t('coinsN', { n: draft.price.coins });
 }
 
 function renderForm() {
@@ -203,12 +207,13 @@ function draftChanged(redrawItems = false) {
   if (redrawItems) renderItems();
   else {
     const total = draft.items.reduce((a, b) => a + b.qty, 0);
-    $('items-sum').textContent = `${draft.items.length} 種 · 共 ${total} 顆`;
+    $('items-sum').textContent = t('itemsSum', { n: draft.items.length, q: total });
     document.querySelectorAll('.item').forEach((li) => {
       const it = draft.items[li.dataset.i];
-      li.querySelector('.odds').textContent = `機率 ${pct(it.qty / total)}`;
+      li.querySelector('.odds').textContent = t('odds', { p: pct(it.qty / total) });
     });
   }
+  draft.sample = false;
   linkToken = null;
   $('link-out').hidden = true;
   saveDraft();
@@ -223,7 +228,8 @@ function bindForm() {
     b.type = 'button';
     b.dataset.k = k;
     b.setAttribute('role', 'radio');
-    b.setAttribute('aria-label', THEME_NAMES[k]);
+    b.dataset.i18nAria = 'th.' + k;
+    b.setAttribute('aria-label', t('th.' + k));
     b.style.setProperty('--c', THEMES[k].body);
     b.onclick = () => {
       draft.theme = k;
@@ -232,14 +238,14 @@ function bindForm() {
     };
     sw.append(b);
   }
-  for (const c of CURRENCIES) $('cur').append(new Option(c, c));
+  for (const c of CURRENCIES) $('cur').append(new Option(c === '代幣' ? t('cur.token') : c, c));
 
   const items = $('items');
   items.addEventListener('input', (e) => {
     const li = e.target.closest('.item');
     if (!li) return;
     const it = draft.items[li.dataset.i];
-    if (e.target.classList.contains('name')) it.name = e.target.value.slice(0, LIMITS.name) || '獎品';
+    if (e.target.classList.contains('name')) it.name = e.target.value.slice(0, LIMITS.name) || t('defaultPrize');
     if (e.target.classList.contains('qty')) it.qty = Math.min(LIMITS.qty, Math.max(1, parseInt(e.target.value, 10) || 1));
     if (e.target.classList.contains('rarity')) it.rarity = +e.target.value;
     if (e.target.classList.contains('name')) {
@@ -271,12 +277,12 @@ function bindForm() {
       draft.items[fileFor].img = await shrinkImage(f);
       draftChanged(true);
     } catch (e) {
-      toast('這張圖讀不進來，換一張試試（JPG、PNG、WebP）');
+      toast(t('t.badImage'));
     }
   });
   $('add-item').onclick = () => {
     if (draft.items.length >= LIMITS.items) return;
-    draft.items.push({ name: `新獎品 ${draft.items.length + 1}`, rarity: 0, qty: 5, img: null });
+    draft.items.push({ name: t('newPrize', { n: draft.items.length + 1 }), rarity: 0, qty: 5, img: null });
     draftChanged(true);
     const last = items.lastElementChild?.querySelector('.name');
     last?.focus();
@@ -285,7 +291,7 @@ function bindForm() {
   $('coins').addEventListener('input', () => {
     draft.price.coins = Math.min(LIMITS.coins, Math.max(1, parseInt($('coins').value, 10) || 1));
     $('price-out').textContent = priceText(draft.price);
-    $('price-coins').textContent = `投 ${draft.price.coins} 枚`;
+    $('price-coins').textContent = t('coinsN', { n: draft.price.coins });
     draftChanged();
   });
   $('unit').addEventListener('input', () => {
@@ -299,7 +305,7 @@ function bindForm() {
     draftChanged();
   });
   $('m-name').addEventListener('input', () => {
-    draft.name = $('m-name').value.slice(0, LIMITS.title) || '轉蛋機';
+    draft.name = $('m-name').value.slice(0, LIMITS.title) || t('defaultMachine');
     draftChanged();
   });
   $('m-shop').addEventListener('input', () => {
@@ -314,19 +320,19 @@ function bindForm() {
     $('link-out').hidden = false;
     const imgs = draft.items.filter((it) => it.img).length;
     const meta = $('link-meta');
-    meta.textContent = `連結長度 ${url.length.toLocaleString()} 字${imgs ? `（含 ${imgs} 張照片）` : ''}`;
+    meta.textContent = t(imgs ? 'linkMetaPhotos' : 'linkMeta', { n: url.length.toLocaleString(), m: imgs });
     meta.classList.toggle('warn', url.length > 8000);
-    if (url.length > 8000) meta.textContent += '：有點長，部分聊天軟體可能會截斷，可以少放幾張照片';
+    if (url.length > 8000) meta.textContent += t('linkWarn');
     $('link').scrollTop = 0;
   };
   $('copy').onclick = async () => {
     try {
       await navigator.clipboard.writeText($('link').value);
-      toast('已複製連結');
+      toast(t('t.copied'));
     } catch (e) {
       $('link').focus();
       $('link').select();
-      toast('已選取連結，按 Ctrl+C（手機長按）複製');
+      toast(t('t.selectCopy'));
     }
   };
   $('try').onclick = async () => {
@@ -345,11 +351,11 @@ function shareBase() {
 // ---------- 3D 機台 ----------
 let decorTimer = 0;
 let shown = null;
-function showMachine(cfg, capsules) {
+function showMachine(cfg, capsules, total = capsules) {
   shown = cfg;
   if (!machine?.loaded) return;
   machine.setTheme(cfg.theme);
-  machine.setPile(capsules);
+  machine.setPile(capsules, total);
   scheduleDecor();
 }
 function scheduleDecor() {
@@ -357,8 +363,8 @@ function scheduleDecor() {
   decorTimer = setTimeout(() => {
     if (!machine?.loaded || !shown) return;
     const thumbs = shown.items.map((_, i) => {
-      const t = thumbOf(shown, i);
-      return t.bmp;
+      const th = thumbOf(shown, i);
+      return th.bmp;
     });
     machine.updateDecor(shown, thumbs);
   }, 120);
@@ -371,13 +377,13 @@ function syncStage() {
 
 // ---------- 玩家模式 ----------
 const STEPS = {
-  coin: { no: 1, title: '投幣', btn: '投入 1 枚' },
-  turn: { no: 2, title: '轉動把手', text: '抓住把手順時針轉一圈，或按「幫我轉」', btn: '幫我轉' },
-  busy: { no: 2, title: '喀啦喀啦…', text: '扭蛋掉下來了', btn: null },
-  take: { no: 3, title: '拿出扭蛋', text: '點出口的扭蛋把它拿出來', btn: '拿出來' },
-  open: { no: 4, title: '打開扭蛋', text: '點一下扭蛋就會打開', btn: '打開！' },
-  result: { no: 4, title: '開獎！', text: '', btn: null },
-  soldout: { no: 1, title: '全部轉完了', text: '這台機器的扭蛋都被你轉光了。到「我的扭蛋」可以重新補貨（試玩）', btn: '我的扭蛋' },
+  coin: { no: 1, title: 's.coin', btn: 's.coinBtn' },
+  turn: { no: 2, title: 's.turn', text: 's.turnText', btn: 's.turnBtn' },
+  busy: { no: 2, title: 's.busy', text: 's.busyText', btn: null },
+  take: { no: 3, title: 's.take', text: 's.takeText', btn: 's.takeBtn' },
+  open: { no: 4, title: 's.open', text: 's.openText', btn: 's.openBtn' },
+  result: { no: 4, title: 's.result', text: null, btn: null },
+  soldout: { no: 1, title: 's.soldout', text: 's.soldoutText', btn: 'myCaps' },
 };
 
 function playKey() {
@@ -389,7 +395,7 @@ async function enterPlay(token) {
   try {
     cfg = token === 'draft' ? draft : await decodeConfig(token);
   } catch (e) {
-    toast('這條連結打不開：' + e.message);
+    toast(t('t.badLink', { msg: t(e.message) }));
     return setMode('create');
   }
   if (token === 'draft') token = await encodeConfig(draft);
@@ -410,16 +416,21 @@ async function enterPlay(token) {
     play.pulls = 0;
   }
   setMode('play');
-  $('p-shop').textContent = cfg.shop || '';
-  $('p-shop').hidden = !cfg.shop;
-  $('p-name').textContent = cfg.name;
-  $('p-kinds').textContent = `全 ${cfg.items.length} 種`;
-  $('p-price').textContent = priceText(cfg.price);
-  $('p-coins').textContent = `投 ${cfg.price.coins} 枚`;
-  showMachine(cfg, left());
+  renderPlate();
+  showMachine(cfg, left(), cfg.items.reduce((a, b) => a + b.qty, 0));
   if (left() === 0) setPhase('soldout');
   else setPhase('coin');
   renderWallet();
+}
+
+function renderPlate() {
+  const cfg = play.cfg;
+  $('p-shop').textContent = cfg.shop || '';
+  $('p-shop').hidden = !cfg.shop;
+  $('p-name').textContent = cfg.name;
+  $('p-kinds').textContent = t('kinds', { n: cfg.items.length });
+  $('p-price').textContent = priceText(cfg.price);
+  $('p-coins').textContent = t('coinsN', { n: cfg.price.coins });
 }
 
 function left() {
@@ -432,24 +443,24 @@ function savePlay() {
 function setPhase(ph) {
   play.phase = ph;
   const s = STEPS[ph];
-  $('h-step').textContent = `STEP ${s.no} / 4`;
-  $('h-title').textContent = s.title;
+  $('h-step').textContent = t('stepNo', { n: s.no });
+  $('h-title').textContent = t(s.title);
   const need = play.cfg.price.coins;
-  let text = s.text;
+  let text = s.text ? t(s.text) : '';
   if (ph === 'coin') {
     text =
       play.coins + play.inserted < need
-        ? `硬幣不夠了，按「＋5 枚」換試玩硬幣（不會收費）`
-        : `把硬幣拖進右上方的投幣口，或直接點投幣口。還要 ${need - play.inserted} 枚`;
+        ? t('s.coinBroke')
+        : t('s.coinNeed', { n: need - play.inserted });
   }
   $('h-text').textContent = text;
   const b = $('h-btn');
   b.hidden = !s.btn;
-  if (s.btn) b.textContent = s.btn;
+  if (s.btn) b.textContent = t(s.btn);
   b.disabled = ph === 'coin' && play.coins <= 0;
   machine?.setSlotHint(ph === 'coin');
   machine?.setHandleEnabled(ph === 'turn');
-  $('p-left').textContent = `剩 ${left()} / ${play.cfg.items.reduce((a, b) => a + b.qty, 0)} 顆`;
+  $('p-left').textContent = t('left', { l: left(), t: play.cfg.items.reduce((a, b) => a + b.qty, 0) });
   $('got-count').textContent = Object.keys(play.got).length;
   renderWallet();
 }
@@ -466,9 +477,9 @@ function renderWallet() {
     p.className = 'pip' + (i < play.inserted ? ' on' : '');
     pips.append(p);
   }
-  const t = document.createElement('span');
-  t.textContent = `已投 ${play.inserted} / ${need}`;
-  pips.append(t);
+  const label = document.createElement('span');
+  label.textContent = t('inserted', { a: play.inserted, b: need });
+  pips.append(label);
 }
 
 async function insertCoin(fromX, fromY) {
@@ -554,7 +565,7 @@ function showResult(idx, first) {
   $('r-name').textContent = it.name;
   $('r-new').hidden = !first;
   const total = play.cfg.items.reduce((a, b) => a + b.qty, 0);
-  $('r-sub').textContent = `第 ${play.pulls} 轉 · 原始機率 ${pct(it.qty / total)} · 這個你有 ${play.got[idx]} 個`;
+  $('r-sub').textContent = t('resultSub', { n: play.pulls, p: pct(it.qty / total), c: play.got[idx] });
   openSheet('sheet-result', $('r-again'));
 }
 
@@ -618,7 +629,7 @@ function bindCoinDrag() {
     const stage = $('stage').getBoundingClientRect();
     const onStage = e.clientX > stage.left && e.clientX < stage.right && e.clientY > stage.top && e.clientY < stage.bottom;
     if (onStage && Math.hypot(e.clientX - slot.x, e.clientY - slot.y) < 120) insertCoin(e.clientX, e.clientY);
-    else if (onStage) toast('丟進右上方的投幣口喔（有黃色光圈的地方）');
+    else if (onStage) toast(t('t.dropMiss'));
   };
   chip.addEventListener('pointerup', end);
   chip.addEventListener('pointercancel', () => {
@@ -643,7 +654,7 @@ function closeSheet(id) {
 function openLineup() {
   const cfg = play.cfg;
   const total = cfg.items.reduce((a, b) => a + b.qty, 0);
-  $('l-meta').textContent = `一回 ${priceText(cfg.price)}（投 ${cfg.price.coins} 枚）· 機器裡原本有 ${total} 顆，現在剩 ${left()} 顆`;
+  $('l-meta').textContent = t('lineupMeta', { price: priceText(cfg.price), c: cfg.price.coins, t: total, l: left() });
   const ul = $('l-list');
   ul.textContent = '';
   cfg.items.forEach((it, i) => {
@@ -666,7 +677,7 @@ function openLineup() {
     const a = document.createElement('div');
     a.textContent = pct(it.qty / total);
     const b = document.createElement('div');
-    b.textContent = `剩 ${play.remaining[i]}/${it.qty}`;
+    b.textContent = t('remain', { l: play.remaining[i], q: it.qty });
     num.append(a, b);
     li.append(img, mid, num);
     ul.append(li);
@@ -686,7 +697,7 @@ function openCollection() {
     cell.className = 'cell' + (n ? '' : ' miss');
     const img = document.createElement('img');
     img.src = thumbOf(cfg, i).url;
-    img.alt = n ? it.name : '還沒轉到';
+    img.alt = n ? it.name : t('notYet');
     const nm = document.createElement('div');
     nm.textContent = n ? it.name : '？？？';
     const c = document.createElement('div');
@@ -695,7 +706,7 @@ function openCollection() {
     cell.append(img, nm, c);
     grid.append(cell);
   });
-  $('c-meta').textContent = `收集 ${kinds} / ${cfg.items.length} 種 · 轉了 ${play.pulls} 次`;
+  $('c-meta').textContent = t('collectionMeta', { k: kinds, n: cfg.items.length, p: play.pulls });
   openSheet('sheet-collection');
 }
 
@@ -725,18 +736,45 @@ function setMode(mode) {
 }
 
 function toast(msg) {
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.setAttribute('role', 'status');
-  t.textContent = msg;
-  document.body.append(t);
-  setTimeout(() => t.remove(), 2600);
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.setAttribute('role', 'status');
+  el.textContent = msg;
+  document.body.append(el);
+  setTimeout(() => el.remove(), 2600);
 }
 
 // ---------- 啟動 ----------
+// 換語言：介面字、還沒改過的範例機台、機台上的貼紙字全部重畫
+async function changeLang(k) {
+  setLang(k);
+  if (draft.sample) {
+    draft = SAMPLE();
+    saveDraft();
+    if (app.dataset.mode === 'create') showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
+  }
+  const cur = $('cur');
+  for (const o of cur.options) o.textContent = o.value === '代幣' ? t('cur.token') : o.value;
+  renderForm();
+  if (!$('link-out').hidden && linkToken) $('make-link').click();
+  if (play) {
+    renderPlate();
+    if (STEPS[play.phase]) setPhase(play.phase);
+    if (!$('sheet-lineup').hidden) openLineup();
+    if (!$('sheet-collection').hidden) openCollection();
+  }
+  await fontsReady();
+  machine?.refreshLabels();
+  scheduleDecor();
+}
+
 async function boot() {
   // 從連結進來的玩家：一開始就是玩家畫面，不會先閃過開店表單
   if (location.hash.startsWith('#g1')) app.dataset.mode = 'play';
+  applyDom();
+  const ls = $('lang');
+  for (const l of LANGS) ls.append(new Option(l.label, l.key, false, l.key === lang));
+  ls.addEventListener('change', () => changeLang(ls.value));
   bindForm();
   renderForm();
   bindCoinDrag();
@@ -759,7 +797,7 @@ async function boot() {
     play.coins += 5;
     savePlay();
     setPhase(play.phase);
-    toast('換了 5 枚試玩硬幣');
+    toast(t('t.topup'));
   };
   $('btn-lineup').onclick = openLineup;
   $('p-odds').onclick = openLineup;
@@ -773,7 +811,7 @@ async function boot() {
     store.del(playKey());
     closeSheet('sheet-collection');
     enterPlay(play.token);
-    toast('補貨完成，扭蛋都回到機器裡了');
+    toast(t('t.restocked'));
   };
   document.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => closeSheet(b.closest('.sheet').id)));
   document.querySelectorAll('.sheet').forEach((s) =>
@@ -796,7 +834,7 @@ async function boot() {
     onHandleLocked: () => {
       if (app.dataset.mode !== 'play') return;
       nudge();
-      if (play?.phase === 'coin') toast(`先投 ${play.cfg.price.coins} 枚硬幣，把手才轉得動`);
+      if (play?.phase === 'coin') toast(t('t.locked', { n: play.cfg.price.coins }));
     },
     onTurned: () => onTurned(),
     onExitCapsule: () => take(),
@@ -814,7 +852,7 @@ async function boot() {
   try {
     await Promise.all([machine.load(new URL('./assets/', import.meta.url).href), fontsReady()]);
   } catch (e) {
-    $('loading-text').textContent = '機台模型載入失敗，請重新整理頁面';
+    $('loading-text').textContent = t('loadFail');
     console.error(e);
     return;
   }
@@ -825,8 +863,8 @@ async function boot() {
   await new Promise((r) => setTimeout(r, 200));
   $('loading').hidden = true;
   addEventListener('hashchange', () => {
-    const t = location.hash.slice(1);
-    if (t.startsWith('g1')) enterPlay(t);
+    const tok = location.hash.slice(1);
+    if (tok.startsWith('g1')) enterPlay(tok);
   });
 }
 

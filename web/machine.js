@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { sfx } from './sfx.js';
 import { RARITY, drawLid, drawPrice, drawArrow, drawLabel, drawCard, drawSide } from './decor.js';
+import { t } from './i18n.js';
 
 // ---- 量測值（公尺；three.js 座標：Y 向上、+Z 朝機台正面）----
 // 都是在 Blender 用射線打出來的（blender/build_glb.py、docs/README.md）
@@ -20,6 +21,21 @@ export const SLOT = new THREE.Vector3(0.2, 0.6, 0.35); // 投幣口
 const HANDLE_C = new THREE.Vector3(0, 0.4822, 0.3836);
 const EXIT = { x: -0.15, floor: 0.0666, z0: 0.2, z1: 0.272, lip: 0.357 }; // 出口凹槽
 const FRONT = 0.3575; // 機身正面
+const HOLE = { x: -0.15, z: 0.06 }; // 窗內底部的出蛋孔（正上方就是出口）
+const DISC = { x: 0, z: 0.06 }; // 轉盤中心（跟著把手轉）
+const MAX_PILE = 300; // 畫面上最多放幾顆
+
+// 扭蛋大小：顆數少就用原尺寸，多了就縮小，讓它們大約裝到窗的六成高
+function capRadius(n) {
+  return Math.min(CAP_R, Math.cbrt(0.01755 / Math.max(1, n)));
+}
+// 窗內某個前後位置（z）的底部高度：中間平、前後斜坡
+function floorY(z) {
+  return Math.max(0.724, 0.724 + 0.757 * (z - 0.15), 0.724 + 0.83 * (-0.03 - z));
+}
+function cellKey(p, inv, dx, dy, dz) {
+  return Math.floor((p.x + 1) * inv) + dx + 128 * (Math.floor(p.y * inv) + dy + 128 * (Math.floor((p.z + 1) * inv) + dz));
+}
 
 export const THEMES = {
   red: { body: '#d8262c', lid: '#f3f1ec', handle: '#f3f1ec' },
@@ -49,7 +65,11 @@ const outlineMat = (w) =>
   new THREE.ShaderMaterial({
     uniforms: { uColor: { value: new THREE.Color(INK) }, uW: { value: w }, uOpacity: { value: 1 } },
     vertexShader: `uniform float uW;
-      void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normalize(normal) * uW, 1.0); }`,
+      void main(){ vec4 p = vec4(position + normalize(normal) * uW, 1.0);
+        #ifdef USE_INSTANCING
+          p = instanceMatrix * p;
+        #endif
+        gl_Position = projectionMatrix * modelViewMatrix * p; }`,
     fragmentShader: `uniform vec3 uColor; uniform float uOpacity;
       void main(){ gl_FragColor = vec4(uColor, uOpacity);
       #include <colorspace_fragment>
@@ -89,8 +109,12 @@ function toonGlass(tint, alpha, rim) {
       uOpacity: { value: 1 },
     },
     vertexShader: `varying vec3 vN; varying vec3 vV;
-      void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
+      void main(){ vec4 p = vec4(position, 1.0); vec3 nn = normal;
+        #ifdef USE_INSTANCING
+          p = instanceMatrix * p; nn = mat3(instanceMatrix) * nn;
+        #endif
+        vec4 mv = modelViewMatrix * p;
+        vN = normalize(normalMatrix * nn); vV = normalize(-mv.xyz);
         gl_Position = projectionMatrix * mv; }`,
     fragmentShader: `uniform vec3 uTint, uLine; uniform float uAlpha, uRim, uOpacity;
       varying vec3 vN; varying vec3 vV;
@@ -287,6 +311,7 @@ export class Machine {
 
     this._buildDecals();
     this._buildFx();
+    this._buildPile();
     this.loaded = true;
   }
 
@@ -366,10 +391,20 @@ export class Machine {
     sh.position.set(0, 0.99, 0.4235);
     sh.renderOrder = 12;
     this.root.add(sh);
-    const arrow = canvasTex(drawArrow());
-    this.decals.arrow.material.map = arrow;
-    this.decals.exit.material.map = canvasTex(drawLabel('取出口', 'left'));
-    this.decals.ret.material.map = canvasTex(drawLabel('退幣口', 'down', '#2f6bdb'));
+    this.refreshLabels();
+  }
+
+  // 箭頭、取出口、退幣口的字（換語言時重畫）
+  refreshLabels() {
+    const set = (d, c) => {
+      const old = this.decals[d].material.map;
+      this.decals[d].material.map = canvasTex(c);
+      this.decals[d].material.needsUpdate = true;
+      if (old) old.dispose();
+    };
+    set('arrow', drawArrow());
+    set('exit', drawLabel(t('d.exit'), 'left'));
+    set('ret', drawLabel(t('d.return'), 'down', '#2f6bdb'));
   }
 
   // 機台名稱、價錢、陣容改了 → 重畫貼紙與台紙
@@ -398,6 +433,7 @@ export class Machine {
   }
 
   // ---------- 窗內扭蛋 ----------
+  // 單顆扭蛋（出口、鏡頭前用）
   _makeCapsule(mat) {
     const g = new THREE.Group();
     const top = new THREE.Mesh(this.capTopGeo, this.mats.capClear);
@@ -410,51 +446,140 @@ export class Machine {
     return g;
   }
 
-  setPile(count) {
+  // 窗內的扭蛋：顆數＝剩下的商品數（最多 MAX_PILE 顆）
+  // 數量一多就一顆一顆畫太慢 → InstancedMesh 三層（彩色下半、透明上半、描邊），各一次 draw call
+  _buildPile() {
+    const N = MAX_PILE;
+    this.pileBot = new THREE.InstancedMesh(this.capBotGeo, new THREE.MeshToonMaterial({ gradientMap: this.ramp }), N);
+    this.pileBot.castShadow = true;
+    this.pileTop = new THREE.InstancedMesh(this.capTopGeo, this.mats.capClear, N);
+    this.pileTop.renderOrder = 2;
+    this.pileLine = new THREE.InstancedMesh(hullGeometry(this.capBotGeo), outlineMat(0.0028), N);
+    for (const m of [this.pileBot, this.pileTop, this.pileLine]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.root.add(m);
+    }
+    this.pileBot.setColorAt(0, _c.set(CAP_COLORS[0])); // 先建立 instanceColor
+    this.capR = CAP_R;
+    this.stirW = 0;
+    this.wobble = 0;
+    this._lastHA = 0;
+    this._grid = new Map();
+  }
+
+  // count＝現在剩幾顆；total＝這台機器原本有幾顆（決定扭蛋大小，轉的過程中大小不變）
+  setPile(count, total = count) {
     if (!this.loaded) return;
-    const n = Math.min(count, 24); // 堆太高會擋住台紙
-    while (this.pile.length > n) {
-      const c = this.pile.pop();
-      this.root.remove(c.g);
+    const n = Math.min(count, MAX_PILE);
+    const r = capRadius(Math.min(Math.max(total, count), MAX_PILE));
+    if (Math.abs(r - this.capR) > 1e-4 || !this.pile.length) {
+      // 大小變了 → 全部重新排
+      this.capR = r;
+      this.pile = [];
+      this._addCapsules(n);
+      this._settle();
+    } else if (n > this.pile.length) {
+      this._addCapsules(n - this.pile.length);
+      this._settle();
+    } else if (n < this.pile.length) {
+      // 拿掉最上面的
+      this.pile.sort((a, b) => a.p.y - b.p.y);
+      this.pile.length = n;
     }
-    let spawned = 0;
-    while (this.pile.length < n) {
-      const g = this._makeCapsule(this.capMats[(this.pile.length * 5 + 3) % this.capMats.length]);
-      const c = {
-        g,
-        p: new THREE.Vector3(rnd(-0.28, 0.28), 0.86 + spawned * 0.035 + rnd(0, 0.05), rnd(-0.06, 0.25)),
-        v: new THREE.Vector3(),
-        q: new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.6, 0.6), rnd(0, 6.28), rnd(-0.6, 0.6))),
-      };
-      g.position.copy(c.p);
-      this.root.add(g);
-      this.pile.push(c);
-      spawned++;
-    }
-    // 先讓它們落定，第一眼看到的就是堆好的樣子
-    if (spawned > 4) for (let i = 0; i < 360; i++) this._physics(1 / 120);
+    this.colorDirty = true;
     this._syncPile();
   }
 
+  // 從目前最高的地方往上，一層一層排格點（避開斜坡）
+  _addCapsules(k) {
+    const R = this.capR;
+    const step = R * 2.08;
+    const y0 = this.pile.length ? Math.max(...this.pile.map((c) => c.p.y)) + step : PLANES[0].d + R + 0.002;
+    let placed = 0;
+    for (let layer = 0; placed < k && layer < 80; layer++) {
+      const y = Math.min(y0 + layer * step, WIN.top - R);
+      const off = layer % 2 ? R * 0.5 : 0; // 每層錯開半顆
+      for (let x = -WIN.x + R + off; x <= WIN.x - R + 1e-6 && placed < k; x += step) {
+        for (let z = WIN.back + R + off; z <= WIN.front - R + 1e-6 && placed < k; z += step) {
+          const p = new THREE.Vector3(x + rnd(-0.003, 0.003), y, z + rnd(-0.003, 0.003));
+          if (PLANES.some((pl) => pl.n.dot(p) < pl.d + R - 1e-4)) continue;
+          this.pile.push({
+            p,
+            v: new THREE.Vector3(),
+            q: new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.7, 0.7), rnd(0, 6.28), rnd(-0.7, 0.7))),
+            col: (this.pile.length * 5 + 3) % CAP_COLORS.length,
+            falling: false,
+          });
+          placed++;
+        }
+      }
+    }
+  }
+
+  // 先讓它們落定，第一眼看到的就是堆好的樣子
+  _settle() {
+    const steps = this.pile.length > 150 ? 200 : 300;
+    for (let i = 0; i < steps; i++) this._physics(1 / 120);
+    for (const c of this.pile) c.v.set(0, 0, 0);
+  }
+
+  // 每轉 45°：轉盤的凹槽把底層扭蛋頂一下
   shakePile(k = 1) {
+    const R = this.capR;
     for (const c of this.pile) {
-      if (c.p.y > 1.0) continue;
-      c.v.x += rnd(-0.5, 0.5) * k;
-      c.v.y += rnd(0.3, 0.9) * k;
-      c.v.z += rnd(-0.4, 0.4) * k;
+      if (c.falling) continue;
+      const h = c.p.y - floorY(c.p.z);
+      const near = h < R * 2.2 ? 1 : h < R * 4.5 ? 0.45 : 0.15; // 越底層頂得越大力
+      c.v.x += rnd(-0.35, 0.35) * k * near;
+      c.v.y += rnd(0.35, 0.9) * k * near;
+      c.v.z += rnd(-0.3, 0.3) * k * near;
     }
   }
 
   _physics(dt) {
     const P = this.pile;
-    const R = CAP_R;
-    for (const c of P) {
+    if (!P.length) return;
+    const R = this.capR;
+    const stir = this.stirW;
+    for (let i = P.length - 1; i >= 0; i--) {
+      const c = P[i];
       c.v.y -= 9.8 * dt;
+      if (c.falling) {
+        // 從出蛋孔掉下去（掉進機身裡就看不到了）
+        c.p.x += (HOLE.x - c.p.x) * Math.min(1, dt * 14);
+        c.p.z += (HOLE.z - c.p.z) * Math.min(1, dt * 14);
+        c.p.y += c.v.y * dt;
+        if (c.p.y < PLANES[0].d - R * 3) {
+          P.splice(i, 1);
+          this.colorDirty = true;
+        }
+        continue;
+      }
       c.v.multiplyScalar(0.998);
+      // 轉盤：把手轉的時候，底層扭蛋跟著轉盤繞圈，偶爾被凹槽頂起來
+      if (stir > 0.05 && c.p.y - floorY(c.p.z) < R * 1.9) {
+        const rx = c.p.x - DISC.x;
+        const rz = c.p.z - DISC.z;
+        const rho = Math.hypot(rx, rz) + 1e-4;
+        const tx = -rz / rho;
+        const tz = rx / rho;
+        const target = stir * Math.min(rho, 0.3);
+        const vt = c.v.x * tx + c.v.z * tz;
+        const k = Math.min(1, 12 * dt);
+        c.v.x += tx * (target - vt) * k;
+        c.v.z += tz * (target - vt) * k;
+        if (Math.random() < stir * dt * 1.2) c.v.y += rnd(0.25, 0.6);
+      }
       c.p.addScaledVector(c.v, dt);
     }
-    for (let it = 0; it < 3; it++) {
+    const n = P.length;
+    const inv = 1 / (2 * R);
+    const grid = this._grid;
+    for (let it = 0; it < 4; it++) {
       for (const c of P) {
+        if (c.falling) continue;
         const p = c.p;
         const v = c.v;
         if (p.x < -WIN.x + R) (p.x = -WIN.x + R), v.x < 0 && (v.x *= -0.3);
@@ -472,25 +597,43 @@ export class Machine {
           }
         }
       }
-      for (let i = 0; i < P.length; i++) {
-        for (let j = i + 1; j < P.length; j++) {
-          const a = P[i];
-          const b = P[j];
-          const d = _v1.subVectors(b.p, a.p);
-          const dist = d.length();
-          if (dist < 2 * R && dist > 1e-6) {
-            d.multiplyScalar(1 / dist);
-            const pen = (2 * R - dist) / 2;
-            a.p.addScaledVector(d, -pen);
-            b.p.addScaledVector(d, pen);
-            const vr = _v2.subVectors(b.v, a.v).dot(d);
-            if (vr < 0) {
-              const imp = -vr * 0.6;
-              a.v.addScaledVector(d, -imp);
-              b.v.addScaledVector(d, imp);
+      // 空間格子：只檢查相鄰格子裡的扭蛋（幾百顆也不會慢）
+      grid.clear();
+      for (let i = 0; i < n; i++) {
+        const c = P[i];
+        if (c.falling) continue;
+        const key = cellKey(c.p, inv, 0, 0, 0);
+        const b = grid.get(key);
+        if (b) b.push(i);
+        else grid.set(key, [i]);
+      }
+      for (let i = 0; i < n; i++) {
+        const a = P[i];
+        if (a.falling) continue;
+        for (let dx = -1; dx <= 1; dx++)
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dz = -1; dz <= 1; dz++) {
+              const b = grid.get(cellKey(a.p, inv, dx, dy, dz));
+              if (!b) continue;
+              for (const j of b) {
+                if (j <= i) continue;
+                const o = P[j];
+                const d = _v1.subVectors(o.p, a.p);
+                const dist = d.length();
+                if (dist < 2 * R && dist > 1e-6) {
+                  d.multiplyScalar(1 / dist);
+                  const pen = (2 * R - dist) / 2;
+                  a.p.addScaledVector(d, -pen);
+                  o.p.addScaledVector(d, pen);
+                  const vr = _v2.subVectors(o.v, a.v).dot(d);
+                  if (vr < 0) {
+                    const imp = -vr * 0.6;
+                    a.v.addScaledVector(d, -imp);
+                    o.v.addScaledVector(d, imp);
+                  }
+                }
+              }
             }
-          }
-        }
       }
     }
     // 滾動：用水平速度推算轉動
@@ -501,32 +644,56 @@ export class Machine {
         _q.setFromAxisAngle(_v1, (sp * dt) / R);
         c.q.premultiply(_q);
       }
-      if (c.v.lengthSq() < 0.0004) c.v.multiplyScalar(0.8); // 快停了就讓它停
+      if (!c.falling && c.v.lengthSq() < 0.0004) c.v.multiplyScalar(0.8); // 快停了就讓它停
     }
   }
 
   _syncPile() {
-    for (const c of this.pile) {
-      c.g.position.copy(c.p);
-      c.g.quaternion.copy(c.q);
+    if (!this.pileBot) return;
+    const P = this.pile;
+    const n = Math.min(P.length, MAX_PILE);
+    const s = this.capR / CAP_R;
+    _s.set(s, s, s);
+    for (let i = 0; i < n; i++) {
+      const c = P[i];
+      _m.compose(c.p, c.q, _s);
+      this.pileBot.setMatrixAt(i, _m);
+      this.pileTop.setMatrixAt(i, _m);
+      this.pileLine.setMatrixAt(i, _m);
+      if (this.colorDirty) this.pileBot.setColorAt(i, _c.set(CAP_COLORS[c.col]));
     }
+    for (const m of [this.pileBot, this.pileTop, this.pileLine]) {
+      m.count = n;
+      m.instanceMatrix.needsUpdate = true;
+    }
+    if (this.colorDirty) this.pileBot.instanceColor.needsUpdate = true;
+    this.colorDirty = false;
   }
 
-  // 出蛋時從堆裡拿走一顆（最靠出口那側、最下面的）
+  // 出蛋：最靠近出蛋孔、最底層的那一顆真的從孔掉下去；回傳它的顏色
   _takeFromPile() {
-    if (!this.pile.length) return;
-    let best = 0;
+    const P = this.pile;
+    let best = -1;
     let score = Infinity;
-    this.pile.forEach((c, i) => {
-      const s = c.p.y + Math.abs(c.p.x - EXIT.x) * 0.3;
+    P.forEach((c, i) => {
+      if (c.falling) return;
+      const s = Math.hypot(c.p.x - HOLE.x, c.p.z - HOLE.z) + (c.p.y - floorY(c.p.z)) * 2;
       if (s < score) (score = s), (best = i);
     });
-    const [c] = this.pile.splice(best, 1);
-    const p0 = c.g.position.clone();
-    this.tween(0.35, (k) => {
-      c.g.position.set(p0.x, p0.y - 0.08 * k, p0.z);
-      c.g.scale.setScalar(1 - k);
-    }).then(() => this.root.remove(c.g));
+    if (best < 0) return null;
+    const c = P[best];
+    c.falling = true;
+    c.v.set(0, -0.4, 0);
+    // 旁邊的扭蛋被帶一下，往洞的方向滑
+    for (const o of P) {
+      if (o.falling) continue;
+      const d = Math.hypot(o.p.x - c.p.x, o.p.z - c.p.z);
+      if (d < this.capR * 4) {
+        o.v.x += (c.p.x - o.p.x) * 2;
+        o.v.z += (c.p.z - o.p.z) * 2;
+      }
+    }
+    return c.col;
   }
 
   // ---------- 投幣 ----------
@@ -583,6 +750,7 @@ export class Machine {
     if (Math.floor(next / step) > Math.floor(prev / step)) {
       sfx.tick();
       this.shakePile(0.35);
+      this.wobble = 1; // 機台跟著抖一下
       this.cb.onTick?.(next / (Math.PI * 2));
       if (Math.floor(next / step) % 2 === 0) sfx.rattle();
     }
@@ -618,23 +786,27 @@ export class Machine {
   // ---------- 出蛋 ----------
   // rarity 決定扭蛋顏色：SR 銀色、SSR 金色（出口就先預告）
   dispense(rarity) {
-    this._takeFromPile();
-    const mat = rarity >= 2 ? this.capRare[rarity] : this.capMats[Math.floor(Math.random() * this.capMats.length)];
+    // 窗裡最靠近出蛋孔的那顆掉下去 → 出口出現同一個顏色的扭蛋（SR、SSR 換成銀色、金色）
+    const col = this._takeFromPile();
+    const mat = rarity >= 2 ? this.capRare[rarity] : this.capMats[col ?? Math.floor(Math.random() * this.capMats.length)];
     const g = this._makeCapsule(mat);
+    const s = this.capR / CAP_R;
+    g.scale.setScalar(s);
     g.position.set(EXIT.x, 0.42, EXIT.z0);
     g.quaternion.setFromEuler(new THREE.Euler(rnd(-1, 1), rnd(0, 6), rnd(-1, 1)));
     this.root.add(g);
     this.exitCap = { g, rarity, mat };
-    const floorY = EXIT.floor + CAP_R;
+    const floorY = EXIT.floor + this.capR;
     let y = 0.42;
     let vy = -0.4;
     let z = EXIT.z0;
     let bounces = 0;
-    let t = 0;
+    let t = -0.3; // 等窗裡那顆掉進機身
     return new Promise((resolve) => {
       this.tweens.push({
         step: (dt) => {
           t += dt;
+          if (t < 0) return false;
           vy -= 9.8 * dt;
           y += vy * dt;
           if (y < floorY) {
@@ -675,6 +847,7 @@ export class Machine {
     const g = c.g;
     const from = g.getWorldPosition(new THREE.Vector3());
     const q0 = g.getWorldQuaternion(new THREE.Quaternion());
+    const s0 = g.scale.x;
     this.root.remove(g);
     this.fx.add(g);
     g.position.copy(from);
@@ -693,7 +866,7 @@ export class Machine {
       const b = mid.clone().lerp(to, e);
       g.position.copy(a.lerp(b, e));
       g.quaternion.slerpQuaternions(q0, qTo, e);
-      g.scale.setScalar(1 + 0.15 * e);
+      g.scale.setScalar(s0 + (1.15 - s0) * e); // 不管窗裡的扭蛋多小，拿到鏡頭前都一樣大
     }).then(() => {
       c.home = to.clone();
       c.q = g.quaternion.clone();
@@ -1068,6 +1241,10 @@ export class Machine {
     const dt = Math.min(0.05, this.clock.getDelta());
     this.time += dt;
     if (this.loaded) {
+      // 轉盤速度＝把手角速度的 0.4 倍（放開後慢慢停）
+      const hs = Math.max(0, (this.handleAngle - this._lastHA) / Math.max(dt, 1e-3));
+      this._lastHA = this.handleAngle;
+      this.stirW = Math.max(this.stirW * Math.exp(-2.5 * dt), hs * 0.4);
       this.acc += dt;
       let n = 0;
       while (this.acc >= 1 / 120 && n < 4) {
@@ -1085,6 +1262,8 @@ export class Machine {
       if (!this.dragYaw && this.idleT > 2.5) this.yawTarget += (this.restYaw - this.yawTarget) * Math.min(1, dt * 1.2);
       this.yaw += (this.yawTarget - this.yaw) * Math.min(1, dt * 8);
       this.root.rotation.y = this.yaw;
+      this.wobble *= Math.exp(-9 * dt);
+      this.root.rotation.z = this.reduced ? 0 : Math.sin(this.time * 70) * 0.005 * this.wobble;
 
       // 提示：投幣口光圈、把手發光
       const pulse = 0.5 + 0.5 * Math.sin(this.time * 5);
@@ -1117,6 +1296,9 @@ export class Machine {
 }
 
 const _v1 = new THREE.Vector3();
+const _s = new THREE.Vector3();
+const _m = new THREE.Matrix4();
+const _c = new THREE.Color();
 const _v2 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _x = new THREE.Vector3(1, 0, 0);

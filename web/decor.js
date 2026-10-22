@@ -1,13 +1,17 @@
 // 機台上的貼紙與台紙：Canvas 畫成貼圖
+import { t, lang } from './i18n.js';
+
 // 背景插畫來自 Gemini（assets/tex/*.webp，沒有文字）；名稱、價錢、獎品縮圖由這裡疊上去
 export const RARITY = [
-  { key: 'N', label: '一般', color: '#8f9bad', glow: '#dfe6ef' },
-  { key: 'R', label: '稀有', color: '#2f80ed', glow: '#8cc3ff' },
-  { key: 'SR', label: '超稀有', color: '#a45cf0', glow: '#e3c7ff' },
-  { key: 'SSR', label: '隱藏版', color: '#f2a900', glow: '#ffe28a' },
+  { key: 'N', color: '#8f9bad', glow: '#dfe6ef', get label() { return t('r.0'); } },
+  { key: 'R', color: '#2f80ed', glow: '#8cc3ff', get label() { return t('r.1'); } },
+  { key: 'SR', color: '#a45cf0', glow: '#e3c7ff', get label() { return t('r.2'); } },
+  { key: 'SSR', color: '#f2a900', glow: '#ffe28a', get label() { return t('r.3'); } },
 ];
 
 export const FONT_DISPLAY = '"Huninn", "Noto Sans TC", system-ui, sans-serif';
+// 內文字型跟著語言：日文用日本字形
+const bodyFont = () => (lang === 'ja' ? '"Noto Sans JP", "Noto Sans TC"' : '"Noto Sans TC"') + ', system-ui, sans-serif';
 export const FONT_NUM = '"Dela Gothic One", "Huninn", system-ui, sans-serif';
 
 export async function fontsReady() {
@@ -16,6 +20,7 @@ export async function fontsReady() {
       document.fonts.load(`40px ${FONT_DISPLAY}`, '轉蛋機一般稀有'),
       document.fonts.load(`40px ${FONT_NUM}`, 'NT$0123456789'),
       document.fonts.load('700 40px "Noto Sans TC"', '取出口退幣'),
+      lang === 'ja' ? document.fonts.load('700 40px "Noto Sans JP"', 'とりだし口返却') : null,
     ]);
   } catch (e) {
     /* 字型載不到就用備用字型 */
@@ -24,7 +29,7 @@ export async function fontsReady() {
 
 export function priceText(price) {
   const total = price.coins * price.unit;
-  if (price.cur === '代幣') return `${price.coins} 枚`;
+  if (price.cur === '代幣') return t('tokensN', { n: price.coins });
   return `${price.cur}${formatNum(total)}`;
 }
 
@@ -150,13 +155,15 @@ export function drawPrice(cfg, art) {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.font = `34px ${FONT_DISPLAY}`;
-  g.fillText('1回', 128, 84);
-  const t = priceText(cfg.price);
-  fitText(g, t, 150, 54, FONT_NUM);
-  g.fillText(t, 128, 136);
+  fitText(g, t('oneSpin'), 140, 34, FONT_DISPLAY);
+  g.fillText(t('oneSpin'), 128, 84);
+  const pt = priceText(cfg.price);
+  fitText(g, pt, 150, 54, FONT_NUM);
+  g.fillText(pt, 128, 136);
   g.fillStyle = '#1c2340';
   g.font = `26px ${FONT_DISPLAY}`;
-  g.fillText(`投 ${cfg.price.coins} 枚`, 128, 182);
+  fitText(g, t('coinsN', { n: cfg.price.coins }), 140, 26, FONT_DISPLAY);
+  g.fillText(t('coinsN', { n: cfg.price.coins }), 128, 182);
   return c;
 }
 
@@ -210,7 +217,7 @@ export function drawArrow(art) {
   g.font = `32px ${FONT_DISPLAY}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText('轉', lx, ly + 2);
+  g.fillText(t('d.turn'), lx, ly + 2);
   if (art) {
     /* 箭頭用程式畫：位置要剛好繞著把手 */
   }
@@ -228,7 +235,7 @@ export function drawLabel(text, arrow, bg = '#1c2340', fg = '#ffffff') {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   const label = arrow === 'left' ? `◀ ${text}` : arrow === 'down' ? `${text} ▼` : text;
-  fitText(g, label, 220, 52, '"Noto Sans TC", system-ui, sans-serif', '900');
+  fitText(g, label, 220, 52, bodyFont(), '900');
   g.fillText(label, 128, 66);
   return c;
 }
@@ -261,7 +268,8 @@ export function drawCard(cfg, thumbs, art) {
   g.fillStyle = '#ffd23f';
   g.font = `32px ${FONT_DISPLAY}`;
   g.textAlign = 'right';
-  g.fillText(`全${cfg.items.length}種`, ix + iw - 40, iy + 54);
+  fitText(g, t('d.kinds', { n: cfg.items.length }), 170, 32, FONT_DISPLAY);
+  g.fillText(t('d.kinds', { n: cfg.items.length }), ix + iw - 40, iy + 54);
 
   // 獎品格子（下面 1/4 會被扭蛋擋住，所以只用上半）
   const n = Math.min(cfg.items.length, 8);
@@ -296,7 +304,7 @@ export function drawCard(cfg, thumbs, art) {
     g.fillStyle = '#1c2340';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    fitText(g, it.name, s - 16, s * 0.12, '"Noto Sans TC", system-ui, sans-serif', '700');
+    fitText(g, it.name, s - 16, s * 0.12, bodyFont(), '700');
     g.fillText(it.name, cx + cell / 2, cy + pad + s - s * 0.09);
     // 稀有度標籤
     g.fillStyle = rar.color;
@@ -310,7 +318,7 @@ export function drawCard(cfg, thumbs, art) {
     g.fillStyle = '#1c2340';
     g.font = `28px ${FONT_DISPLAY}`;
     g.textAlign = 'center';
-    g.fillText(`還有 ${cfg.items.length - 8} 種…`, W / 2, areaY + areaH + 22);
+    g.fillText(t('d.more', { n: cfg.items.length - 8 }), W / 2, areaY + areaH + 22);
   }
   return c;
 }

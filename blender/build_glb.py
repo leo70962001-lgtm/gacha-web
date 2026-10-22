@@ -92,10 +92,25 @@ coin = bpy.data.objects["Coin"]
 center_origin(coin)
 coin.location = (0.9, 0, 0.05)
 
+# 法線（2026-10-22 查證，blender/normal_check.py）：
+#   Maya 匯入的網格帶「自訂法線」（Maya 的 soft edge），會蓋過 Blender 的銳邊設定 →
+#   機身 56% 面積的頂點法線偏離面法線 >5°（正面、側面大平面偏 50–60°），toon 的硬色階就在大面中間切出暗帶。
+#   修正：清掉自訂法線 → 30° 以上的邊標成銳邊 → Weighted Normal（面積加權、保留銳邊，匯出時套用），
+#   大平面保持平的，圓角才是平滑的。
 for o in bpy.data.objects:
-    if o.type == "MESH":
-        o.data.shade_smooth() if hasattr(o.data, "shade_smooth") else None
-        o.data.set_sharp_from_angle(angle=math.radians(40))
+    if o.type != "MESH":
+        continue
+    with bpy.context.temp_override(object=o, active_object=o, selected_objects=[o]):
+        if o.data.has_custom_normals:
+            bpy.ops.mesh.customdata_custom_splitnormals_clear()
+    o.data.shade_smooth()
+    o.data.set_sharp_from_angle(angle=math.radians(30))
+    if o.name in ("Body", "Lid", "Handle"):
+        wn = o.modifiers.new("WeightedNormal", "WEIGHTED_NORMAL")
+        wn.mode = "FACE_AREA"
+        wn.weight = 50
+        wn.keep_sharp = True
+print("CUSTOM_NORMALS_LEFT", [o.name for o in bpy.data.objects if o.type == "MESH" and o.data.has_custom_normals])
 
 # ---------- 2. 材質 ----------
 mats = {k: make_mat(k, v) for k, v in MATS.items()}
