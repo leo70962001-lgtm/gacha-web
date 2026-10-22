@@ -141,6 +141,62 @@ function toonGlass(tint, alpha, rim) {
   });
 }
 
+
+// 黃金扭蛋（SR、SSR）：matcap＝把「球從各個方向看起來的顏色」畫成一張圖
+// 卡通金屬：分層的金色硬邊、左上高光、右下反光；SSR 外圈再加彩虹光澤
+function goldMatcap(rainbow) {
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#5a3500';
+  g.fillRect(0, 0, S, S);
+  const disc = (x, y, r, col) => {
+    g.fillStyle = col;
+    g.beginPath();
+    g.arc(x * S, y * S, r * S, 0, Math.PI * 2);
+    g.fill();
+  };
+  disc(0.5, 0.5, 0.5, '#8a5508');
+  disc(0.47, 0.46, 0.43, '#c3820f');
+  disc(0.44, 0.42, 0.35, '#eaa924');
+  disc(0.4, 0.37, 0.25, '#ffd24a');
+  disc(0.36, 0.32, 0.13, '#fff1b3');
+  // 右下的反光（金屬特有的邊緣亮光）
+  g.strokeStyle = '#ffd86e';
+  g.lineWidth = S * 0.035;
+  g.beginPath();
+  g.arc(S / 2, S / 2, S * 0.44, Math.PI * 0.1, Math.PI * 0.42);
+  g.stroke();
+  // 硬高光
+  g.save();
+  g.translate(S * 0.33, S * 0.28);
+  g.rotate(-0.6);
+  g.fillStyle = '#ffffff';
+  g.beginPath();
+  g.ellipse(0, 0, S * 0.075, S * 0.035, 0, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+  if (rainbow) {
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = 0.5;
+    const cg = g.createConicGradient ? g.createConicGradient(0, S / 2, S / 2) : null;
+    if (cg) {
+      ['#ff4d6d', '#ffb347', '#fff275', '#5cff9d', '#4dc3ff', '#b36bff', '#ff4d6d'].forEach((col, i, a) => cg.addColorStop(i / (a.length - 1), col));
+      g.strokeStyle = cg;
+    } else g.strokeStyle = '#ff9fe0';
+    g.lineWidth = S * 0.09;
+    g.beginPath();
+    g.arc(S / 2, S / 2, S * 0.45, 0, Math.PI * 2);
+    g.stroke();
+    g.restore();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 const ease = {
   out: (t) => 1 - Math.pow(1 - t, 3),
   inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
@@ -187,9 +243,23 @@ export class Machine {
 
     // 地板＝背景色（不受光）＋只畫影子的一層 → 地板和背景接得起來
     this.floorMat = new THREE.MeshBasicMaterial({ color: 0xdce6ec });
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(14, 64), this.floorMat);
+    const floor = (this.floor = new THREE.Mesh(new THREE.CircleGeometry(14, 64), this.floorMat));
     floor.rotation.x = -Math.PI / 2;
     s.add(floor);
+    // 關燈用的暗幕：畫在最遠處，只蓋住背景（機台、地板、特效都在它前面）
+    this.dimmer = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.ShaderMaterial({
+        uniforms: { uA: { value: 0 } },
+        vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.99999, 1.0); }',
+        fragmentShader: 'uniform float uA; void main(){ gl_FragColor = vec4(0.024, 0.035, 0.075, uA); }',
+        transparent: true,
+        depthWrite: false,
+      }),
+    );
+    this.dimmer.frustumCulled = false;
+    this.dimmer.renderOrder = -100;
+    s.add(this.dimmer);
     this.shadowMat = new THREE.ShadowMaterial({ color: new THREE.Color(INK), opacity: 0.2 });
     const catcher = new THREE.Mesh(new THREE.CircleGeometry(4, 48), this.shadowMat);
     catcher.rotation.x = -Math.PI / 2;
@@ -267,7 +337,7 @@ export class Machine {
       coin: toon({ color: 0xf2b630 }),
     });
     this.capMats = CAP_COLORS.map((c) => toon({ color: c }));
-    this.capRare = [null, null, toon({ color: 0xe4e9f0, emissive: 0x7a4ad8, emissiveIntensity: 0 }), toon({ color: 0xffc634, emissive: 0xff9a00, emissiveIntensity: 0 })];
+    this.capRare = [null, null, new THREE.MeshMatcapMaterial({ matcap: goldMatcap(false) }), new THREE.MeshMatcapMaterial({ matcap: goldMatcap(true) })];
     this.hullCache = new Map();
 
     const byMat = { M_Body: m.body, M_Lid: m.lid, M_Handle: m.handle, M_ExitDark: m.dark, M_Metal: m.metal };
@@ -311,6 +381,10 @@ export class Machine {
     );
     this.slotRing.position.set(SLOT.x, SLOT.y, FRONT + 0.004);
     this.root.add(this.slotRing);
+    // 前兆用：窗頂的燈
+    this.lidLight = new THREE.PointLight(0xffffff, 0, 1.6, 1.5);
+    this.lidLight.position.set(0, 1.2, 0.2);
+    this.root.add(this.lidLight);
     // 出口內的光（稀有扭蛋）
     this.exitLight = new THREE.PointLight(0xffffff, 0, 0.9, 2);
     this.exitLight.position.set(EXIT.x, 0.2, 0.3);
@@ -339,13 +413,60 @@ export class Machine {
     this.mats.handle.color.set(t.handle);
   }
 
+  // 介面主題（亮／暗）的舞台顏色；賣家選了背景就以背景為主
   setStage(bg, floor) {
-    this.stageBg = new THREE.Color(bg);
-    this.stageFloor = new THREE.Color(floor);
-    this.scene.background.set(bg);
-    this.scene.fog.color.set(bg);
-    this.floorMat.color.set(floor);
+    this.themeBg = new THREE.Color(bg);
+    this.themeFloor = new THREE.Color(floor);
+    this._applyBackground();
+  }
+
+  // ---------- 背景（壁紙） ----------
+  // bg：{ k: 'preset', id } / { k: 'color', c } / { k: 'img' }；image：預設場景或自己的圖（已經處理好的 Image／Canvas）
+  setBackground(bg, image = null) {
+    this.bg = bg || { k: 'preset', id: 'plain' };
+    if (this.bgTex) this.bgTex.dispose();
+    this.bgTex = null;
+    if (image) {
+      this.bgTex = image instanceof HTMLCanvasElement ? new THREE.CanvasTexture(image) : new THREE.Texture(image);
+      this.bgTex.colorSpace = THREE.SRGBColorSpace;
+      this.bgTex.needsUpdate = true;
+    }
+    this._applyBackground();
+  }
+
+  _applyBackground() {
+    if (!this.themeBg) return;
+    const bg = this.bg || { k: 'preset', id: 'plain' };
+    if (this.bgTex) {
+      // 圖片背景：照螢幕比例裁切填滿；地板不畫，只留影子
+      this.scene.background = this.bgTex;
+      this.floor.visible = false;
+      this._fitBg();
+    } else {
+      const c = bg.k === 'color' ? new THREE.Color(bg.c) : this.themeBg.clone();
+      this.scene.background = c;
+      this.stageBg = c.clone();
+      this.stageFloor = bg.k === 'color' ? c.clone().multiplyScalar(0.92) : this.themeFloor.clone();
+      this.scene.fog.color.copy(c);
+      this.floor.visible = true;
+      this.floorMat.color.copy(this.stageFloor);
+    }
     if (this.dim) this.dimTween = { from: this.dim, to: this.dim, t: 0, dur: 0.01 };
+  }
+
+  _fitBg() {
+    const t = this.bgTex;
+    const im = t?.image;
+    if (!im) return;
+    const A = this.camera.aspect;
+    const I = (im.width || 1) / (im.height || 1);
+    if (A > I) {
+      t.repeat.set(1, I / A);
+      t.offset.set(0, (1 - I / A) / 2);
+    } else {
+      t.repeat.set(A / I, 1);
+      t.offset.set((1 - A / I) / 2, 0);
+    }
   }
 
   _decal(w, h, pos, rotY = 0) {
@@ -446,14 +567,36 @@ export class Machine {
   // 單顆扭蛋（出口、鏡頭前用）
   _makeCapsule(mat) {
     const g = new THREE.Group();
-    const top = new THREE.Mesh(this.capTopGeo, this.mats.capClear);
+    const gold = mat.isMeshMatcapMaterial; // 黃金扭蛋：上下兩半都是金的
+    const top = new THREE.Mesh(this.capTopGeo, gold ? mat : this.mats.capClear);
     const bot = new THREE.Mesh(this.capBotGeo, mat);
     top.renderOrder = 2;
     bot.castShadow = true;
     addOutline(bot, 0.0028, this.hullCache);
+    if (gold) {
+      top.castShadow = true;
+      addOutline(top, 0.0028, this.hullCache);
+      this.show?.addGlints(g, mat === this.capRare[3] ? 6 : 4);
+    }
     g.add(top, bot);
-    g.userData = { top, bot };
+    g.userData = { top, bot, gold };
     return g;
+  }
+
+  // 開殼時把兩半的材質換成可以淡出的複本（透明殼是自訂 shader，金殼是 matcap）
+  _fadeable(m) {
+    m.material = m.material.clone();
+    m.material.transparent = true;
+    const line = m.getObjectByName('outline');
+    if (line) {
+      line.material = line.material.clone();
+      line.material.transparent = true;
+    }
+    return (k) => {
+      if (m.material.uniforms) m.material.uniforms.uOpacity.value = 1 - k;
+      else m.material.opacity = 1 - k;
+      if (line) line.material.uniforms.uOpacity.value = 1 - k;
+    };
   }
 
   // 窗內的扭蛋：顆數＝剩下的商品數（最多 MAX_PILE 顆）
@@ -750,6 +893,31 @@ export class Machine {
     if (on) this.turnAcc = 0;
   }
 
+  // 前兆：這次會出 SR／SSR 時，轉把手的同時窗裡的扭蛋發金光（SSR 彩虹），頂上的燈閃
+  setForeshadow(level) {
+    this.foreshadow = level;
+    if (!level) this.pileBot.material.emissive.setRGB(0, 0, 0);
+  }
+
+  _foreshadowFrame() {
+    const lv = this.foreshadow;
+    const turning = this.turning || this.dragHandle || this.quickTurning;
+    const k = lv && turning ? 1 : 0;
+    this.fsK = (this.fsK || 0) + (k - (this.fsK || 0)) * 0.12;
+    const f = this.fsK;
+    if (f < 0.01) {
+      this.lidLight.intensity = 0;
+      this.pileBot.material.emissive.setRGB(0, 0, 0);
+      return;
+    }
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 14);
+    const col = lv === 3 ? _c.setHSL((this.time * 0.6) % 1, 0.9, 0.6) : _c.set('#ffc93c');
+    this.pileBot.material.emissive.copy(col).multiplyScalar(f * (0.25 + 0.35 * pulse));
+    this.lidLight.color.copy(col);
+    this.lidLight.intensity = f * (1.5 + 2.5 * pulse);
+    if (lv === 3 && Math.random() < f * 0.5) this.show.riseSpark(this.root.localToWorld(new THREE.Vector3(rnd(-0.3, 0.3), rnd(0.8, 1.1), rnd(-0.05, 0.3))));
+  }
+
   _setHandle(a) {
     this.handleAngle = a;
     this.handle.rotation.z = this.handleBase - a; // 順時針（從正面看）
@@ -844,7 +1012,7 @@ export class Machine {
       });
     }).then(() => {
       if (shown >= 2) {
-        this.exitLight.color.set(RARITY[shown].glow);
+        this.exitLight.color.set(shown === 3 ? '#fff0c0' : '#ffcf5a'); // 金色的光從出口透出來
         this.exitGlow = shown;
       }
     });
@@ -907,18 +1075,28 @@ export class Machine {
         g.quaternion.copy(c.q).multiply(_q.setFromAxisAngle(_z, a));
       });
     }
+    // 定格：扭蛋整顆變白、停一拍（SR 0.14 秒、SSR 0.28 秒）
+    if (r >= 2 && !this.reduced) {
+      const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const keep = [g.userData.top.material, g.userData.bot.material];
+      g.userData.top.material = g.userData.bot.material = white;
+      sfx.hitstop?.();
+      await this.after(r === 3 ? 0.28 : 0.14);
+      [g.userData.top.material, g.userData.bot.material] = keep;
+    }
     sfx.pop();
+    if (r >= 2) {
+      this.punch(r === 3 ? 7 : 4);
+      this.shakePile(r === 3 ? 3 : 2);
+      this.wobble = 2;
+    }
     const { top, bot } = g.userData;
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(g.quaternion);
     const camR = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
     const t0 = top.position.clone();
     const b0 = bot.position.clone();
-    top.material = top.material.clone();
-    bot.material = bot.material.clone();
-    bot.material.transparent = true;
-    const line = bot.getObjectByName('outline');
-    line.material = line.material.clone();
-    line.material.transparent = true;
+    const fadeTop = this._fadeable(top);
+    const fadeBot = this._fadeable(bot);
     this.show.burst(r, home);
     this.cb.onBurst?.(r);
     const upL = g.worldToLocal(home.clone().add(up)).sub(g.worldToLocal(home.clone()));
@@ -930,11 +1108,158 @@ export class Machine {
       top.rotation.set(-1.4 * e * fly, 0, -0.9 * e);
       bot.position.copy(b0).addScaledVector(upL, -0.2 * e * e * fly).addScaledVector(rL, -0.06 * e * fly);
       bot.rotation.set(0.9 * e * fly, 0, 0.6 * e);
-      top.material.uniforms.uOpacity.value = 1 - k;
-      bot.material.opacity = 1 - k;
-      line.material.uniforms.uOpacity.value = 1 - k;
+      fadeTop(k);
+      fadeBot(k);
     }).then(() => this.fx.remove(g));
     await this.after(this.reduced ? Math.min(T.reveal, 0.6) : T.reveal);
+    this.show.persist(r, home);
+  }
+
+  // ---------- 10 連抽 ----------
+  // 每顆：窗裡掉一顆 → 出口跳出 → 飛到鏡頭前的格子（橫向 5×2、直向 2×5）
+  _gridSlot(i, n) {
+    const portrait = this.camera.aspect < 0.85;
+    const cols = portrait ? 2 : Math.min(5, n);
+    const rows = Math.ceil(n / cols);
+    const dist = 1.7;
+    const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const viewH = 2 * dist * tanV;
+    const viewW = viewH * this.camera.aspect;
+    const step = Math.min(0.2, (viewW * 0.86) / cols, (viewH * 0.62) / rows);
+    const c = i % cols;
+    const r = Math.floor(i / cols);
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    return {
+      pos: this.camera.position.clone().addScaledVector(fwd, dist)
+        .addScaledVector(right, (c - (cols - 1) / 2) * step)
+        .addScaledVector(up, ((rows - 1) / 2 - r) * step + viewH * 0.06),
+      scale: (step / (2 * CAP_R)) * 0.78,
+    };
+  }
+
+  // 把手快轉一圈（10 連用）
+  quickTurn(dur = 0.42) {
+    const a0 = this.handleAngle;
+    let prev = 0;
+    this.quickTurning = true;
+    setTimeout(() => (this.quickTurning = false), dur * 1000 + 200);
+    return this.tween(dur, (k) => {
+      const t = ease.inOut(k) * Math.PI * 2;
+      this._handleTick(prev, t);
+      prev = t;
+      this._setHandle(a0 + t);
+    });
+  }
+
+  // 出一顆、飛到第 i 格
+  dispenseToGrid(i, n, rarity) {
+    const col = this._takeFromPile();
+    const fake = rarity === 3 && (this.forceFake ?? Math.random() < 0.5);
+    const shown = fake ? 2 : rarity;
+    const mat = shown >= 2 ? this.capRare[shown] : this.capMats[col ?? Math.floor(Math.random() * this.capMats.length)];
+    const g = this._makeCapsule(mat);
+    const s0 = this.capR / CAP_R;
+    g.scale.setScalar(s0);
+    this.root.add(g);
+    const floorY = EXIT.floor + this.capR;
+    const c = { g, rarity, mat, fake, i };
+    this.grid = this.grid || [];
+    this.grid[i] = c;
+    // 1) 出口掉下來（快）
+    return this.tween(0.32, (k) => {
+      g.position.set(EXIT.x, 0.38 - (0.38 - floorY) * k * k, EXIT.z0 + (EXIT.z1 - EXIT.z0) * k);
+      g.rotation.x += 0.2;
+    })
+      .then(() => {
+        sfx.thud(0.6);
+        // 2) 飛到格子
+        const from = g.getWorldPosition(new THREE.Vector3());
+        const q0 = g.getWorldQuaternion(new THREE.Quaternion());
+        this.root.remove(g);
+        this.fx.add(g);
+        g.position.copy(from);
+        g.quaternion.copy(q0);
+        const slot = this._gridSlot(i, n);
+        const mid = from.clone().lerp(slot.pos, 0.5).add(new THREE.Vector3(0, 0.25, 0));
+        const qTo = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.35, -0.3, 0.1));
+        return this.tween(0.45, (k) => {
+          const e = ease.out(k);
+          const a = from.clone().lerp(mid, e);
+          const b = mid.clone().lerp(slot.pos, e);
+          g.position.copy(a.lerp(b, e));
+          g.quaternion.slerpQuaternions(q0, qTo, e);
+          g.scale.setScalar(s0 + (slot.scale - s0) * e);
+        }).then(() => {
+          c.home = slot.pos.clone();
+          c.q = g.quaternion.clone();
+          if (shown >= 2) this.show.gridGlow(c, shown);
+        });
+      });
+  }
+
+  // 小開：普通扭蛋在格子裡直接啵開
+  popInGrid(i) {
+    const c = this.grid?.[i];
+    if (!c) return Promise.resolve();
+    const g = c.g;
+    const { top, bot } = g.userData;
+    sfx.pop();
+    this.show.miniBurst(c.rarity, c.home);
+    const fadeTop = this._fadeable(top);
+    const fadeBot = this._fadeable(bot);
+    const t0 = top.position.clone();
+    const b0 = bot.position.clone();
+    this.grid[i] = null;
+    return this.tween(0.45, (k) => {
+      const e = ease.out(k);
+      top.position.copy(t0).add(new THREE.Vector3(0, 0.09 * e, 0));
+      top.rotation.set(-1.2 * e, 0, -0.7 * e);
+      bot.position.copy(b0).add(new THREE.Vector3(0, -0.08 * e * e, 0));
+      fadeTop(k);
+      fadeBot(k);
+    }).then(() => this.fx.remove(g));
+  }
+
+  // 大開：把最稀有的那顆移到中間，跑完整演出（跟單抽一樣）
+  async openFromGrid(i) {
+    const c = this.grid?.[i];
+    if (!c) return;
+    this.grid[i] = null;
+    const g = c.g;
+    const to = this._inFront(1.2, -0.02);
+    const from = g.position.clone();
+    const s0 = g.scale.x;
+    // 其他還沒開的退到旁邊淡掉一點
+    await this.tween(0.55, (k) => {
+      const e = ease.inOut(k);
+      g.position.lerpVectors(from, to, e);
+      g.scale.setScalar(s0 + (1.15 - s0) * e);
+    });
+    c.home = to.clone();
+    c.q = g.quaternion.clone();
+    this.openCap = c;
+    await this.openCapsule();
+  }
+
+  clearGrid() {
+    for (const c of this.grid || []) if (c) this.fx.remove(c.g);
+    this.grid = [];
+  }
+
+  // 鏡頭衝擊：視角先縮再彈回（看起來像往前撞一下）
+  punch(deg) {
+    const f0 = 30;
+    this.tween(0.5, (k) => {
+      const e = k < 0.18 ? k / 0.18 : 1 - ease.out((k - 0.18) / 0.82);
+      this.camera.fov = f0 - deg * e;
+      this.camera.updateProjectionMatrix();
+    }).then(() => {
+      this.camera.fov = f0;
+      this.camera.updateProjectionMatrix();
+    });
   }
 
   // 收掉還留在畫面上的扭蛋（換機台、補貨時）
@@ -942,6 +1267,7 @@ export class Machine {
     if (this.exitCap) this.root.remove(this.exitCap.g);
     if (this.openCap) this.fx.remove(this.openCap.g);
     this.exitCap = this.openCap = null;
+    this.clearGrid?.();
     this.exitGlow = 0;
     this.exitLight.intensity = 0;
     this.setDim(0, 0.3);
@@ -962,9 +1288,8 @@ export class Machine {
     if (d.t >= d.dur) this.dimTween = null;
     const k = this.dim;
     const night = _c.set('#060913');
-    this.scene.background.copy(this.stageBg).lerp(night, k);
-    this.scene.fog.color.copy(this.scene.background);
-    this.floorMat.color.copy(this.stageFloor).lerp(night, k);
+    this.dimmer.material.uniforms.uA.value = k * 0.92;
+    if (this.stageFloor) this.floorMat.color.copy(this.stageFloor).lerp(night, k);
     this.ambient.intensity = AMB * (1 - 0.75 * k);
     this.key.intensity = KEY * (1 - 0.8 * k);
     this.decals.card.material.color.setScalar(1 - 0.7 * k);
@@ -978,6 +1303,7 @@ export class Machine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this._frameCamera();
+    this._fitBg();
   }
 
   // 畫面上下被 UI 蓋住的高度（px）：機器要放在剩下的空間裡
@@ -1190,6 +1516,7 @@ export class Machine {
       this._syncPile();
       this.tweens = this.tweens.filter((tw) => !tw.step(dt));
       this.show.step(dt);
+      this._foreshadowFrame();
       this._applyDim(dt);
 
       // 沒在操作 → 慢慢轉回斜前方

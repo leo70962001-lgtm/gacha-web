@@ -2,12 +2,15 @@
 // 連結格式：#g1z.<base64url>（g1 = 第 1 版；z = deflate-raw 壓縮，n = 沒壓縮）
 // 內容：4 bytes 的 JSON 長度 + JSON（UTF-8）+ 各張圖片的原始位元組（JSON 裡記長度與格式）
 // 只用英數字和 . _ - ：claude.ai 的 artifact 連結只會把這類字元的 #錨點 傳進頁面
+import { mediaToLink, mediaFromLink } from './media.js';
+
 const te = new TextEncoder();
 const td = new TextDecoder();
 
 export const CURRENCIES = ['NT$', '¥', 'HK$', 'US$', '代幣'];
 export const THEME_KEYS = ['red', 'white', 'yellow', 'blue', 'mint', 'pink', 'black'];
 export const LIMITS = { items: 16, name: 24, title: 24, qty: 999, coins: 20 };
+export const BG_PRESETS = ['plain', 'shop', 'night', 'sakura', 'stars'];
 
 export async function encodeConfig(cfg) {
   const imgs = [];
@@ -17,15 +20,29 @@ export async function encodeConfig(cfg) {
     s: cfg.shop,
     t: cfg.theme,
     p: [cfg.price.coins, cfg.price.unit, cfg.price.cur],
+    // 每列：[名稱, 稀有度, 數量, 圖片長度, 圖片格式, 影音連結]（後面沒有就省略）
     i: cfg.items.map((it) => {
       const row = [it.name, it.rarity, it.qty];
       if (it.img) {
         imgs.push(it.img.bytes);
         row.push(it.img.bytes.length, it.img.mime === 'image/webp' ? 'w' : 'j');
       }
+      const media = mediaToLink(it.media); // 本機上傳的檔案不放進連結
+      if (media) {
+        if (row.length === 3) row.push(0, '');
+        row.push(media);
+      }
       return row;
     }),
   };
+  // 背景：預設場景、純色、或自己的圖（小圖，接在獎品圖片後面）
+  const bg = cfg.bg;
+  if (bg?.k === 'preset' && bg.id !== 'plain') json.b = ['p', bg.id];
+  else if (bg?.k === 'color') json.b = ['c', bg.c];
+  else if (bg?.k === 'img' && bg.img) {
+    imgs.push(bg.img.bytes);
+    json.b = ['i', bg.img.bytes.length, bg.img.mime === 'image/webp' ? 'w' : 'j'];
+  }
   const jb = te.encode(JSON.stringify(json));
   const size = 4 + jb.length + imgs.reduce((a, b) => a + b.length, 0);
   const buf = new Uint8Array(size);
@@ -60,7 +77,7 @@ export async function decodeConfig(token) {
   }
   let off = j.__off;
   const items = (Array.isArray(j.i) ? j.i : []).slice(0, LIMITS.items).map((r) => {
-    const [name, rarity, qty, len, fmt] = Array.isArray(r) ? r : [];
+    const [name, rarity, qty, len, fmt, media] = Array.isArray(r) ? r : [];
     let img = null;
     if (Number.isInteger(len) && len > 0 && off + len <= buf.length) {
       img = { bytes: buf.slice(off, off + len), mime: fmt === 'w' ? 'image/webp' : 'image/jpeg' };
@@ -71,9 +88,18 @@ export async function decodeConfig(token) {
       rarity: clampInt(rarity, 0, 3, 0),
       qty: clampInt(qty, 1, LIMITS.qty, 1),
       img,
+      media: mediaFromLink(media),
     };
   });
   if (!items.length) throw new Error('e.empty');
+  let bg = { k: 'preset', id: 'plain' };
+  const b = Array.isArray(j.b) ? j.b : [];
+  if (b[0] === 'p' && BG_PRESETS.includes(b[1])) bg = { k: 'preset', id: b[1] };
+  else if (b[0] === 'c' && /^#[0-9a-f]{6}$/i.test(b[1])) bg = { k: 'color', c: b[1] };
+  else if (b[0] === 'i' && Number.isInteger(b[1]) && b[1] > 0 && b[1] < 60000 && off + b[1] <= buf.length) {
+    bg = { k: 'img', img: { bytes: buf.slice(off, off + b[1]), mime: b[2] === 'w' ? 'image/webp' : 'image/jpeg' } };
+    off += b[1];
+  }
   const p = Array.isArray(j.p) ? j.p : [];
   return {
     name: str(j.n, LIMITS.title) || 'Gacha',
@@ -85,6 +111,7 @@ export async function decodeConfig(token) {
       cur: CURRENCIES.includes(p[2]) ? p[2] : 'NT$',
     },
     items,
+    bg,
   };
 }
 

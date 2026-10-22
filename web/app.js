@@ -1,9 +1,10 @@
 // Clatter 轉蛋鋪：開店設定 → 產生連結 → 玩家投幣、轉把手、開扭蛋
 import { Machine, THEMES } from './machine.js';
 import { unlock, setMuted, sfx } from './sfx.js';
-import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS } from './codec.js';
+import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS } from './codec.js';
 import { RARITY, placeholderThumb, priceText, fontsReady } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
+import { parseMediaUrl, mediaFromLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -26,6 +27,7 @@ const SAMPLE = () => {
     name: S.name,
     shop: S.shop,
     theme: 'red',
+    bg: { k: 'preset', id: 'shop' },
     price: { ...S.price },
     items: S.items.map((name, i) => ({ name, rarity: shape[i][0], qty: shape[i][1], img: null })),
   };
@@ -84,6 +86,8 @@ function thumbOf(cfg, i) {
     th = { url: c.toDataURL(), bmp: c };
     placeholderCache.set(key, th);
   }
+  // 沒有照片但有 YouTube：畫面上用 YouTube 的縮圖（3D 台紙還是用名字字卡）
+  if (it.media?.k === 'yt') return { url: ytThumb(it.media), bmp: th.bmp };
   return th;
 }
 const placeholderCache = new Map();
@@ -111,14 +115,32 @@ function loadDraft() {
     rarity: Math.min(3, Math.max(0, it.rarity | 0)),
     qty: Math.min(LIMITS.qty, Math.max(1, it.qty | 0)),
     img: it.img ? { bytes: Uint8Array.from(atob(it.img.b64), (ch) => ch.charCodeAt(0)), mime: it.img.mime } : null,
+    media: draftMedia(it.media),
   }));
   if (!THEME_KEYS.includes(d.theme)) d.theme = 'red';
+  d.bg = draftBg(d.bg);
   if (!d.price || !CURRENCIES.includes(d.price.cur)) d.price = { coins: 5, unit: 10, cur: 'NT$' };
   return d;
 }
+function draftBg(b) {
+  if (b?.k === 'preset' && BG_PRESETS.includes(b.id)) return { k: 'preset', id: b.id };
+  if (b?.k === 'color' && /^#[0-9a-f]{6}$/i.test(b.c)) return { k: 'color', c: b.c };
+  if (b?.k === 'img' && b.img?.b64) return { k: 'img', img: { bytes: Uint8Array.from(atob(b.img.b64), (ch) => ch.charCodeAt(0)), mime: b.img.mime } };
+  return { k: 'preset', id: 'plain' };
+}
+
+function draftMedia(m) {
+  if (!m) return null;
+  if (m.k === 'file')
+    return { k: 'file', kind: m.kind === 'video' ? 'video' : 'audio', id: String(m.id).slice(0, 40), name: String(m.name || '').slice(0, 60), mime: String(m.mime || ''), size: m.size | 0 };
+  return mediaFromLink([m.k, m.u]);
+}
+
 function saveDraft() {
+  const bg = draft.bg?.k === 'img' ? { k: 'img', img: { b64: btoa(String.fromCharCode(...draft.bg.img.bytes)), mime: draft.bg.img.mime } } : draft.bg;
   store.set('clatter.draft', {
     ...draft,
+    bg,
     items: draft.items.map((it) => ({
       ...it,
       img: it.img ? { b64: btoa(String.fromCharCode(...it.img.bytes)), mime: it.img.mime } : null,
@@ -174,7 +196,27 @@ function renderItems() {
     odds.className = 'odds';
     odds.textContent = t('odds', { p: pct(it.qty / total) });
     meta.append(sel, qw, odds);
-    li.append(th, name, del, meta);
+    const mrow = document.createElement('div');
+    mrow.className = 'mrow';
+    const mb = document.createElement('button');
+    mb.type = 'button';
+    if (it.media) {
+      mb.className = 'media-chip';
+      const lab = document.createElement('span');
+      lab.textContent = mediaLabel(it.media);
+      mb.append(lab);
+      if (it.media.k === 'file') {
+        const loc = document.createElement('span');
+        loc.className = 'local';
+        loc.textContent = '· ' + t('media.local');
+        mb.append(loc);
+      }
+    } else {
+      mb.className = 'media-btn';
+      mb.textContent = t('media.add');
+    }
+    mrow.append(mb);
+    li.append(th, name, del, meta, mrow);
     ul.append(li);
   });
   $('items-sum').textContent = t('itemsSum', { n: draft.items.length, q: total });
@@ -201,7 +243,133 @@ function renderForm() {
   $('m-name').value = draft.name;
   $('m-shop').value = draft.shop || '';
   for (const b of $('swatches').children) b.setAttribute('aria-checked', String(b.dataset.k === draft.theme));
+  renderBgs();
 }
+
+// ---------- 背景（壁紙） ----------
+const asset = (p) => new URL('./assets/' + p, import.meta.url).href;
+function renderBgs() {
+  const box = $('bgs');
+  if (!box.childElementCount) {
+    const tile = (k, cls) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'bg-tile ' + cls;
+      b.dataset.k = k;
+      b.setAttribute('role', 'radio');
+      b.append(document.createElement('span'));
+      box.append(b);
+      return b;
+    };
+    for (const id of BG_PRESETS) {
+      const b = tile('preset:' + id, id === 'plain' ? 'plain' : 'preset');
+      if (id !== 'plain') b.style.backgroundImage = `url("${asset('tex/bg_' + id + '.webp')}")`;
+      b.onclick = () => setBg({ k: 'preset', id });
+    }
+    const cb = tile('color', 'color');
+    const ci = document.createElement('input');
+    ci.type = 'color';
+    ci.value = '#ffd6e7';
+    ci.addEventListener('input', () => setBg({ k: 'color', c: ci.value }));
+    ci.addEventListener('click', () => setBg({ k: 'color', c: ci.value }));
+    cb.append(ci);
+    const ub = tile('img', 'upload');
+    ub.onclick = () => {
+      $('file-bg').value = '';
+      $('file-bg').click();
+    };
+    $('file-bg').addEventListener('change', async () => {
+      const f = $('file-bg').files[0];
+      if (!f) return;
+      try {
+        setBg({ k: 'img', img: await shrinkBg(f) });
+      } catch (e) {
+        toast(t('t.badImage'));
+      }
+    });
+  }
+  const bg = draft.bg || { k: 'preset', id: 'plain' };
+  const cur = bg.k === 'preset' ? 'preset:' + bg.id : bg.k;
+  for (const b of box.children) {
+    const k = b.dataset.k;
+    b.setAttribute('aria-checked', String(k === cur));
+    const label = k.startsWith('preset:') ? t('bg.' + k.slice(7)) : k === 'color' ? t('bg.color') : bg.k === 'img' ? t('bg.custom') : t('bg.upload');
+    b.querySelector('span').textContent = label;
+    b.setAttribute('aria-label', label);
+    if (k === 'color' && bg.k === 'color') {
+      b.style.backgroundImage = 'none';
+      b.style.backgroundColor = bg.c;
+      b.querySelector('input').value = bg.c;
+    }
+    if (k === 'img') {
+      b.classList.toggle('has', bg.k === 'img');
+      b.style.backgroundImage = bg.k === 'img' ? `url("${URL.createObjectURL(new Blob([bg.img.bytes], { type: bg.img.mime }))}")` : 'none';
+    }
+  }
+}
+
+function setBg(bg) {
+  draft.bg = bg;
+  renderBgs();
+  draftChanged();
+}
+
+// 自己的背景圖：長邊 200 px、webp（放進連結）；畫面上會再柔焦放大
+async function shrinkBg(file) {
+  const bmp = await createImageBitmap(file);
+  const s = Math.min(1, 200 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * s));
+  c.height = Math.max(1, Math.round(bmp.height * s));
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.6));
+  if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.65));
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
+}
+
+// 小圖 → 先縮到 48 px 再放大＝柔焦（每個瀏覽器都能用，不靠 ctx.filter）
+function softCanvas(src) {
+  const tiny = document.createElement('canvas');
+  tiny.width = 48;
+  tiny.height = Math.max(1, Math.round((48 * src.height) / src.width));
+  const tg = tiny.getContext('2d');
+  tg.imageSmoothingQuality = 'high';
+  tg.drawImage(src, 0, 0, tiny.width, tiny.height);
+  const big = document.createElement('canvas');
+  big.width = 960;
+  big.height = Math.round((960 * tiny.height) / tiny.width);
+  const bgc = big.getContext('2d');
+  bgc.imageSmoothingEnabled = true;
+  bgc.imageSmoothingQuality = 'high';
+  bgc.drawImage(tiny, 0, 0, big.width, big.height);
+  return big;
+}
+
+let bgKey = '';
+async function applyBg(bg) {
+  bg = bg || { k: 'preset', id: 'plain' };
+  const key = bg.k === 'preset' ? 'p:' + bg.id : bg.k === 'color' ? 'c:' + bg.c : 'i:' + bg.img.bytes.length + ':' + bg.img.bytes[20];
+  if (key === bgKey) return;
+  bgKey = key;
+  let image = null;
+  try {
+    if (bg.k === 'preset' && bg.id !== 'plain') {
+      image = new Image();
+      // 用 onload，不用 decode()：頁面在背景時 decode() 可能一直不回來
+      await new Promise((res, rej) => {
+        image.onload = res;
+        image.onerror = rej;
+        image.src = asset('tex/bg_' + bg.id + '.webp');
+      });
+    } else if (bg.k === 'img') {
+      image = softCanvas(await createImageBitmap(new Blob([bg.img.bytes], { type: bg.img.mime })));
+    }
+  } catch (e) {
+    image = null;
+  }
+  if (key === bgKey) machine?.setBackground(bg, image);
+}
+
 
 function draftChanged(redrawItems = false) {
   if (redrawItems) renderItems();
@@ -268,11 +436,14 @@ function bindForm() {
       fileFor = +li.dataset.i;
       $('file').value = '';
       $('file').click();
+    } else if (e.target.closest('.media-btn, .media-chip')) {
+      openMediaSheet(+li.dataset.i);
     }
   });
   $('file').addEventListener('change', async () => {
     const f = $('file').files[0];
     if (!f || fileFor < 0) return;
+    if (/^(audio|video)\//.test(f.type)) return attachFile(fileFor, f);
     try {
       draft.items[fileFor].img = await shrinkImage(f);
       draftChanged(true);
@@ -280,6 +451,7 @@ function bindForm() {
       toast(t('t.badImage'));
     }
   });
+  bindMediaSheet();
   $('add-item').onclick = () => {
     if (draft.items.length >= LIMITS.items) return;
     draft.items.push({ name: t('newPrize', { n: draft.items.length + 1 }), rarity: 0, qty: 5, img: null });
@@ -323,6 +495,8 @@ function bindForm() {
     meta.textContent = t(imgs ? 'linkMetaPhotos' : 'linkMeta', { n: url.length.toLocaleString(), m: imgs });
     meta.classList.toggle('warn', url.length > 8000);
     if (url.length > 8000) meta.textContent += t('linkWarn');
+    const locals = draft.items.filter((it) => it.media?.k === 'file').length;
+    if (locals) meta.textContent += t('media.localInLink', { n: locals });
     $('link').scrollTop = 0;
   };
   $('copy').onclick = async () => {
@@ -355,6 +529,7 @@ function showMachine(cfg, capsules, total = capsules) {
   shown = cfg;
   if (!machine?.loaded) return;
   machine.setTheme(cfg.theme);
+  applyBg(cfg.bg);
   machine.setPile(capsules, total);
   scheduleDecor();
 }
@@ -384,6 +559,9 @@ const STEPS = {
   open: { no: 4, title: 's.open', text: 's.openText', btn: 's.openBtn' },
   result: { no: 4, title: 's.result', text: null, btn: null },
   soldout: { no: 1, title: 's.soldout', text: 's.soldoutText', btn: 'myCaps' },
+  multi: { no: 2, title: 'ten.busy', text: 'ten.busyText', btn: null },
+  multiOpen: { no: 4, title: 'ten.open', text: 'ten.openText', btn: 'ten.openBtn' },
+  multiBusy: { no: 4, title: 's.result', text: null, btn: null },
 };
 
 function playKey() {
@@ -458,6 +636,11 @@ function setPhase(ph) {
   b.hidden = !s.btn;
   if (s.btn) b.textContent = t(s.btn);
   b.disabled = ph === 'coin' && play.coins <= 0;
+  // 10 連抽：投幣階段、剩 2 顆以上才出現（剩不到 10 顆就抽剩下的）
+  const ten = $('h-ten');
+  const n = Math.min(10, left());
+  ten.hidden = !(ph === 'coin' && n >= 2);
+  ten.textContent = t('ten.btn', { n, c: n * need });
   machine?.setSlotHint(ph === 'coin');
   machine?.setHandleEnabled(ph === 'turn');
   $('p-left').textContent = t('left', { l: left(), t: play.cfg.items.reduce((a, b) => a + b.qty, 0) });
@@ -497,8 +680,19 @@ async function insertCoin(fromX, fromY) {
   play.inserting--;
   play.inserted++;
   savePlay();
-  if (play.inserted >= play.cfg.price.coins) setPhase('turn');
-  else setPhase('coin');
+  if (play.inserted >= play.cfg.price.coins) {
+    play.pending = draw();
+    machine.setForeshadow(foreshadowLevel([play.cfg.items[play.pending].rarity]));
+    setPhase('turn');
+  } else setPhase('coin');
+}
+
+// 前兆：SSR 75%、SR 50% 會在轉把手時發光（不是每次都有，保留驚喜）
+function foreshadowLevel(rarities) {
+  const top = Math.max(...rarities);
+  if (top === 3 && Math.random() < 0.75) return 3;
+  if (top >= 2 && Math.random() < 0.5) return 2;
+  return 0;
 }
 
 // 抽獎：照「剩下的顆數」抽（像真的機器，抽一顆少一顆）
@@ -517,13 +711,14 @@ function draw() {
 async function onTurned() {
   setPhase('busy');
   play.inserted = 0;
-  const idx = draw();
+  const idx = play.pending ?? draw();
   play.pending = idx;
   play.remaining[idx]--;
   play.pulls++;
   savePlay();
   renderWallet();
   await machine.dispense(play.cfg.items[idx].rarity);
+  machine.setForeshadow(0);
   setPhase('take');
 }
 
@@ -543,24 +738,35 @@ async function openIt() {
   sfx.reveal(it.rarity);
   const first = !play.got[idx];
   play.got[idx] = (play.got[idx] || 0) + 1;
+  play.pending = null;
   savePlay();
   showResult(idx, first);
   setPhase('result');
 }
 
-function showResult(idx, first) {
+let resultPlayer = null;
+let resultView = false;
+// view＝從收藏冊打開（只看、重播），不是剛轉到
+function showResult(idx, first, view = false) {
   const it = play.cfg.items[idx];
   const r = RARITY[it.rarity];
+  resultView = view;
+  resultPlayer?.stop();
+  const kind = mediaKind(it.media);
+  $('r-prize').hidden = kind === 'video'; // 影片直接取代獎品圖
+  resultPlayer = mountPlayer($('r-media'), it.media, { poster: thumbOf(play.cfg, idx).url, delay: view ? 0 : 1100 });
+  $('r-again').hidden = $('r-col').hidden = view;
+  $('r-close').hidden = !view;
   const card = $('result-card');
   card.className = `sheet-card result r${it.rarity}`;
   card.style.setProperty('--rc', `var(--r-${r.key.toLowerCase()})`);
   $('r-rank').textContent = `${r.key} ${r.label}`;
   $('r-img').src = thumbOf(play.cfg, idx).url;
   $('r-name').textContent = it.name;
-  $('r-new').hidden = !first;
+  $('r-new').hidden = view || !first;
   const total = play.cfg.items.reduce((a, b) => a + b.qty, 0);
   $('r-sub').textContent = t('resultSub', { n: play.pulls, p: pct(it.qty / total), c: play.got[idx] });
-  openSheet('sheet-result', $('r-again'));
+  openSheet('sheet-result', view ? $('r-close') : $('r-again'));
 }
 
 // 爆開那一刻：閃光＋稀有度大字（R 小、SR 中、SSR 一個字一個字跳出來）
@@ -592,8 +798,23 @@ function onBurst(r) {
   setTimeout(() => el.remove(), [0, 1100, 1700, 2700][r]);
 }
 
+function closeResult() {
+  resultPlayer?.stop();
+  resultPlayer = null;
+  if (resultView) {
+    closeSheet('sheet-result');
+    if (resultView === 'multi') openSheet('sheet-multi', $('x-again'));
+    else openCollection();
+    return;
+  }
+  afterResult();
+}
+
 function afterResult() {
+  resultPlayer?.stop();
+  resultPlayer = null;
   machine.setDim(0, 0.8);
+  machine.show.endPersist();
   closeSheet('sheet-result');
   if (left() === 0) setPhase('soldout');
   else setPhase('coin');
@@ -607,7 +828,139 @@ function hintAction() {
   else if (ph === 'take') take();
   else if (ph === 'open') openIt();
   else if (ph === 'soldout') openCollection();
+  else if (ph === 'multiOpen') openAll();
 }
+
+// ---------- 10 連抽 ----------
+const wait = (sec) => machine.after(sec);
+
+async function tenPull() {
+  if (!play || play.phase !== 'coin' || play.inserting) return;
+  const n = Math.min(10, left());
+  if (n < 2) return;
+  const need = play.cfg.price.coins;
+  const cost = n * need - play.inserted; // 已經投進去的也算
+  if (play.coins < cost) {
+    const add = cost - play.coins;
+    play.coins += add; // 體驗版：不夠就自動換試玩硬幣
+    toast(t('ten.topup', { n: add }));
+  }
+  play.coins -= cost;
+  play.inserted = 0;
+  setPhase('multi');
+  renderWallet();
+  // 硬幣一口氣丟進去（畫三枚意思一下）
+  const r = $('coin-chip').getBoundingClientRect();
+  for (let i = 0; i < 3; i++) {
+    machine.insertCoin(r.left + r.width / 2, r.top + r.height / 2);
+    await wait(0.12);
+  }
+  await wait(0.5);
+  // 先抽好 n 顆（抽一顆少一顆）
+  const picks = [];
+  for (let i = 0; i < n; i++) {
+    const idx = draw();
+    play.remaining[idx]--;
+    play.pulls++;
+    picks.push(idx);
+  }
+  savePlay();
+  play.multi = { picks };
+  machine.setForeshadow(foreshadowLevel(picks.map((i) => play.cfg.items[i].rarity)));
+  let last = null;
+  for (let i = 0; i < n; i++) {
+    await machine.quickTurn();
+    last = machine.dispenseToGrid(i, n, play.cfg.items[picks[i]].rarity);
+    $('p-left').textContent = t('left', { l: left() + n - 1 - i, t: play.cfg.items.reduce((a, b) => a + b.qty, 0) });
+  }
+  await last;
+  machine.setForeshadow(0);
+  setPhase('multiOpen');
+}
+
+// 全部打開：普通的依序啵開，最稀有的那顆（同等級取最後一顆）最後跑完整演出
+async function openAll() {
+  if (play.phase !== 'multiOpen') return;
+  setPhase('multiBusy');
+  const picks = play.multi.picks;
+  const rar = (i) => play.cfg.items[picks[i]].rarity;
+  let best = 0;
+  picks.forEach((_, i) => {
+    if (rar(i) >= rar(best)) best = i;
+  });
+  for (let i = 0; i < picks.length; i++) {
+    if (i === best) continue;
+    machine.popInGrid(i);
+    await wait(rar(i) >= 1 ? 0.28 : 0.16);
+  }
+  await wait(0.35);
+  await machine.openFromGrid(best);
+  sfx.reveal(rar(best));
+  // 收藏：照順序記，第一次拿到的標 NEW
+  const isNew = picks.map((idx) => {
+    const first = !play.got[idx];
+    play.got[idx] = (play.got[idx] || 0) + 1;
+    return first;
+  });
+  savePlay();
+  showMulti(picks, isNew, best);
+  setPhase('result');
+}
+
+function showMulti(picks, isNew, best) {
+  const grid = $('x-grid');
+  grid.textContent = '';
+  picks.forEach((idx, i) => {
+    const it = play.cfg.items[idx];
+    const R = RARITY[it.rarity];
+    const card = document.createElement(it.media ? 'button' : 'div');
+    card.className = `mcard r${it.rarity}`;
+    card.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
+    card.style.animationDelay = `${i * 0.06 + (i === best ? 0.3 : 0)}s`;
+    const img = document.createElement('img');
+    img.src = thumbOf(play.cfg, idx).url;
+    img.alt = '';
+    const nm = document.createElement('div');
+    nm.className = 'nm';
+    nm.textContent = it.name + (it.media ? (mediaKind(it.media) === 'video' ? ' ▶' : ' ♪') : '');
+    const rk = document.createElement('span');
+    rk.className = 'rk';
+    rk.textContent = R.key;
+    card.append(img, nm, rk);
+    if (isNew[i]) {
+      const nw = document.createElement('span');
+      nw.className = 'nw';
+      nw.textContent = 'NEW';
+      card.append(nw);
+    }
+    if (it.media) {
+      card.type = 'button';
+      card.onclick = () => {
+        $('sheet-multi').hidden = true;
+        showResult(idx, false, 'multi');
+      };
+    }
+    grid.append(card);
+  });
+  const n = picks.length;
+  const bestR = RARITY[play.cfg.items[picks[best]].rarity];
+  $('x-title').textContent = t('ten.title', { n });
+  $('x-meta').textContent = t('ten.meta', { k: isNew.filter(Boolean).length, r: `${bestR.key} ${bestR.label}` });
+  const next = Math.min(10, left());
+  $('x-again').hidden = next < 2;
+  $('x-again').textContent = t('ten.again', { n: next });
+  openSheet('sheet-multi', next >= 2 ? $('x-again') : $('x-one'));
+}
+
+function closeMulti() {
+  machine.setDim(0, 0.8);
+  machine.show.endPersist();
+  machine.clearGrid();
+  closeSheet('sheet-multi');
+  if (left() === 0) setPhase('soldout');
+  else setPhase('coin');
+}
+
 
 function nudge() {
   const h = $('hint');
@@ -663,6 +1016,79 @@ function bindCoinDrag() {
   });
 }
 
+// ---------- 影音（開店表單） ----------
+let mediaFor = -1;
+let mediaPreview = null;
+
+async function attachFile(i, f) {
+  if (f.size > MAX_FILE) return toast(t('media.tooBig'));
+  const it = draft.items[i];
+  await removeLocal(it.media);
+  it.media = await saveLocal(f);
+  // 影片：抓一格畫面當縮圖（縮圖會放進連結）
+  if (it.media.kind === 'video' && !it.img) {
+    const c = await videoFrame(await localUrl(it.media));
+    if (c) it.img = await shrinkImage(c).catch(() => null);
+  }
+  draftChanged(true);
+  toast(t('media.added'));
+  if (!$('sheet-media').hidden) openMediaSheet(i);
+}
+
+function openMediaSheet(i) {
+  mediaFor = i;
+  const it = draft.items[i];
+  $('m-item').textContent = it.name;
+  $('m-url').value = it.media && it.media.k !== 'file' ? it.media.u : '';
+  $('m-remove').hidden = !it.media;
+  mediaPreview?.stop();
+  mediaPreview = mountPlayer($('m-preview'), it.media, { poster: thumbOf(draft, i).url });
+  if ($('sheet-media').hidden) openSheet('sheet-media', $('m-url'));
+}
+
+function bindMediaSheet() {
+  $('m-add').onclick = async () => {
+    const m = parseMediaUrl($('m-url').value);
+    if (!m) return toast(t('media.bad'));
+    const it = draft.items[mediaFor];
+    await removeLocal(it.media);
+    it.media = m;
+    draftChanged(true);
+    openMediaSheet(mediaFor);
+    toast(t('media.added'));
+    // YouTube：沒有照片的話，試著把 YouTube 縮圖縮小放進連結
+    if (m.k === 'yt' && !it.img) {
+      try {
+        const r = await fetch(ytThumb(m));
+        if (r.ok) {
+          it.img = await shrinkImage(await r.blob());
+          draftChanged(true);
+        }
+      } catch (e) {
+        /* 拿不到就用 YouTube 網址上的縮圖顯示 */
+      }
+    }
+  };
+  $('m-url').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('m-add').click();
+  });
+  $('m-upload').onclick = () => {
+    $('file-media').value = '';
+    $('file-media').click();
+  };
+  $('file-media').addEventListener('change', () => {
+    const f = $('file-media').files[0];
+    if (f && mediaFor >= 0) attachFile(mediaFor, f);
+  });
+  $('m-remove').onclick = async () => {
+    const it = draft.items[mediaFor];
+    await removeLocal(it.media);
+    it.media = null;
+    draftChanged(true);
+    closeSheet('sheet-media');
+  };
+}
+
 // ---------- 對話框 ----------
 let lastFocus = null;
 function openSheet(id, focusEl) {
@@ -671,6 +1097,7 @@ function openSheet(id, focusEl) {
   (focusEl || $(id).querySelector('button'))?.focus();
 }
 function closeSheet(id) {
+  if (id === 'sheet-media') mediaPreview?.stop();
   $(id).hidden = true;
   lastFocus?.focus?.();
 }
@@ -690,6 +1117,12 @@ function openLineup() {
     const nm = document.createElement('div');
     nm.className = 'nm';
     nm.textContent = it.name;
+    if (it.media) {
+      const mb = document.createElement('span');
+      mb.className = 'mbadge';
+      mb.textContent = mediaKind(it.media) === 'video' ? '▶' : '♪';
+      nm.append(mb);
+    }
     const rk = document.createElement('span');
     rk.className = 'rk';
     rk.style.setProperty('--rc', `var(--r-${RARITY[it.rarity].key.toLowerCase()})`);
@@ -717,8 +1150,15 @@ function openCollection() {
   cfg.items.forEach((it, i) => {
     const n = play.got[i] || 0;
     if (n) kinds++;
-    const cell = document.createElement('div');
-    cell.className = 'cell' + (n ? '' : ' miss');
+    const cell = document.createElement(n ? 'button' : 'div');
+    cell.className = 'cell' + (n ? '' : ' miss') + (n && it.media ? ' can-play' : '');
+    if (n) {
+      cell.type = 'button';
+      cell.onclick = () => {
+        closeSheet('sheet-collection');
+        showResult(i, false, true);
+      };
+    }
     const img = document.createElement('img');
     img.src = thumbOf(cfg, i).url;
     img.alt = n ? it.name : t('notYet');
@@ -808,7 +1248,7 @@ async function boot() {
   $('tab-play').onclick = () => {
     unlock();
     const h = location.hash.slice(1);
-    enterPlay(h.startsWith('g1') ? h : linkToken || 'draft');
+    enterPlay(h.startsWith('g1') ? h : 'draft');
   };
   $('btn-sound').onclick = () => {
     const on = $('btn-sound').getAttribute('aria-pressed') !== 'true';
@@ -817,10 +1257,21 @@ async function boot() {
     if (on) unlock();
   };
   $('h-btn').onclick = hintAction;
+  $('h-ten').onclick = () => {
+    unlock();
+    tenPull();
+  };
+  $('x-again').onclick = () => {
+    closeMulti();
+    tenPull();
+  };
+  $('x-one').onclick = closeMulti;
   $('btn-topup').onclick = () => {
     play.coins += 5;
     savePlay();
-    setPhase(play.phase);
+    // 扭蛋飛行中、開蛋中這類過場狀態沒有提示卡內容 → 只更新錢包
+    if (STEPS[play.phase]) setPhase(play.phase);
+    else renderWallet();
     toast(t('t.topup'));
   };
   $('btn-lineup').onclick = openLineup;
@@ -828,6 +1279,7 @@ async function boot() {
   $('btn-collection').onclick = openCollection;
   $('p-col').onclick = openCollection;
   $('r-again').onclick = afterResult;
+  $('r-close').onclick = closeResult;
   $('r-col').onclick = () => {
     afterResult();
     openCollection();
@@ -841,13 +1293,13 @@ async function boot() {
   document.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => closeSheet(b.closest('.sheet').id)));
   document.querySelectorAll('.sheet').forEach((s) =>
     s.addEventListener('click', (e) => {
-      if (e.target === s) s.id === 'sheet-result' ? afterResult() : closeSheet(s.id);
+      if (e.target === s) s.id === 'sheet-result' ? closeResult() : s.id === 'sheet-multi' ? closeMulti() : closeSheet(s.id);
     }),
   );
   addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     const open = [...document.querySelectorAll('.sheet')].find((s) => !s.hidden);
-    if (open) open.id === 'sheet-result' ? afterResult() : closeSheet(open.id);
+    if (open) open.id === 'sheet-result' ? closeResult() : open.id === 'sheet-multi' ? closeMulti() : closeSheet(open.id);
   });
   addEventListener('pointerdown', () => unlock(), { once: true });
 
@@ -866,7 +1318,7 @@ async function boot() {
     onOpenCapsule: () => openIt(),
     onBurst: (r) => onBurst(r),
   });
-  window.__gacha = { machine, get play() { return play; }, get draft() { return draft; } }; // 除錯用
+  window.__gacha = { machine, showResult, get play() { return play; }, get draft() { return draft; } }; // 除錯用
   const ro = new ResizeObserver(() => updateInsets());
   ro.observe($('stage'));
   ro.observe($('hud').querySelector('.bottom'));

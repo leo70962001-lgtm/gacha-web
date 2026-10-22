@@ -194,6 +194,7 @@ export class Spectacle {
     this._placeLight(home);
     if (rarity === 3) sfx.heartbeat(Math.max(1, Math.round(dur / 0.75)));
     sfx.charge(dur, rarity);
+    sfx.drumroll(dur);
     let upgraded = !c.fake;
     let moteT = 0;
     return m.tween(dur, (k) => {
@@ -213,6 +214,8 @@ export class Spectacle {
       if (!upgraded && k > 0.55) {
         upgraded = true;
         g.userData.bot.material = m.capRare[3];
+        g.userData.top.material = m.capRare[3];
+        this.addGlints(g, 3);
         this.seam.material.color.set(BEAM[3]);
         this.capLight.color.set(BEAM[3]);
         sfx.upgrade();
@@ -259,9 +262,12 @@ export class Spectacle {
       const sc = [0.3, 0.42, 0.56, 0.72][rarity] * (i ? 0.8 : 1); // 鏡頭前 1.2 m，太大會整片白
       const dur = [1.2, 1.5, 2.6, 3.4][rarity];
       m.tween(dur, (k) => {
-        u.uA.value = (k < 0.1 ? k / 0.1 : 1 - (k - 0.1) / 0.9) * [0.3, 0.5, 0.62, 0.75][rarity] * (i ? 0.7 : 1);
+        const fade = i === 0 && this.persisting ? Math.max(0.5, 1 - (k - 0.1) / 0.9) : 1 - (k - 0.1) / 0.9;
+        u.uA.value = (k < 0.1 ? k / 0.1 : fade) * [0.3, 0.5, 0.62, 0.75][rarity] * (i ? 0.7 : 1);
         r.scale.setScalar(sc * (0.5 + 0.7 * easeOut(Math.min(1, k * 2.2))));
-      }).then(() => (r.visible = false));
+      }).then(() => {
+        if (!(i === 0 && this.persisting)) r.visible = false;
+      });
     });
     // 衝擊波
     for (let i = 0; i < T.rings; i++) this._ring(at, i === 0 ? '#ffffff' : BEAM[rarity], i * 0.14, 0.75 + i * 0.12, [0, 0.55, 0.75, 1.0][rarity] + i * 0.15);
@@ -373,9 +379,100 @@ export class Spectacle {
     this.coinT = 0;
   }
 
+  // 前兆：窗裡往上飄的彩色光點
+  riseSpark(at) {
+    if (this.parts.length >= this.P) return;
+    const c = new THREE.Color().setHSL(Math.random(), 0.9, 0.7);
+    this.parts.push({ p: at.clone(), v: new THREE.Vector3(rnd(-0.05, 0.05), rnd(0.25, 0.45), rnd(-0.05, 0.05)), c, size: rnd(0.015, 0.03), life: 0, max: rnd(0.6, 1.0), drag: 0.5, grav: -0.1 });
+  }
+
+  // SSR：開獎後彩虹光芒留在結果卡後面慢慢轉，關掉卡片才收
+  persist(rarity, at) {
+    if (rarity < 3) return;
+    const r = this.rays[0];
+    const u = r.material.uniforms;
+    this.persisting = true;
+    r.position.copy(at);
+    r.visible = true;
+    u.uRainbow.value = 1;
+    u.uN.value = 20;
+    const target = 0.5;
+    this.m.tween(0.8, (k) => {
+      if (!this.persisting) return;
+      u.uA.value = Math.max(u.uA.value, target * k);
+      r.scale.setScalar(0.62);
+    });
+  }
+
+  endPersist() {
+    if (!this.persisting) return;
+    this.persisting = false;
+    const r = this.rays[0];
+    const u = r.material.uniforms;
+    const a0 = u.uA.value;
+    this.m.tween(0.5, (k) => (u.uA.value = a0 * (1 - k))).then(() => (r.visible = false));
+  }
+
+  // 金蛋表面一閃一閃的亮點（跟著扭蛋動）
+  addGlints(group, n) {
+    this.glints = this.glints || [];
+    for (let i = 0; i < n; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.starTex, color: i % 2 ? '#fff6c8' : '#ffffff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      const dir = new THREE.Vector3(rnd(-1, 1), rnd(-0.6, 1), rnd(0.2, 1)).normalize();
+      s.position.copy(dir.multiplyScalar(0.068));
+      s.renderOrder = 6;
+      s.scale.setScalar(0.001);
+      group.add(s);
+      this.glints.push({ s, group, ph: rnd(0, 6), sp: rnd(2.5, 4.5) });
+    }
+  }
+
+  // ---------- 10 連抽用 ----------
+  // 格子裡的銀蛋／金蛋後面一圈光（預告）
+  gridGlow(c, shown) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: BEAM[shown], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    s.renderOrder = 1;
+    s.scale.setScalar(0.001);
+    c.g.add(s);
+    c.glow = s;
+    this.glows = this.glows || [];
+    this.glows.push({ s, c, ph: Math.random() * 6 });
+  }
+
+  // 小開：彩色光點炸開＋一圈光（N 白、R 藍）
+  miniBurst(rarity, at) {
+    const col = BEAM[rarity];
+    this._coreFlash(at, col, 0.12 + rarity * 0.05, 0.3);
+    this._ring(at, col, 0, 0.4, 0.12 + rarity * 0.05);
+    const count = this.m.reduced ? 10 : 22 + rarity * 10;
+    const base = new THREE.Color(PALETTES[rarity][0]);
+    for (let k = 0; k < count && this.parts.length < this.P; k++) {
+      const dir = new THREE.Vector3(rnd(-1, 1), rnd(-0.6, 1), rnd(-1, 1)).normalize();
+      const c = k % 3 ? base.clone().offsetHSL(rnd(-0.08, 0.08), 0, rnd(0, 0.2)) : new THREE.Color('#ffffff');
+      this.parts.push({ p: at.clone(), v: dir.multiplyScalar(rnd(0.25, 0.5)), c, size: rnd(0.02, 0.035), life: 0, max: rnd(0.5, 0.8), drag: 2.4, grav: 0.4 });
+    }
+  }
+
   // ---------- 每一格 ----------
   step(dt) {
     this.time += dt;
+    if (this.glints?.length) {
+      this.glints = this.glints.filter((o) => {
+        if (!o.group.parent) return false;
+        o.ph += dt * o.sp;
+        const k = Math.max(0, Math.sin(o.ph)); // 一下亮、一下滅
+        o.s.scale.setScalar(0.004 + 0.05 * k * k * k);
+        return true;
+      });
+    }
+    if (this.glows?.length) {
+      this.glows = this.glows.filter((o) => {
+        if (!o.c.g.parent) return false;
+        o.ph += dt * 5;
+        o.s.scale.setScalar(0.32 + 0.06 * Math.sin(o.ph));
+        return true;
+      });
+    }
     const cam = this.m.camera;
     for (const r of this.rays) if (r.visible) {
       r.material.uniforms.uT.value = this.time;

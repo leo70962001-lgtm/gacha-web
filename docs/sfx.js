@@ -119,6 +119,29 @@ export const sfx = {
     noise(t, 0.12, 0.5, 'bandpass', 700, 3500, 1.5);
     tone('sine', 380, 1300, t, 0.12, 0.3);
   },
+  // 小鼓連打：越打越快、越打越大聲（集氣時）
+  drumroll(dur) {
+    if (!ready() || dur <= 0) return;
+    const t = now();
+    let at = 0;
+    let gap = 0.13;
+    while (at < dur) {
+      const k = at / dur;
+      noise(t + at, 0.05, 0.05 + 0.25 * k * k, 'bandpass', 1800 + 1200 * k, 1800 + 1200 * k, 1.2);
+      tone('triangle', 190, 150, t + at, 0.04, 0.03 + 0.06 * k);
+      gap = Math.max(0.035, gap * 0.94);
+      at += gap;
+    }
+    // 最後一下鈸
+    noise(t + dur, 1.2, 0.3, 'highpass', 5000);
+  },
+  // 定格的「叮——」
+  hitstop() {
+    if (!ready()) return;
+    const t = now();
+    tone('sine', 2093, 2093, t, 0.35, 0.18);
+    tone('sine', 3136, 3136, t, 0.3, 0.1);
+  },
   // 集氣：音高往上爬＋雜訊越來越亮（SSR 從更低開始、更長）
   charge(dur, rarity) {
     if (!ready() || dur <= 0) return;
@@ -198,6 +221,25 @@ export const sfx = {
       noise(end, 1.2, 0.06, 'highpass', 6000);
     }
     if (rarity === 3) {
+      // 合唱和弦：幾個微微走音的鋸齒波疊起來，慢慢進、慢慢收
+      const pad = [0, 4, 7, 11, 14].map((st) => C5 * 0.5 * Math.pow(2, st / 12));
+      for (const f of pad)
+        for (const det of [-6, 6]) {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          const lp = ctx.createBiquadFilter();
+          o.type = 'sawtooth';
+          o.frequency.value = f;
+          o.detune.value = det;
+          lp.type = 'lowpass';
+          lp.frequency.value = 1800;
+          g.gain.setValueAtTime(0.0001, end);
+          g.gain.exponentialRampToValueAtTime(0.025, end + 0.35);
+          g.gain.exponentialRampToValueAtTime(0.0001, end + 3.2);
+          o.connect(lp).connect(g).connect(master);
+          o.start(end);
+          o.stop(end + 3.3);
+        }
       for (let i = 0; i < 10; i++) {
         const f = 1800 + Math.random() * 2600;
         tone('sine', f, f, end + 0.1 + i * 0.09, 0.25, 0.05);
