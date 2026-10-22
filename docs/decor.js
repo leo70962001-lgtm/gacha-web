@@ -323,6 +323,64 @@ export function drawCard(cfg, thumbs, art) {
   return c;
 }
 
+// 10 連抽：格子裡開出來的獎品小卡（稀有度色框＋照片＋名字，NEW 角標）
+export function drawPrizeCard(item, thumb, isNew) {
+  const W = 192;
+  const H = 216;
+  const P = 142; // 照片邊長
+  const px = (W - P) / 2;
+  const py = 34;
+  const c = canvas(W, H);
+  const g = c.getContext('2d');
+  const rar = RARITY[item.rarity];
+  g.fillStyle = '#1c2340'; // toon 粗描邊
+  roundRect(g, 2, 2, W - 4, H - 4, 26);
+  g.fill();
+  const grd = g.createLinearGradient(0, 0, W, H);
+  grd.addColorStop(0, rar.glow);
+  grd.addColorStop(1, rar.color);
+  g.fillStyle = grd;
+  roundRect(g, 9, 9, W - 18, H - 18, 20);
+  g.fill();
+  g.fillStyle = '#ffffff';
+  roundRect(g, px - 5, py - 5, P + 10, P + 10, 13);
+  g.fill();
+  g.save();
+  roundRect(g, px, py, P, P, 9);
+  g.clip();
+  if (thumb) drawCover(g, thumb, px, py, P, P);
+  g.restore();
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineJoin = 'round';
+  g.font = `24px ${FONT_NUM}`;
+  g.lineWidth = 6;
+  g.strokeStyle = '#1c2340';
+  g.strokeText(rar.key, W / 2, 20);
+  g.fillStyle = '#ffffff';
+  g.fillText(rar.key, W / 2, 20);
+  fitText(g, item.name, W - 32, 22, bodyFont(), '900');
+  g.lineWidth = 5;
+  g.strokeText(item.name, W / 2, H - 24);
+  g.fillText(item.name, W / 2, H - 24);
+  if (isNew) {
+    g.save();
+    g.translate(W - 30, 30);
+    g.rotate(0.3);
+    g.fillStyle = '#ff3d5a';
+    g.strokeStyle = '#1c2340';
+    g.lineWidth = 4;
+    roundRect(g, -30, -14, 60, 28, 14);
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#ffffff';
+    g.font = `17px ${FONT_NUM}`;
+    g.fillText('NEW', 0, 1);
+    g.restore();
+  }
+  return c;
+}
+
 // 機身側面（下段 0.70 × 0.60 m，上段 0.26 × 0.52 m）：直接用 Gemini 插畫，四周留圓角
 export function drawSide(art, w, h, theme) {
   const c = canvas(w, h);

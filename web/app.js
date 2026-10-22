@@ -2,7 +2,7 @@
 import { Machine, THEMES } from './machine.js';
 import { unlock, setMuted, sfx } from './sfx.js';
 import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS } from './codec.js';
-import { RARITY, placeholderThumb, priceText, fontsReady } from './decor.js';
+import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
 
@@ -587,6 +587,20 @@ async function enterPlay(token) {
     play.got = saved.got || {};
     play.coins = Number.isInteger(saved.coins) ? saved.coins : cfg.price.coins * 3;
     play.pulls = saved.pulls | 0;
+    // 上次 10 連抽還沒開完就離開 → 沒開的直接放進收藏
+    const m = saved.multi;
+    if (m && Array.isArray(m.picks)) {
+      let k = 0;
+      m.picks.forEach((idx, i) => {
+        if (m.opened?.[i] || !(idx >= 0 && idx < cfg.items.length)) return;
+        play.got[idx] = (play.got[idx] || 0) + 1;
+        k++;
+      });
+      if (k) {
+        savePlay();
+        toast(t('ten.restored', { n: k }));
+      }
+    }
   } else {
     play.remaining = totalQ.slice();
     play.got = {};
@@ -615,7 +629,9 @@ function left() {
   return play.remaining.reduce((a, b) => a + b, 0);
 }
 function savePlay() {
-  store.set(playKey(), { remaining: play.remaining, got: play.got, coins: play.coins, pulls: play.pulls });
+  const m = play.multi;
+  const multi = m?.opened.includes(false) ? { picks: m.picks, opened: m.opened } : null; // 10 連還沒開完的
+  store.set(playKey(), { remaining: play.remaining, got: play.got, coins: play.coins, pulls: play.pulls, multi });
 }
 
 function setPhase(ph) {
@@ -631,6 +647,7 @@ function setPhase(ph) {
         ? t('s.coinBroke')
         : t('s.coinNeed', { n: need - play.inserted });
   }
+  if (ph === 'multiOpen') text = t('ten.openText', { n: play.multi.opened.filter((o) => !o).length });
   $('h-text').textContent = text;
   const b = $('h-btn');
   b.hidden = !s.btn;
@@ -643,6 +660,7 @@ function setPhase(ph) {
   ten.textContent = t('ten.btn', { n, c: n * need });
   machine?.setSlotHint(ph === 'coin');
   machine?.setHandleEnabled(ph === 'turn');
+  machine?.setGridPick(ph === 'multiOpen');
   $('p-left').textContent = t('left', { l: left(), t: play.cfg.items.reduce((a, b) => a + b.qty, 0) });
   $('got-count').textContent = $('got-count2').textContent = Object.keys(play.got).length;
   renderWallet();
@@ -751,19 +769,21 @@ function showResult(idx, first, view = false) {
   const it = play.cfg.items[idx];
   const r = RARITY[it.rarity];
   resultView = view;
+  const fresh = !view || view === 'step'; // 剛開出來的（不是回顧）
   resultPlayer?.stop();
   const kind = mediaKind(it.media);
   $('r-prize').hidden = kind === 'video'; // 影片直接取代獎品圖
-  resultPlayer = mountPlayer($('r-media'), it.media, { poster: thumbOf(play.cfg, idx).url, delay: view ? 0 : 1100 });
-  $('r-again').hidden = $('r-col').hidden = view;
+  resultPlayer = mountPlayer($('r-media'), it.media, { poster: thumbOf(play.cfg, idx).url, delay: fresh ? 1100 : 0 });
+  $('r-again').hidden = $('r-col').hidden = !!view;
   $('r-close').hidden = !view;
+  $('r-close').textContent = view !== 'step' ? t('close') : play.multi.opened.includes(false) ? t('ten.next') : t('ten.toResults');
   const card = $('result-card');
   card.className = `sheet-card result r${it.rarity}`;
   card.style.setProperty('--rc', `var(--r-${r.key.toLowerCase()})`);
   $('r-rank').textContent = `${r.key} ${r.label}`;
   $('r-img').src = thumbOf(play.cfg, idx).url;
   $('r-name').textContent = it.name;
-  $('r-new').hidden = view || !first;
+  $('r-new').hidden = !fresh || !first;
   const total = play.cfg.items.reduce((a, b) => a + b.qty, 0);
   $('r-sub').textContent = t('resultSub', { n: play.pulls, p: pct(it.qty / total), c: play.got[idx] });
   openSheet('sheet-result', view ? $('r-close') : $('r-again'));
@@ -801,6 +821,8 @@ function onBurst(r) {
 function closeResult() {
   resultPlayer?.stop();
   resultPlayer = null;
+  if (resultView === 'step') return closeStep();
+  if (resultView === 'grid') return closeSheet('sheet-result');
   if (resultView) {
     closeSheet('sheet-result');
     if (resultView === 'multi') openSheet('sheet-multi', $('x-again'));
@@ -864,8 +886,8 @@ async function tenPull() {
     play.pulls++;
     picks.push(idx);
   }
+  play.multi = { picks, opened: picks.map(() => false), isNew: [] };
   savePlay();
-  play.multi = { picks };
   machine.setForeshadow(foreshadowLevel(picks.map((i) => play.cfg.items[i].rarity)));
   let last = null;
   for (let i = 0; i < n; i++) {
@@ -878,33 +900,98 @@ async function tenPull() {
   setPhase('multiOpen');
 }
 
-// 全部打開：普通的依序啵開，最稀有的那顆（同等級取最後一顆）最後跑完整演出
+const multiRar = (i) => play.cfg.items[play.multi.picks[i]].rarity;
+
+// 第 i 顆開了 → 記進收藏（同一個獎品抽到兩次，先開的那顆才算 NEW）
+function creditMulti(i) {
+  const m = play.multi;
+  if (m.opened[i]) return;
+  const idx = m.picks[i];
+  m.isNew[i] = !play.got[idx];
+  play.got[idx] = (play.got[idx] || 0) + 1;
+  m.opened[i] = true;
+}
+
+function prizeCard(i) {
+  const idx = play.multi.picks[i];
+  const it = play.cfg.items[idx];
+  return drawPrizeCard(it, thumbOf(play.cfg, idx).bmp || placeholderThumb(it.name, idx), play.multi.isNew[i]);
+}
+
+// 點格子裡的一顆：N、R 當場啵開翻出小卡；SR 以上移到中間跑完整演出＋結果卡
+async function openOne(i) {
+  const m = play?.multi;
+  if (play?.phase !== 'multiOpen' || !m || m.opened[i]) return;
+  unlock();
+  const r = multiRar(i);
+  creditMulti(i);
+  savePlay();
+  if (r < 2) {
+    machine.popInGrid(i, prizeCard(i));
+    machine.after(0.15).then(() => sfx.reveal(r));
+    if (m.opened.includes(false)) setPhase('multiOpen'); // 更新「還有幾顆」
+    else finishMulti();
+    return;
+  }
+  setPhase('multiBusy');
+  await machine.openFromGrid(i, prizeCard(i));
+  sfx.reveal(r);
+  showResult(m.picks[i], m.isNew[i], 'step');
+}
+
+function closeStep() {
+  closeSheet('sheet-result');
+  machine.setDim(0, 0.8);
+  machine.show.endPersist();
+  machine.restoreGrid();
+  if (play.multi.opened.includes(false)) setPhase('multiOpen');
+  else finishMulti();
+}
+
+// 點已經開出來的小卡 → 結果卡回顧（影音可以播）
+function viewGridCard(i) {
+  if (play?.phase !== 'multiOpen' || !play.multi?.opened[i]) return;
+  showResult(play.multi.picks[i], false, 'grid');
+}
+
+// 全部打開（原本的方式）：還沒開的依序啵開，其中最稀有的那顆（同等級取最後一顆）最後跑完整演出
 async function openAll() {
   if (play.phase !== 'multiOpen') return;
   setPhase('multiBusy');
-  const picks = play.multi.picks;
-  const rar = (i) => play.cfg.items[picks[i]].rarity;
-  let best = 0;
-  picks.forEach((_, i) => {
-    if (rar(i) >= rar(best)) best = i;
-  });
-  for (let i = 0; i < picks.length; i++) {
+  const m = play.multi;
+  const rest = m.picks.map((_, i) => i).filter((i) => !m.opened[i]);
+  if (!rest.length) return finishMulti();
+  let best = rest[0];
+  for (const i of rest) if (multiRar(i) >= multiRar(best)) best = i;
+  for (const i of rest) {
     if (i === best) continue;
-    machine.popInGrid(i);
-    await wait(rar(i) >= 1 ? 0.28 : 0.16);
+    creditMulti(i);
+    machine.popInGrid(i, prizeCard(i));
+    await wait(multiRar(i) >= 1 ? 0.28 : 0.16);
   }
-  await wait(0.35);
-  await machine.openFromGrid(best);
-  sfx.reveal(rar(best));
-  // 收藏：照順序記，第一次拿到的標 NEW
-  const isNew = picks.map((idx) => {
-    const first = !play.got[idx];
-    play.got[idx] = (play.got[idx] || 0) + 1;
-    return first;
-  });
+  creditMulti(best);
   savePlay();
-  showMulti(picks, isNew, best);
+  await wait(0.35);
+  await machine.openFromGrid(best, prizeCard(best));
+  sfx.reveal(multiRar(best));
+  showMulti(m.picks, m.isNew, topOfMulti());
   setPhase('result');
+}
+
+// 一顆一顆開完 → 看一眼整排小卡，再出結果表
+async function finishMulti() {
+  setPhase('multiBusy');
+  await wait(0.8);
+  showMulti(play.multi.picks, play.multi.isNew, topOfMulti());
+  setPhase('result');
+}
+
+function topOfMulti() {
+  let top = 0;
+  play.multi.picks.forEach((_, i) => {
+    if (multiRar(i) >= multiRar(top)) top = i;
+  });
+  return top;
 }
 
 function showMulti(picks, isNew, best) {
@@ -956,6 +1043,7 @@ function closeMulti() {
   machine.setDim(0, 0.8);
   machine.show.endPersist();
   machine.clearGrid();
+  play.multi = null;
   closeSheet('sheet-multi');
   if (left() === 0) setPhase('soldout');
   else setPhase('coin');
@@ -1317,6 +1405,8 @@ async function boot() {
     onExitCapsule: () => take(),
     onOpenCapsule: () => openIt(),
     onBurst: (r) => onBurst(r),
+    onGridCapsule: (i) => openOne(i),
+    onGridCard: (i) => viewGridCard(i),
   });
   window.__gacha = { machine, showResult, get play() { return play; }, get draft() { return draft; } }; // 除錯用
   const ro = new ResizeObserver(() => updateInsets());

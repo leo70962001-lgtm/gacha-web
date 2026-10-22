@@ -1137,6 +1137,7 @@ export class Machine {
         .addScaledVector(right, (c - (cols - 1) / 2) * step)
         .addScaledVector(up, ((rows - 1) / 2 - r) * step + viewH * 0.06),
       scale: (step / (2 * CAP_R)) * 0.78,
+      step,
     };
   }
 
@@ -1166,8 +1167,10 @@ export class Machine {
     this.root.add(g);
     const floorY = EXIT.floor + this.capR;
     const c = { g, rarity, mat, fake, i };
+    g.userData.gridIdx = i;
     this.grid = this.grid || [];
     this.grid[i] = c;
+    this.gridSlots = this.gridSlots || [];
     // 1) 出口掉下來（快）
     return this.tween(0.32, (k) => {
       g.position.set(EXIT.x, 0.38 - (0.38 - floorY) * k * k, EXIT.z0 + (EXIT.z1 - EXIT.z0) * k);
@@ -1183,6 +1186,7 @@ export class Machine {
         g.position.copy(from);
         g.quaternion.copy(q0);
         const slot = this._gridSlot(i, n);
+        this.gridSlots[i] = slot;
         const mid = from.clone().lerp(slot.pos, 0.5).add(new THREE.Vector3(0, 0.25, 0));
         const qTo = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.35, -0.3, 0.1));
         return this.tween(0.45, (k) => {
@@ -1195,15 +1199,17 @@ export class Machine {
         }).then(() => {
           c.home = slot.pos.clone();
           c.q = g.quaternion.clone();
+          g.userData.s0 = slot.scale;
           if (shown >= 2) this.show.gridGlow(c, shown);
         });
       });
   }
 
-  // 小開：普通扭蛋在格子裡直接啵開
-  popInGrid(i) {
+  // 小開：普通扭蛋在格子裡直接啵開，殼飛開時翻出獎品小卡（card＝drawPrizeCard 的 canvas）
+  popInGrid(i, card) {
     const c = this.grid?.[i];
     if (!c) return Promise.resolve();
+    if (card) this.after(0.12).then(() => this.revealInGrid(i, card));
     const g = c.g;
     const { top, bot } = g.userData;
     sfx.pop();
@@ -1224,7 +1230,7 @@ export class Machine {
   }
 
   // 大開：把最稀有的那顆移到中間，跑完整演出（跟單抽一樣）
-  async openFromGrid(i) {
+  async openFromGrid(i, card) {
     const c = this.grid?.[i];
     if (!c) return;
     this.grid[i] = null;
@@ -1232,7 +1238,8 @@ export class Machine {
     const to = this._inFront(1.2, -0.02);
     const from = g.position.clone();
     const s0 = g.scale.x;
-    // 其他還沒開的退到旁邊淡掉一點
+    // 其他格子（扭蛋、已經開出來的卡）先縮起來，讓出舞台
+    this._gridScale(i, false);
     await this.tween(0.55, (k) => {
       const e = ease.inOut(k);
       g.position.lerpVectors(from, to, e);
@@ -1242,11 +1249,73 @@ export class Machine {
     c.q = g.quaternion.clone();
     this.openCap = c;
     await this.openCapsule();
+    if (card) this.revealInGrid(i, card, true);
+  }
+
+  // 10 連：開放點格子裡的扭蛋（一顆一顆開）
+  setGridPick(on) {
+    this.gridPick = on;
+    if (!on) this.gridHover = -1;
+  }
+
+  // 獎品小卡：在第 i 格翻面出現（hidden＝先縮著，等 restoreGrid 再長出來）
+  revealInGrid(i, canvas, hidden = false) {
+    const slot = this.gridSlots?.[i];
+    if (!slot) return;
+    const w = slot.step * 0.92;
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, w * (canvas.height / canvas.width)),
+      // 要寫深度：不然後畫的窗玻璃會蓋在卡片上（一層白霧）；圓角用 alphaTest 切掉
+      new THREE.MeshBasicMaterial({ map: canvasTex(canvas), transparent: true, alphaTest: 0.5, toneMapped: false }),
+    );
+    m.renderOrder = 7;
+    m.position.copy(slot.pos);
+    m.quaternion.copy(this.camera.quaternion);
+    m.userData.gridCard = i;
+    m.userData.s0 = 1;
+    this.fx.add(m);
+    this.gridCards = this.gridCards || [];
+    if (this.gridCards[i]) this._dropCard(this.gridCards[i]);
+    this.gridCards[i] = m;
+    if (hidden) return m.scale.setScalar(1e-4);
+    const q0 = this.camera.quaternion.clone();
+    this.tween(0.45, (k) => {
+      const e = ease.back(k);
+      m.quaternion.copy(q0).multiply(_q.setFromAxisAngle(_y, (1 - ease.out(k)) * Math.PI * 0.5));
+      m.scale.setScalar(Math.max(1e-4, 0.3 + 0.7 * e));
+    });
+  }
+
+  // 大開結束、關掉結果卡 → 其他格子長回來
+  restoreGrid() {
+    this._gridScale(-1, true);
+  }
+
+  _gridScale(except, grow) {
+    const objs = [];
+    (this.grid || []).forEach((c, j) => c && j !== except && objs.push(c.g));
+    (this.gridCards || []).forEach((m, j) => m && j !== except && objs.push(m));
+    for (const o of objs) {
+      const a = o.scale.x;
+      const b = grow ? o.userData.s0 ?? 1 : 1e-4;
+      o.userData.scaling = true; // 這段時間格子的「輕輕跳」不改大小
+      this.tween(grow ? 0.4 : 0.3, (k) => o.scale.setScalar(a + (b - a) * (grow ? ease.back(k) : ease.inOut(k)))).then(() => (o.userData.scaling = false));
+    }
+  }
+
+  _dropCard(m) {
+    this.fx.remove(m);
+    m.material.map.dispose();
+    m.material.dispose();
+    m.geometry.dispose();
   }
 
   clearGrid() {
     for (const c of this.grid || []) if (c) this.fx.remove(c.g);
+    for (const m of this.gridCards || []) if (m) this._dropCard(m);
     this.grid = [];
+    this.gridCards = [];
+    this.gridSlots = [];
   }
 
   // 鏡頭衝擊：視角先縮再彈回（看起來像往前撞一下）
@@ -1389,12 +1458,24 @@ export class Machine {
     const targets = [this.handle, this.slotHit];
     if (this.exitCap) targets.push(this.exitCap.g);
     if (this.openCap) targets.push(this.openCap.g);
+    if (this.gridPick) {
+      for (const c of this.grid || []) if (c?.home) targets.push(c.g);
+      for (const m of this.gridCards || []) if (m) targets.push(m);
+    }
     const hit = this.raycaster.intersectObjects(targets, true)[0];
     if (!hit) return null;
     let o = hit.object;
     if (o === this.handle) return 'handle';
     if (o === this.slotHit) return 'slot';
-    while (o.parent && o !== this.exitCap?.g && o !== this.openCap?.g) o = o.parent;
+    if (o.userData.gridCard != null) {
+      this.pickIdx = o.userData.gridCard;
+      return 'gridCard';
+    }
+    while (o.parent && o !== this.exitCap?.g && o !== this.openCap?.g && o.userData.gridIdx == null) o = o.parent;
+    if (o.userData.gridIdx != null) {
+      this.pickIdx = o.userData.gridIdx;
+      return 'grid';
+    }
     if (o === this.exitCap?.g) return 'exit';
     if (o === this.openCap?.g) return 'open';
     return null;
@@ -1422,6 +1503,8 @@ export class Machine {
       if (what === 'slot') return this.cb.onSlot?.(e.clientX, e.clientY);
       if (what === 'exit') return this.cb.onExitCapsule?.();
       if (what === 'open') return this.cb.onOpenCapsule?.();
+      if (what === 'grid') return this.cb.onGridCapsule?.(this.pickIdx);
+      if (what === 'gridCard') return this.cb.onGridCard?.(this.pickIdx);
       // 空白處拖曳 → 轉機台看側面
       el.setPointerCapture(e.pointerId);
       this.dragYaw = { x: e.clientX, yaw: this.yawTarget };
@@ -1449,7 +1532,9 @@ export class Machine {
         this.yawTarget = THREE.MathUtils.clamp(this.dragYaw.yaw + (e.clientX - this.dragYaw.x) * 0.006, -1.1, 1.1);
         return;
       }
-      el.style.cursor = { handle: 'grab', slot: 'pointer', exit: 'pointer', open: 'pointer' }[this._pick(e)] || 'default';
+      const what = this._pick(e);
+      this.gridHover = what === 'grid' ? this.pickIdx : -1;
+      el.style.cursor = { handle: 'grab', slot: 'pointer', exit: 'pointer', open: 'pointer', grid: 'pointer', gridCard: 'pointer' }[what] || 'default';
     });
     const up = () => {
       if (this.dragHandle) {
@@ -1540,6 +1625,17 @@ export class Machine {
         if (c.home) {
           c.g.position.copy(c.home).add(new THREE.Vector3(0, Math.sin(this.time * 2.4) * 0.008, 0));
           c.g.quaternion.copy(c.q).multiply(_q.setFromAxisAngle(_y, Math.sin(this.time * 1.7) * 0.18));
+        }
+      }
+      if (this.gridPick) {
+        for (const c of this.grid || []) {
+          if (!c?.home) continue;
+          const g = c.g;
+          g.position.copy(c.home).add(new THREE.Vector3(0, Math.abs(Math.sin(this.time * 3 + c.i * 0.9)) * 0.012, 0));
+          g.quaternion.copy(c.q).multiply(_q.setFromAxisAngle(_y, Math.sin(this.time * 1.6 + c.i) * 0.25));
+          if (g.userData.scaling) continue;
+          const s = g.userData.s0 * (this.gridHover === c.i ? 1.14 : 1);
+          g.scale.setScalar(g.scale.x + (s - g.scale.x) * Math.min(1, dt * 14));
         }
       }
     }
