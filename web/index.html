@@ -1,0 +1,386 @@
+<title>Clatter 轉蛋鋪</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Huninn&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* 版面：左邊是轉蛋機舞台（three.js），右邊是開店表單；玩家模式舞台全滿，UI 浮在上面。
+   風格＝卡通描線（toon）：深藍粗線、硬邊陰影，跟 Gemini 貼紙同一套線條 */
+:root {
+  --bg: #e7eff4;
+  --stage: #dce8ef;
+  --floor: #d2e0e8;
+  --surface: #ffffff;
+  --surface-2: #f2f6f9;
+  --ink: #1c2340;
+  --muted: #586379;
+  --line: #c8d4de;
+  --stroke: #1c2340;
+  --accent: #e23b34;
+  --accent-ink: #ffffff;
+  --sun: #ffc93c;
+  --sky: #3fa9f5;
+  --mint: #22b48f;
+  --r-n: #8f9bad;
+  --r-r: #2f80ed;
+  --r-sr: #a45cf0;
+  --r-ssr: #e8a000;
+  --font-display: "Huninn", "Noto Sans TC", system-ui, sans-serif;
+  --font-num: "Dela Gothic One", "Huninn", "Noto Sans TC", system-ui, sans-serif;
+  --font-body: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111725; --stage: #172034; --floor: #1b2539; --surface: #1b2436; --surface-2: #222d44;
+    --ink: #eef2f8; --muted: #9ba7bc; --line: #33415c; --stroke: #56658a;
+    --accent: #ff5a50; --accent-ink: #ffffff; --sun: #ffd25a; --sky: #5cb8ff; --mint: #3fd1aa;
+    --r-n: #a9b4c4; --r-r: #5aa0ff; --r-sr: #c08bff; --r-ssr: #ffc233;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111725; --stage: #172034; --floor: #1b2539; --surface: #1b2436; --surface-2: #222d44;
+  --ink: #eef2f8; --muted: #9ba7bc; --line: #33415c; --stroke: #56658a;
+  --accent: #ff5a50; --accent-ink: #ffffff; --sun: #ffd25a; --sky: #5cb8ff; --mint: #3fd1aa;
+  --r-n: #a9b4c4; --r-r: #5aa0ff; --r-sr: #c08bff; --r-ssr: #ffc233;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; overflow: hidden; }
+* { box-sizing: border-box; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
+
+/* ---------- 頂列 ---------- */
+.bar { display: flex; align-items: center; gap: 14px; padding-block: 10px; padding-left: var(--gutter-l); padding-right: var(--gutter-r); background: var(--surface); border-bottom: 2px solid var(--stroke); position: relative; z-index: 5; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 21px; white-space: nowrap; }
+.brand b { font-family: var(--font-num); font-weight: 400; letter-spacing: 0.02em; }
+.mark { width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid var(--stroke); background: linear-gradient(180deg, #ffffff 0 50%, var(--accent) 50% 100%); position: relative; flex: none; }
+.mark::after { content: ""; position: absolute; left: -2px; right: -2px; top: calc(50% - 1.25px); height: 2.5px; background: var(--stroke); }
+.modes { display: flex; gap: 4px; margin-left: auto; background: var(--surface-2); border: 2px solid var(--stroke); border-radius: 999px; padding: 3px; }
+.modes button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.modes button[aria-selected="true"] { background: var(--ink); color: var(--surface); }
+.icon-btn { width: 40px; height: 40px; flex: none; border-radius: 50%; border: 2px solid var(--stroke); background: var(--surface); display: grid; place-items: center; cursor: pointer; }
+.icon-btn svg { width: 20px; height: 20px; }
+.icon-btn[aria-pressed="false"] .on, .icon-btn[aria-pressed="true"] .off { display: none; }
+
+/* ---------- 主區 ---------- */
+main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); min-height: 0; }
+.app[data-mode="play"] main { grid-template-columns: minmax(0, 1fr); }
+.app[data-mode="play"] .panel { display: none; }
+.app[data-mode="create"] .hud { display: none; }
+.stage { position: relative; min-height: 0; overflow: hidden; background: var(--stage); }
+.stage canvas.gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.stage-tip { position: absolute; left: var(--gutter-l); bottom: 14px; font-size: 13px; color: var(--muted); background: color-mix(in srgb, var(--surface) 80%, transparent); padding: 4px 10px; border-radius: 999px; pointer-events: none; }
+.app[data-mode="play"] .stage-tip { display: none; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 12px; background: var(--stage); z-index: 4; font-family: var(--font-display); font-size: 18px; }
+.loading .cap { width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--stroke); background: linear-gradient(180deg, #fff 0 50%, var(--sun) 50%); animation: roll 1s linear infinite; }
+@keyframes roll { to { transform: rotate(360deg); } }
+
+/* ---------- 開店表單 ---------- */
+.panel { overflow-y: auto; background: var(--surface); border-left: 2px solid var(--stroke); }
+.panel-inner { padding-block: 22px 40px; padding-left: max(22px, env(safe-area-inset-left, 0px)); padding-right: max(22px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+.panel h1 { font-family: var(--font-display); font-weight: 400; font-size: 28px; line-height: 1.2; margin: 0; text-wrap: balance; }
+.lede { margin: -10px 0 0; color: var(--muted); }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+.step { border: 2px solid var(--stroke); border-radius: 18px; padding: 16px; background: var(--surface); display: grid; gap: 12px; box-shadow: 4px 4px 0 var(--stroke); }
+.step > header { display: flex; align-items: center; gap: 10px; }
+.step h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 20px; }
+.num { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-family: var(--font-num); font-size: 15px; border: 2px solid var(--stroke); flex: none; }
+.aside { margin-left: auto; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hint-text { margin: 0; font-size: 13px; color: var(--muted); }
+
+.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.item { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; grid-template-areas: "thumb name del" "thumb meta meta"; gap: 6px 10px; align-items: center; padding: 8px; border-radius: 14px; background: var(--surface-2); }
+.thumb { grid-area: thumb; width: 56px; height: 56px; border-radius: 12px; border: 2px solid var(--stroke); padding: 0; overflow: hidden; cursor: pointer; background: var(--surface); position: relative; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb::after { content: "換照片"; position: absolute; inset: auto 0 0; font-size: 10px; background: rgba(28,35,64,0.75); color: #fff; line-height: 1.6; opacity: 0; transition: opacity .15s; }
+.thumb:hover::after, .thumb:focus-visible::after { opacity: 1; }
+.item .name { grid-area: name; min-width: 0; border: 2px solid var(--line); border-radius: 10px; padding: 6px 10px; background: var(--surface); font-weight: 700; }
+.item .del { grid-area: del; width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; }
+.item .del:hover { background: var(--line); color: var(--ink); }
+.item .meta { grid-area: meta; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.item select, .item .qty { border: 2px solid var(--line); border-radius: 10px; padding: 4px 8px; background: var(--surface); }
+.item .qty { width: 78px; font-variant-numeric: tabular-nums; }
+.item .odds { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
+.qty-wrap { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
+
+.btn { border: 2px solid var(--stroke); border-radius: 999px; padding: 9px 18px; font-weight: 700; cursor: pointer; background: var(--surface); box-shadow: 3px 3px 0 var(--stroke); transition: transform .08s, box-shadow .08s; }
+.btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--stroke); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.sun { background: var(--sun); color: #1c2340; }
+.btn.big { font-size: 18px; padding: 12px 22px; font-family: var(--font-display); font-weight: 400; }
+.btn.ghost { box-shadow: none; border-style: dashed; background: transparent; justify-self: start; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.price-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.price-inputs { display: grid; gap: 8px; }
+.price-inputs label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.price-inputs input, .price-inputs select { border: 2px solid var(--line); border-radius: 10px; padding: 5px 8px; background: var(--surface); width: 84px; font-variant-numeric: tabular-nums; }
+.price-inputs select { width: auto; }
+.stamp { width: 112px; height: 112px; border-radius: 50%; display: grid; place-items: center; align-content: center; text-align: center; background: var(--sun); color: #1c2340; border: 3px solid var(--stroke); box-shadow: 0 0 0 5px var(--accent), 0 0 0 7px var(--stroke); transform: rotate(-6deg); line-height: 1.1; flex: none; }
+.stamp small { font-family: var(--font-display); font-size: 14px; }
+.stamp strong { font-family: var(--font-num); font-weight: 400; font-size: 20px; color: #c41f1a; }
+.stamp em { font-style: normal; font-size: 12px; font-weight: 700; }
+.field { display: grid; gap: 6px; }
+.field label, .field > span { font-size: 13px; font-weight: 700; color: var(--muted); }
+.field input { border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.swatch { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--stroke); cursor: pointer; padding: 0; background: var(--c); position: relative; }
+.swatch[aria-checked="true"]::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 3px solid var(--ink); }
+.link-box { display: grid; gap: 10px; }
+.link-box textarea { width: 100%; resize: none; border: 2px solid var(--line); border-radius: 12px; padding: 10px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: var(--surface-2); word-break: break-all; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.meta-line { margin: 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meta-line.warn { color: var(--accent); font-weight: 700; }
+.note { margin: 0; font-size: 13px; color: var(--muted); border-top: 2px dashed var(--line); padding-top: 14px; }
+
+/* ---------- 玩家 HUD ---------- */
+.hud { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.hud > * { pointer-events: auto; }
+.plate { position: absolute; top: 14px; left: var(--gutter-l); max-width: min(56%, 420px); background: var(--surface); border: 2px solid var(--stroke); border-radius: 16px; padding: 10px 14px; box-shadow: 3px 3px 0 var(--stroke); display: grid; gap: 4px; }
+.plate .shop { font-size: 12px; color: var(--muted); font-weight: 700; }
+.plate h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 22px; line-height: 1.2; text-wrap: balance; overflow-wrap: anywhere; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); border: 1.5px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
+button.chip { cursor: pointer; border-color: var(--stroke); }
+.top-right { position: absolute; top: 14px; right: var(--gutter-r); display: grid; justify-items: end; gap: 10px; }
+.top-right .stamp { width: 96px; height: 96px; }
+.top-right .stamp strong { font-size: 17px; }
+.side-btns { display: grid; gap: 8px; justify-items: end; }
+.side-btns .btn { padding: 6px 14px; font-size: 14px; }
+.badge-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; margin-left: 4px; padding: 0 5px; font-variant-numeric: tabular-nums; }
+
+.bottom { position: absolute; left: var(--gutter-l); right: var(--gutter-r); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: auto minmax(0, 520px); justify-content: space-between; align-items: end; gap: 12px; }
+.wallet { background: var(--surface); border: 2px solid var(--stroke); border-radius: 18px; padding: 10px 12px; box-shadow: 3px 3px 0 var(--stroke); display: grid; gap: 8px; min-width: 210px; }
+.wallet-top { display: flex; align-items: center; gap: 10px; }
+.coin-chip { width: 52px; height: 52px; border-radius: 50%; border: 0; padding: 0; background: url("assets/tex/coin.webp") center / cover no-repeat, var(--sun); cursor: grab; touch-action: none; flex: none; filter: drop-shadow(2px 2px 0 var(--stroke)); }
+.coin-chip:disabled { filter: grayscale(1) opacity(.5); cursor: not-allowed; }
+.coin-count { font-family: var(--font-num); font-size: 22px; font-variant-numeric: tabular-nums; }
+.coin-count small { font-family: var(--font-body); font-size: 12px; color: var(--muted); display: block; line-height: 1.2; }
+.pips { display: flex; gap: 5px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.pip { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--stroke); background: var(--surface-2); }
+.pip.on { background: var(--sun); }
+.ghost-coin { position: fixed; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: url("assets/tex/coin.webp") center / cover; pointer-events: none; z-index: 50; filter: drop-shadow(3px 4px 0 rgba(28,35,64,.5)); }
+
+.hint { background: var(--surface); border: 2px solid var(--stroke); border-radius: 18px; padding: 12px 14px; box-shadow: 3px 3px 0 var(--stroke); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; }
+.hint .stepno { grid-column: 1 / -1; font-family: var(--font-num); font-size: 12px; color: var(--accent); letter-spacing: 0.08em; }
+.hint h3 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 20px; line-height: 1.25; }
+.hint p { margin: 0; font-size: 13px; color: var(--muted); grid-column: 1; }
+.hint .btn { grid-row: 2 / span 2; grid-column: 2; }
+.hint.nudge { animation: nudge .35s; }
+@keyframes nudge { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+
+/* ---------- 對話框 ---------- */
+.sheet { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(12,16,28,.45); z-index: 40; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 16px; }
+.sheet-card { width: min(100%, 420px); max-height: 100%; overflow: auto; background: var(--surface); border: 3px solid var(--stroke); border-radius: 24px; box-shadow: 6px 6px 0 var(--stroke); padding: 20px; display: grid; gap: 14px; position: relative; }
+.sheet-card h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 24px; }
+.close-x { position: absolute; top: 12px; right: 12px; }
+
+.result { text-align: center; justify-items: center; animation: popin .45s cubic-bezier(.2,1.4,.4,1); }
+@keyframes popin { from { transform: scale(.6) rotate(-4deg); opacity: 0; } }
+.result .ribbon { font-family: var(--font-num); font-size: 15px; letter-spacing: 0.1em; color: #fff; background: var(--rc); padding: 4px 18px; border-radius: 999px; border: 2px solid var(--stroke); }
+.result .prize { width: min(64vw, 230px); aspect-ratio: 1; border-radius: 22px; border: 3px solid var(--stroke); overflow: hidden; background: var(--surface-2); box-shadow: 0 0 0 6px var(--rc); }
+.result .prize img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.result h2 { font-size: 26px; overflow-wrap: anywhere; text-wrap: balance; }
+.result .sub { margin: -8px 0 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.result .new { font-family: var(--font-display); color: var(--accent); font-size: 16px; }
+.result.r3 .prize { animation: rainbow 2.4s linear infinite; }
+@keyframes rainbow { 0% { box-shadow: 0 0 0 6px #ffcf33; } 33% { box-shadow: 0 0 0 6px #ff6fae; } 66% { box-shadow: 0 0 0 6px #5cc8ff; } 100% { box-shadow: 0 0 0 6px #ffcf33; } }
+.flash { position: fixed; inset: 0; background: #fff; z-index: 39; pointer-events: none; animation: flash .7s ease-out forwards; }
+@keyframes flash { from { opacity: .95; } to { opacity: 0; } }
+
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.list li { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px; border-radius: 12px; background: var(--surface-2); }
+.list img { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; border: 2px solid var(--stroke); }
+.list .nm { font-weight: 700; overflow-wrap: anywhere; }
+.list .rk { font-family: var(--font-num); font-size: 11px; color: #fff; background: var(--rc); border-radius: 999px; padding: 1px 8px; border: 1.5px solid var(--stroke); }
+.list .num-col { text-align: right; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.cell { display: grid; gap: 4px; justify-items: center; text-align: center; font-size: 12px; }
+.cell img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 14px; border: 2px solid var(--stroke); }
+.cell.miss img { filter: grayscale(1) brightness(.35) blur(2px); }
+.cell .cnt { font-variant-numeric: tabular-nums; color: var(--muted); }
+.toast { position: fixed; left: 50%; top: 70px; transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 8px 16px; border-radius: 999px; z-index: 60; font-weight: 700; max-width: calc(100% - 32px); text-align: center; }
+
+@media (max-width: 860px) {
+  main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(240px, 44%) minmax(0, 1fr); }
+  .app[data-mode="play"] main { grid-template-rows: minmax(0, 1fr); }
+  .panel { border-left: 0; border-top: 2px solid var(--stroke); }
+}
+@media (max-width: 640px) {
+  .bar { gap: 8px; padding-block: 8px; }
+  .brand { font-size: 18px; gap: 8px; }
+  .brand .full { display: none; }
+  .modes button { padding: 5px 10px; font-size: 14px; }
+  .icon-btn { width: 36px; height: 36px; }
+  .bottom { grid-template-columns: minmax(0, 1fr); gap: 8px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .wallet { min-width: 0; padding: 6px 10px; gap: 4px; border-radius: 14px; }
+  .wallet-top { gap: 8px; }
+  .coin-chip { width: 38px; height: 38px; }
+  .coin-count { font-size: 18px; display: flex; align-items: baseline; gap: 6px; }
+  .coin-count small { display: inline; }
+  .pip { width: 11px; height: 11px; }
+  .hint { padding: 8px 12px; border-radius: 14px; }
+  .hint .stepno { font-size: 11px; }
+  .hint h3 { font-size: 16px; }
+  .hint p { font-size: 12px; line-height: 1.4; }
+  .plate { max-width: calc(100% - 128px); padding: 7px 11px; top: 10px; }
+  .plate h2 { font-size: 17px; }
+  .top-right { top: 10px; gap: 8px; }
+  .top-right .stamp { width: 74px; height: 74px; box-shadow: 0 0 0 4px var(--accent), 0 0 0 6px var(--stroke); }
+  .top-right .stamp small { font-size: 12px; }
+  .top-right .stamp strong { font-size: 13px; }
+  .top-right .stamp em { font-size: 10px; }
+  .side-btns .btn { padding: 4px 10px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
+}
+</style>
+
+<div class="app" id="app" data-mode="create">
+  <header class="bar">
+    <div class="brand"><span class="mark" aria-hidden="true"></span><span><b>Clatter</b><span class="full"> 轉蛋鋪</span></span></div>
+    <nav class="modes" role="tablist" aria-label="模式">
+      <button id="tab-create" role="tab" aria-selected="true">開店設定</button>
+      <button id="tab-play" role="tab" aria-selected="false">轉轉看</button>
+    </nav>
+    <button class="icon-btn" id="btn-sound" aria-pressed="true" aria-label="音效">
+      <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+      <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="stage" id="stage" aria-label="轉蛋機">
+      <div class="loading" id="loading"><div class="cap" aria-hidden="true"></div><span id="loading-text">機台搬進來中…</span></div>
+      <p class="stage-tip">拖曳空白處可以轉機台看側面</p>
+
+      <div class="hud" id="hud">
+        <div class="plate">
+          <span class="shop" id="p-shop"></span>
+          <h2 id="p-name">轉蛋機</h2>
+          <div class="chips">
+            <span class="chip" id="p-kinds">全 0 種</span>
+            <span class="chip" id="p-left">剩 0 顆</span>
+            <button class="chip" id="p-odds">機率公開</button>
+          </div>
+        </div>
+        <div class="top-right">
+          <div class="stamp" id="p-stamp" aria-label="價錢"><small>1回</small><strong id="p-price">NT$50</strong><em id="p-coins">投 5 枚</em></div>
+          <div class="side-btns">
+            <button class="btn" id="btn-lineup">獎品一覽</button>
+            <button class="btn" id="btn-collection">我的扭蛋<span class="badge-count" id="got-count">0</span></button>
+          </div>
+        </div>
+        <div class="bottom">
+          <div class="wallet" aria-label="錢包">
+            <div class="wallet-top">
+              <button class="coin-chip" id="coin-chip" aria-label="投入一枚硬幣（也可以拖到投幣口）"></button>
+              <div class="coin-count"><span id="coin-n">0</span><small>枚試玩硬幣</small></div>
+              <button class="btn sun" id="btn-topup" style="margin-left:auto;padding:6px 12px;font-size:13px">＋5 枚</button>
+            </div>
+            <div class="pips" id="pips" aria-live="polite"></div>
+          </div>
+          <div class="hint" id="hint" aria-live="polite">
+            <span class="stepno" id="h-step">STEP 1 / 4</span>
+            <h3 id="h-title">投幣</h3>
+            <p id="h-text"></p>
+            <button class="btn primary" id="h-btn">投入 1 枚</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel" id="panel">
+      <div class="panel-inner">
+        <h1>開一台你的轉蛋機</h1>
+        <p class="lede">放進想賣的東西、訂好一回多少錢，就會得到一條連結。拿到連結的人打開就能投幣、轉把手、開扭蛋。</p>
+        <ol class="steps">
+          <li class="step">
+            <header><span class="num">1</span><h2>放進獎品</h2><span class="aside" id="items-sum"></span></header>
+            <ul class="items" id="items"></ul>
+            <button class="btn ghost" id="add-item">＋ 新增獎品</button>
+            <p class="hint-text">數量＝機器裡的扭蛋顆數，數量越多越容易轉到，機率會公開給玩家。點縮圖可以換成商品照片。</p>
+          </li>
+          <li class="step">
+            <header><span class="num">2</span><h2>設定價錢</h2></header>
+            <div class="price-grid">
+              <div class="price-inputs">
+                <label for="coins">每轉一次投 <input id="coins" type="number" min="1" max="20" step="1"> 枚</label>
+                <label for="unit">每枚 <select id="cur" aria-label="幣別"></select><input id="unit" type="number" min="0" step="1"></label>
+              </div>
+              <div class="stamp" aria-live="polite"><small>1回</small><strong id="price-out">NT$50</strong><em id="price-coins">投 5 枚</em></div>
+            </div>
+            <div class="field"><label for="m-name">機台名稱</label><input id="m-name" maxlength="24"></div>
+            <div class="field"><label for="m-shop">店名（選填）</label><input id="m-shop" maxlength="24"></div>
+            <div class="field"><span id="sw-label">機台顏色</span><div class="swatches" id="swatches" role="radiogroup" aria-labelledby="sw-label"></div></div>
+          </li>
+          <li class="step">
+            <header><span class="num">3</span><h2>產生連結</h2></header>
+            <button class="btn primary big" id="make-link">產生轉蛋連結</button>
+            <div class="link-box" id="link-out" hidden>
+              <textarea id="link" readonly rows="3" aria-label="轉蛋連結"></textarea>
+              <div class="row">
+                <button class="btn sun" id="copy">複製連結</button>
+                <button class="btn" id="try">用買家畫面試玩</button>
+              </div>
+              <p class="meta-line" id="link-meta"></p>
+            </div>
+          </li>
+        </ol>
+        <p class="note">體驗版：玩家投的是試玩硬幣，不會真的收款；庫存與收藏記在各自的裝置上。照片會縮成小圖放進連結裡。</p>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<div class="sheet" id="sheet-result" hidden>
+  <div class="sheet-card result" id="result-card" role="dialog" aria-modal="true" aria-labelledby="r-name">
+    <span class="ribbon" id="r-rank">N 一般</span>
+    <div class="prize"><img id="r-img" alt=""></div>
+    <span class="new" id="r-new" hidden>新收藏！</span>
+    <h2 id="r-name">獎品</h2>
+    <p class="sub" id="r-sub"></p>
+    <div class="row" style="justify-content:center">
+      <button class="btn primary big" id="r-again">再轉一次</button>
+      <button class="btn" id="r-col">看收藏</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="sheet-lineup" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="l-title">
+    <button class="icon-btn close-x" data-close aria-label="關閉">✕</button>
+    <h2 id="l-title">獎品一覽</h2>
+    <p class="meta-line" id="l-meta"></p>
+    <ul class="list" id="l-list"></ul>
+  </div>
+</div>
+
+<div class="sheet" id="sheet-collection" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="c-title">
+    <button class="icon-btn close-x" data-close aria-label="關閉">✕</button>
+    <h2 id="c-title">我的扭蛋</h2>
+    <p class="meta-line" id="c-meta"></p>
+    <div class="grid" id="c-grid"></div>
+    <button class="btn" id="c-reset">重新補貨（清掉這台的試玩紀錄）</button>
+  </div>
+</div>
+
+<input type="file" id="file" accept="image/*" hidden>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="./app.js"></script>

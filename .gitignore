@@ -1,0 +1,4 @@
+# Blender 檔留在本機（模型原檔 D:\ai\clatter.blend 也不在這個 repo）
+*.blend
+*.blend1
+__pycache__/
