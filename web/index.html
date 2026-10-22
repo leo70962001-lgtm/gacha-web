@@ -156,6 +156,8 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); border: 1.5px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
 button.chip { cursor: pointer; border-color: var(--stroke); }
+.chip-col { display: none; }
+.chip-col b { color: var(--accent); font-variant-numeric: tabular-nums; }
 .top-right { position: absolute; top: 14px; right: var(--gutter-r); display: grid; justify-items: end; gap: 10px; }
 .top-right .stamp { width: 96px; height: 96px; }
 .top-right .stamp strong { font-size: 17px; }
@@ -229,13 +231,18 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
   .lang { height: 36px; padding: 0 4px 0 8px; }
   .lang svg { display: none; }
   .lang select { max-width: 74px; font-size: 13px; }
-  .bottom { grid-template-columns: minmax(0, 1fr); gap: 8px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
-  .wallet { min-width: 0; padding: 6px 10px; gap: 4px; border-radius: 14px; }
-  .wallet-top { gap: 8px; }
-  .coin-chip { width: 38px; height: 38px; }
-  .coin-count { font-size: 18px; display: flex; align-items: baseline; gap: 6px; }
-  .coin-count small { display: inline; }
-  .pip { width: 11px; height: 11px; }
+  .bottom { grid-template-columns: minmax(0, 1fr); gap: 6px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  /* 錢包壓成一列：硬幣、枚數、投幣進度、＋5 枚 */
+  .wallet { min-width: 0; padding: 5px 8px; border-radius: 14px; display: flex; align-items: center; gap: 8px; }
+  .wallet-top { display: contents; }
+  .coin-chip { width: 34px; height: 34px; order: 1; }
+  .coin-count { font-size: 17px; order: 2; }
+  .coin-count small { display: none; }
+  .wallet .pips { order: 3; flex: 1; min-width: 0; gap: 3px; font-size: 11px; }
+  #btn-topup { order: 4; margin-left: 0 !important; padding: 4px 10px !important; }
+  .pip { width: 10px; height: 10px; border-width: 1.5px; }
+  .side-btns { display: none; }
+  .chip-col { display: inline-flex; gap: 2px; }
   .hint { padding: 8px 12px; border-radius: 14px; }
   .hint .stepno { font-size: 11px; }
   .hint h3 { font-size: 16px; }
@@ -288,6 +295,7 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
             <span class="chip" id="p-kinds"></span>
             <span class="chip" id="p-left"></span>
             <button class="chip" id="p-odds" data-i18n="oddsBtn">機率公開</button>
+            <button class="chip chip-col" id="p-col"><span data-i18n="myCaps">我的扭蛋</span> <b id="got-count2">0</b></button>
           </div>
         </div>
         <div class="top-right">

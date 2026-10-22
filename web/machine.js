@@ -1097,22 +1097,50 @@ export class Machine {
   }
 
   // 讓整台機器剛好入鏡：直式螢幕要退遠一點
+  // 精準取景：把機台外框（8 個角，含預設的側轉角度）投影到畫面上，
+  // 找出能塞進「上下 UI 之間那塊空間」的最近距離，再把它移到那塊空間的正中間
   _frameCamera() {
-    const a = this.camera.aspect;
     const H = this.host.clientHeight || 1;
     const { top = 0, bottom = 0 } = this.insets || {};
-    const f = Math.max(0.35, (H - top - bottom) / H); // 可用的高度比例
-    const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const needH = 0.86 / (tanV * f);
-    const needW = 0.62 / (tanV * a);
-    const d = Math.max(needH, needW) * (this.zoom || 1);
-    const target = new THREE.Vector3(0, 0.66, 0.05);
-    // 可用空間的中心比畫面中心低 → 鏡頭目標往上移，機器就落在空間中間
-    target.y += ((top - bottom) / H) * d * tanV;
+    const yTop = 1 - (2 * top) / H; // 可用空間（NDC）
+    const yBot = -1 + (2 * bottom) / H;
+    const availH = Math.max(0.5, yTop - yBot) * 0.97;
+    const availW = 2 * 0.88;
+    const rot = new THREE.Matrix4().makeRotationY(this.restYaw ?? -0.32);
+    const corners = [];
+    for (const x of [-0.36, 0.36]) for (const y of [0, 1.37]) for (const z of [-0.45, 0.43]) corners.push(new THREE.Vector3(x, y, z).applyMatrix4(rot));
     const dir = new THREE.Vector3(0.0, 0.3, 1).normalize();
-    this.camera.position.copy(target).addScaledVector(dir, d);
-    this.camera.lookAt(target);
-    this.camBase = this.camera.position.clone();
+    const target = new THREE.Vector3(0, 0.66, 0.05);
+    const cam = this.camera;
+    const extent = (d) => {
+      cam.position.copy(target).addScaledVector(dir, d);
+      cam.lookAt(target);
+      cam.updateMatrixWorld();
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const c of corners) {
+        const p = c.clone().project(cam);
+        x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+      }
+      return { w: x1 - x0, h: y1 - y0, cy: (y0 + y1) / 2 };
+    };
+    let d = 3;
+    for (let pass = 0; pass < 3; pass++) {
+      let lo = 1.2, hi = 14;
+      for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        const e = extent(mid);
+        if (e.h <= availH && e.w <= availW) hi = mid;
+        else lo = mid;
+      }
+      d = hi;
+      // 投影中心對準可用空間中心（中心偏上 → 鏡頭往上移，機器就往下）
+      const e = extent(d);
+      const tanV = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+      target.y += (e.cy - (yTop + yBot) / 2) * d * tanV;
+    }
+    cam.position.copy(target).addScaledVector(dir, d);
+    cam.lookAt(target);
+    this.camBase = cam.position.clone();
     this.camTarget = target;
   }
 

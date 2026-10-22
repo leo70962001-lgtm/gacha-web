@@ -461,7 +461,7 @@ function setPhase(ph) {
   machine?.setSlotHint(ph === 'coin');
   machine?.setHandleEnabled(ph === 'turn');
   $('p-left').textContent = t('left', { l: left(), t: play.cfg.items.reduce((a, b) => a + b.qty, 0) });
-  $('got-count').textContent = Object.keys(play.got).length;
+  $('got-count').textContent = $('got-count2').textContent = Object.keys(play.got).length;
   renderWallet();
 }
 
@@ -802,6 +802,7 @@ async function boot() {
   $('btn-lineup').onclick = openLineup;
   $('p-odds').onclick = openLineup;
   $('btn-collection').onclick = openCollection;
+  $('p-col').onclick = openCollection;
   $('r-again').onclick = afterResult;
   $('r-col').onclick = () => {
     afterResult();
