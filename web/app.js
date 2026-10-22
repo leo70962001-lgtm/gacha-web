@@ -4,7 +4,8 @@ import { unlock, setMuted, sfx } from './sfx.js';
 import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS } from './codec.js';
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
-import { parseMediaUrl, mediaFromLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
+import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
+import { cloudReady, saveMachine, loadMachine, uploadMedia } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -95,14 +96,14 @@ const placeholderCache = new Map();
 // 上傳的照片：裁成正方形 96 px、轉 webp（一張約 1.5 KB，連結裡放得下）
 async function shrinkImage(file) {
   const bmp = await createImageBitmap(file);
-  const S = 96;
+  const S = 128;
   const c = document.createElement('canvas');
   c.width = c.height = S;
   const g = c.getContext('2d');
   const s = Math.max(S / bmp.width, S / bmp.height);
   g.drawImage(bmp, (S - bmp.width * s) / 2, (S - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
-  let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.7));
-  if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.75));
+  let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.78));
+  if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
 }
 
@@ -131,8 +132,11 @@ function draftBg(b) {
 
 function draftMedia(m) {
   if (!m) return null;
-  if (m.k === 'file')
-    return { k: 'file', kind: m.kind === 'video' ? 'video' : 'audio', id: String(m.id).slice(0, 40), name: String(m.name || '').slice(0, 60), mime: String(m.mime || ''), size: m.size | 0 };
+  if (m.k === 'file') {
+    const f = { k: 'file', kind: m.kind === 'video' ? 'video' : 'audio', id: String(m.id).slice(0, 40), name: String(m.name || '').slice(0, 60), mime: String(m.mime || ''), size: m.size | 0 };
+    if (typeof m.remote === 'string' && parseMediaUrl(m.remote)) f.remote = m.remote; // 已經上傳到雲端
+    return f;
+  }
   return mediaFromLink([m.k, m.u]);
 }
 
@@ -486,18 +490,49 @@ function bindForm() {
   });
 
   $('make-link').onclick = async () => {
-    linkToken = await encodeConfig(draft);
-    const url = shareBase() + '#' + linkToken;
-    $('link').value = url;
-    $('link-out').hidden = false;
-    const imgs = draft.items.filter((it) => it.img).length;
-    const meta = $('link-meta');
-    meta.textContent = t(imgs ? 'linkMetaPhotos' : 'linkMeta', { n: url.length.toLocaleString(), m: imgs });
-    meta.classList.toggle('warn', url.length > 8000);
-    if (url.length > 8000) meta.textContent += t('linkWarn');
-    const locals = draft.items.filter((it) => it.media?.k === 'file').length;
-    if (locals) meta.textContent += t('media.localInLink', { n: locals });
-    $('link').scrollTop = 0;
+    const btn = $('make-link');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try {
+      let upFail = 0;
+      if (cloudReady()) {
+        for (const it of draft.items) {
+          if (it.media?.k !== 'file' || it.media.remote) continue;
+          btn.textContent = t('link.uploading', { name: it.media.name });
+          try {
+            const u = await localUrl(it.media);
+            if (!u) throw new Error('missing');
+            const blob = await (await fetch(u)).blob();
+            it.media.remote = await uploadMedia(blob, it.media.name, it.media.kind);
+            saveDraft();
+          } catch (e) {
+            upFail++;
+          }
+        }
+        btn.textContent = t('link.making');
+      }
+      linkToken = await encodeConfig(draft);
+      let short = null;
+      if (cloudReady()) short = await saveMachine(linkToken).catch(() => null);
+      const url = shareBase() + '#' + (short ? 's.' + short : linkToken);
+      $('link').value = url;
+      $('link-out').hidden = false;
+      const imgs = draft.items.filter((it) => it.img).length;
+      const meta = $('link-meta');
+      const long = !short && url.length > 8000;
+      meta.textContent = short ? t('linkMetaShort') : t(imgs ? 'linkMetaPhotos' : 'linkMeta', { n: url.length.toLocaleString(), m: imgs });
+      if (!short && cloudReady()) meta.textContent += t('link.cloudDown');
+      meta.classList.toggle('warn', long || upFail > 0);
+      if (long) meta.textContent += t('linkWarn');
+      const locals = draft.items.filter((it) => it.media?.k === 'file' && !mediaToLink(it.media)).length;
+      const shared = draft.items.filter((it) => it.media?.k === 'file' && mediaToLink(it.media)).length;
+      if (shared) meta.textContent += t('media.cloudShared', { n: shared });
+      if (locals) meta.textContent += t('media.localInLink', { n: locals });
+      $('link').scrollTop = 0;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = t('makeLink');
+    }
   };
   $('copy').onclick = async () => {
     try {
@@ -513,6 +548,11 @@ function bindForm() {
     if (!linkToken) return;
     await enterPlay(linkToken);
   };
+}
+
+// #g1z.…＝整台機器在連結裡；#s.xxxxxxxxxx＝雲端短連結
+function isMachineHash(h) {
+  return h.startsWith('g1') || /^s\.[0-9A-Za-z]{10}$/.test(h);
 }
 
 function shareBase() {
@@ -571,6 +611,7 @@ function playKey() {
 async function enterPlay(token) {
   let cfg;
   try {
+    if (token.startsWith('s.')) token = await loadMachine(token.slice(2)); // 短連結 → 雲端的機台字串
     cfg = token === 'draft' ? draft : await decodeConfig(token);
   } catch (e) {
     toast(t('t.badLink', { msg: t(e.message) }));
@@ -1341,7 +1382,7 @@ async function boot() {
   $('tab-play').onclick = () => {
     unlock();
     const h = location.hash.slice(1);
-    enterPlay(h.startsWith('g1') ? h : 'draft');
+    enterPlay(isMachineHash(h) ? h : 'draft');
   };
   $('btn-sound').onclick = () => {
     const on = $('btn-sound').getAttribute('aria-pressed') !== 'true';
@@ -1431,14 +1472,14 @@ async function boot() {
     return;
   }
   const h = location.hash.slice(1);
-  if (h.startsWith('g1')) await enterPlay(h);
+  if (isMachineHash(h)) await enterPlay(h);
   else showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
   // 等台紙、貼紙畫好再拿掉載入畫面
   await new Promise((r) => setTimeout(r, 200));
   $('loading').hidden = true;
   addEventListener('hashchange', () => {
     const tok = location.hash.slice(1);
-    if (tok.startsWith('g1')) enterPlay(tok);
+    if (isMachineHash(tok)) enterPlay(tok);
   });
 }
 

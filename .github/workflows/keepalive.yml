@@ -1,0 +1,14 @@
+# Supabase 免費專案連續 7 天沒動靜會暫停（暫停時短連結打不開）→ 每 3 天讀一次資料表，讓它保持醒著
+name: Keep Supabase awake
+on:
+  schedule:
+    - cron: '17 3 */3 * *'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read one machine id
+        run: |
+          curl -fsS "https://mtiqeosgpmjlhznhixpr.supabase.co/rest/v1/machines?select=id&limit=1" \
+            -H "apikey: sb_publishable_IH8ygYOX8cIYjFa-ETiOyA_iFAqgQDH" > /dev/null

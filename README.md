@@ -17,10 +17,21 @@
 6. 手機版（寬 < 640 px）：價錢章收進名牌（名牌拉滿寬、標籤一列），提示卡拿掉 STEP 那行、按鈕縮小 → 機台在上下 UI 之間放到最大（390×760 實測：機台寬約佔畫面 70%，原本約 56%）
 7. 介面語言：中文／日本語／English（右上角切換，預設跟瀏覽器語言；機台上的貼紙字、範例機台也跟著換）
 
+## 短連結（`web/cloud.js`，Supabase）
+
+連結原本把整台機器（含照片）塞在 `#g1z.…` 裡，5 張照片就快 2 萬字，LINE 一則訊息只收 5,000 字。現在：
+- 「產生轉蛋連結」→ 機台字串（還是 `g1z.…`）存進 Supabase 資料表 `machines`，id＝內容 SHA-256 前 8 bytes 的 base62（10 字）→ 連結只剩 `…/gacha-web/#s.Ab3dE9xQ1z`
+- 同樣的內容永遠同一個 id；資料表只開放讀、新增（RLS），存過的機台不能改、不能刪；讀回來會再對一次雜湊
+- 上傳的音樂／影片：放進公開的 `media` 桶（單檔 50 MB、只收 audio/video，路徑＝內容 id／英數檔名）→ 變成一般 https 音樂／影片網址，買家也能播；上傳過的網址記在草稿裡，不會重傳
+- 照片不用再省連結長度 → 128 px（原本 96 px）
+- 雲端連不上（離線、claude.ai artifact 的 CSP）→ 自動給原本的長連結；舊的長連結照樣能開
+- 專案：Supabase 組織 Clatter／專案 `clatter-gacha`（東京，Free），帳號 GitHub leo70962001-lgtm。設定 SQL：`supabase/setup.sql`。公開 key（publishable）寫在 `cloud.js`
+- 免費專案 7 天沒動靜會暫停 → `.github/workflows/keepalive.yml` 每 3 天讀一次資料表
+
 ## 影音獎品（`web/media.js`）
 
 - 貼連結：YouTube／Shorts（直式播放器）、SoundCloud、Spotify、https 的 mp3／mp4 網址 → 放進分享連結（`[k, u]`，解碼時重新解析、對不上就丟掉）
-- 上傳音樂／影片檔：存在這台裝置的 IndexedDB（上限 50 MB），只有開店的人自己試玩時能播；連結裡放不下（產生連結時會提醒）。影片會自動擷取一格當縮圖（縮圖會放進連結）
+- 上傳音樂／影片檔：先存在這台裝置的 IndexedDB（上限 50 MB）；產生連結時傳上 Supabase 的 `media` 桶，買家也能播（雲端連不上時才只有開店的人自己能播）。影片會自動擷取一格當縮圖（縮圖會放進連結）
 - 結果卡：影片／YouTube 取代獎品圖；音樂有自製播放列；收藏冊點已收集的可以重播
 - 在 claude.ai artifact 裡，外部網站的影音會被 CSP 擋掉，要用 GitHub Pages 版
 

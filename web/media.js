@@ -50,7 +50,12 @@ export function mediaFromLink(row) {
 }
 
 export function mediaToLink(m) {
-  return m && m.k !== 'file' ? [m.k, m.u] : null;
+  if (!m) return null;
+  if (m.k === 'file') {
+    const r = m.remote && parseMediaUrl(m.remote); // 上傳到雲端的檔案 → 一般的音樂／影片網址
+    return r ? [r.k, r.u] : null;
+  }
+  return [m.k, m.u];
 }
 
 // 顯示用的種類：音樂、影片
