@@ -10,7 +10,7 @@ const td = new TextDecoder();
 export const CURRENCIES = ['NT$', '¥', 'HK$', 'US$', '代幣'];
 export const THEME_KEYS = ['red', 'white', 'yellow', 'blue', 'mint', 'pink', 'black'];
 export const LIMITS = { items: 16, name: 24, title: 24, qty: 999, coins: 20 };
-export const BG_PRESETS = ['plain', 'shop', 'night', 'sakura', 'stars'];
+export const BG_PRESETS = ['plain', 'shop', 'night', 'sakura', 'stars', 'cats', 'dogs', 'galaxy'];
 
 export async function encodeConfig(cfg) {
   const imgs = [];
