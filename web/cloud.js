@@ -1,6 +1,7 @@
 // 雲端（Supabase）：短連結＋上傳的影音
-// 機台設定照舊編成 g1z.… 字串，存進資料表 machines，id＝內容雜湊的前 10 字（base62）
-//   → 分享連結只要 #s.<id>；同樣的內容永遠是同一個 id，存過的不會被改（資料表只開放新增、讀取）
+// 機台設定照舊編成 g1z.… 字串，存進資料表 machines → 分享連結只要 #s.<10 字 id>
+// 同一條連結可以更新：第一次存的時候隨機產生 id＋修改鑰匙（只存在開店的人自己的草稿裡），
+//   之後帶同一把鑰匙呼叫 save_machine() 就會改到同一條連結；資料庫只存鑰匙的雜湊（supabase/02_editable.sql）
 // 上傳的音樂／影片放進公開的 media 桶 → 變成一般的 https 音樂／影片網址（跟貼網址一樣進連結）
 // 連不上（離線、claude.ai artifact 的 CSP 擋掉）→ 呼叫的地方退回原本的長連結
 // 專案 clatter-gacha（Supabase 組織 Clatter，東京），設定見 supabase/setup.sql
@@ -47,29 +48,74 @@ async function hashId(bytes) {
 }
 
 export const isShortId = (id) => /^[0-9A-Za-z]{10}$/.test(id || '');
+const isKey = (k) => /^[A-Za-z0-9_-]{20,64}$/.test(k || '');
 
-// 存機台 → 短 id
-export async function saveMachine(token) {
-  const id = await hashId(te.encode(token));
-  const r = await req('/rest/v1/machines', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ id, data: token }),
-  });
-  if (r.ok || r.status === 409) return id; // 409＝一模一樣的機台已經存過
-  throw new Error('e.network');
+// 不偏的隨機 base62（248＝62×4，超過就丟掉重抽）
+function randB62(n) {
+  let s = '';
+  while (s.length < n) for (const b of crypto.getRandomValues(new Uint8Array(n))) if (b < 248 && s.length < n) s += B62[b % 62];
+  return s;
 }
 
-// 短 id → 機台字串（對一下雜湊，不是這個 id 的內容就不收）
+// 存機台：cred＝{ id, key }（上次的）→ 更新同一條；沒有就開新的。回傳要記下來的 cred
+// 鑰匙對不上（或撞到別人的 id）→ 丟 e.locked，呼叫的地方改開新連結
+// stock＝{ 獎品 key: 放進機台的數量 }（伺服器照這個算剩下幾個）
+export async function saveMachine(token, cred, stock) {
+  const c = cred && isShortId(cred.id) && isKey(cred.key) ? cred : { id: randB62(10), key: randB62(24) };
+  const r = await req('/rest/v1/rpc/save_machine', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: c.id, p_key: c.key, p_data: token, p_stock: stock }),
+  });
+  if (r.ok) return { id: c.id, key: c.key };
+  const err = await r.json().catch(() => ({}));
+  throw new Error(err.code === '42501' ? 'e.locked' : 'e.network');
+}
+
+// 短 id → 機台字串（每次都拿最新的，不用快取）
 export async function loadMachine(id) {
   if (!isShortId(id)) throw new Error('e.format');
-  const r = await req(`/rest/v1/machines?id=eq.${id}&select=data`);
+  const r = await req(`/rest/v1/machines?id=eq.${id}&select=data`, { cache: 'no-store' });
   if (!r.ok) throw new Error('e.network');
   const rows = await r.json().catch(() => null);
   const data = Array.isArray(rows) && typeof rows[0]?.data === 'string' ? rows[0].data : null;
   if (!data) throw new Error('e.notFound');
-  if ((await hashId(te.encode(data))) !== id) throw new Error('e.notFound');
   return data;
+}
+
+// ---------- 共用庫存 ----------
+// 買家投完幣 → 伺服器照「剩下的數量」抽 n 顆並記下來 → { picks: [獎品 key], remaining: { key: 剩幾個 } }
+export async function pullCloud(id, n) {
+  const r = await req('/rest/v1/rpc/pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: id, p_n: n }),
+  });
+  if (!r.ok) throw new Error(r.status === 404 ? 'e.notFound' : 'e.network');
+  const j = await r.json().catch(() => null);
+  if (!j || !Array.isArray(j.picks)) throw new Error('e.network');
+  return { picks: j.picks.map(String), remaining: j.remaining && typeof j.remaining === 'object' ? j.remaining : {} };
+}
+
+// 每個獎品被轉走幾個：{ key: n }
+export async function pulledCounts(id) {
+  if (!isShortId(id)) throw new Error('e.format');
+  const r = await req(`/rest/v1/pulls?machine_id=eq.${id}&select=item,n`, { cache: 'no-store' });
+  if (!r.ok) throw new Error('e.network');
+  const rows = await r.json().catch(() => []);
+  const out = {};
+  for (const row of Array.isArray(rows) ? rows : []) if (typeof row.item === 'string') out[row.item] = row.n | 0;
+  return out;
+}
+
+// 補貨（只有開店的人有鑰匙）：被轉走的紀錄歸零
+export async function restockCloud(cred) {
+  const r = await req('/rest/v1/rpc/restock', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: cred.id, p_key: cred.key }),
+  });
+  if (!r.ok) throw new Error(r.status === 401 ? 'e.locked' : 'e.network');
 }
 
 // 副檔名要對得上 media.js 認得的音樂／影片網址

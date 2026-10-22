@@ -20,7 +20,7 @@ export async function encodeConfig(cfg) {
     s: cfg.shop,
     t: cfg.theme,
     p: [cfg.price.coins, cfg.price.unit, cfg.price.cur],
-    // 每列：[名稱, 稀有度, 數量, 圖片長度, 圖片格式, 影音連結]（後面沒有就省略）
+    // 每列：[名稱, 稀有度, 數量, 圖片長度, 圖片格式, 影音連結, 獎品 id]（後面沒有就省略）
     i: cfg.items.map((it) => {
       const row = [it.name, it.rarity, it.qty];
       if (it.img) {
@@ -31,6 +31,11 @@ export async function encodeConfig(cfg) {
       if (media) {
         if (row.length === 3) row.push(0, '');
         row.push(media);
+      }
+      if (it.uid) {
+        if (row.length === 3) row.push(0, '');
+        if (row.length === 5) row.push(0);
+        row.push(it.uid);
       }
       return row;
     }),
@@ -77,7 +82,7 @@ export async function decodeConfig(token) {
   }
   let off = j.__off;
   const items = (Array.isArray(j.i) ? j.i : []).slice(0, LIMITS.items).map((r) => {
-    const [name, rarity, qty, len, fmt, media] = Array.isArray(r) ? r : [];
+    const [name, rarity, qty, len, fmt, media, uid] = Array.isArray(r) ? r : [];
     let img = null;
     if (Number.isInteger(len) && len > 0 && off + len <= buf.length) {
       img = { bytes: buf.slice(off, off + len), mime: fmt === 'w' ? 'image/webp' : 'image/jpeg' };
@@ -89,6 +94,7 @@ export async function decodeConfig(token) {
       qty: clampInt(qty, 1, LIMITS.qty, 1),
       img,
       media: mediaFromLink(media),
+      uid: typeof uid === 'string' && /^[0-9A-Za-z]{4,12}$/.test(uid) ? uid : null,
     };
   });
   if (!items.length) throw new Error('e.empty');

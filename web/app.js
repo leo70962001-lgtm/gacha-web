@@ -5,7 +5,7 @@ import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
-import { cloudReady, saveMachine, loadMachine, uploadMedia } from './cloud.js';
+import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -107,6 +107,25 @@ async function shrinkImage(file) {
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
 }
 
+// ---------- 獎品 id ----------
+// 每個獎品一個固定 id（6 字）：雲端用它記「被轉走幾個」，賣家改名字也對得回來
+function newUid() {
+  const B = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  let s = '';
+  while (s.length < 6) for (const b of crypto.getRandomValues(new Uint8Array(6))) if (b < 248 && s.length < 6) s += B[b % 62];
+  return s;
+}
+function ensureUids(d) {
+  const seen = new Set();
+  for (const it of d.items) {
+    if (!/^[0-9A-Za-z]{4,12}$/.test(it.uid || '') || seen.has(it.uid)) it.uid = newUid();
+    seen.add(it.uid);
+  }
+}
+// 雲端庫存用的 key：新機台都有 id；沒有 id 的舊機台用名稱
+const itemKey = (it) => it.uid || ('n:' + it.name).slice(0, 40);
+const stockOf = (cfg) => Object.fromEntries(cfg.items.map((it) => [itemKey(it), it.qty]));
+
 // ---------- 草稿（開店表單）存在本機 ----------
 function loadDraft() {
   const d = store.get('clatter.draft');
@@ -117,10 +136,14 @@ function loadDraft() {
     qty: Math.min(LIMITS.qty, Math.max(1, it.qty | 0)),
     img: it.img ? { bytes: Uint8Array.from(atob(it.img.b64), (ch) => ch.charCodeAt(0)), mime: it.img.mime } : null,
     media: draftMedia(it.media),
+    uid: typeof it.uid === 'string' ? it.uid : null,
   }));
+  ensureUids(d);
   if (!THEME_KEYS.includes(d.theme)) d.theme = 'red';
   d.bg = draftBg(d.bg);
   if (!d.price || !CURRENCIES.includes(d.price.cur)) d.price = { coins: 5, unit: 10, cur: 'NT$' };
+  // 雲端短連結的 id＋修改鑰匙：有的話之後改設定會自動更新到同一條連結
+  if (!(d.cloud && /^[0-9A-Za-z]{10}$/.test(d.cloud.id) && /^[A-Za-z0-9_-]{20,64}$/.test(d.cloud.key))) delete d.cloud;
   return d;
 }
 function draftBg(b) {
@@ -200,6 +223,15 @@ function renderItems() {
     odds.className = 'odds';
     odds.textContent = t('odds', { p: pct(it.qty / total) });
     meta.append(sel, qw, odds);
+    if (cloudStats && draft.cloud) {
+      const taken = cloudStats[itemKey(it)] || 0;
+      const tk = document.createElement('div');
+      tk.className = 'taken';
+      const b = document.createElement('b');
+      b.textContent = taken;
+      tk.append(t('stock.takenA'), b, t('stock.takenB', { r: Math.max(0, it.qty - taken) }));
+      meta.append(tk);
+    }
     const mrow = document.createElement('div');
     mrow.className = 'mrow';
     const mb = document.createElement('button');
@@ -387,8 +419,12 @@ function draftChanged(redrawItems = false) {
   }
   draft.sample = false;
   linkToken = null;
-  $('link-out').hidden = true;
   saveDraft();
+  if (draft.cloud && cloudReady()) scheduleSync();
+  else {
+    $('link-out').hidden = true;
+    linkState = null;
+  }
   if (app.dataset.mode === 'create') showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
 }
 
@@ -458,7 +494,7 @@ function bindForm() {
   bindMediaSheet();
   $('add-item').onclick = () => {
     if (draft.items.length >= LIMITS.items) return;
-    draft.items.push({ name: t('newPrize', { n: draft.items.length + 1 }), rarity: 0, qty: 5, img: null });
+    draft.items.push({ name: t('newPrize', { n: draft.items.length + 1 }), rarity: 0, qty: 5, img: null, uid: newUid() });
     draftChanged(true);
     const last = items.lastElementChild?.querySelector('.name');
     last?.focus();
@@ -489,50 +525,13 @@ function bindForm() {
     draftChanged();
   });
 
-  $('make-link').onclick = async () => {
-    const btn = $('make-link');
-    if (btn.disabled) return;
-    btn.disabled = true;
-    try {
-      let upFail = 0;
-      if (cloudReady()) {
-        for (const it of draft.items) {
-          if (it.media?.k !== 'file' || it.media.remote) continue;
-          btn.textContent = t('link.uploading', { name: it.media.name });
-          try {
-            const u = await localUrl(it.media);
-            if (!u) throw new Error('missing');
-            const blob = await (await fetch(u)).blob();
-            it.media.remote = await uploadMedia(blob, it.media.name, it.media.kind);
-            saveDraft();
-          } catch (e) {
-            upFail++;
-          }
-        }
-        btn.textContent = t('link.making');
-      }
-      linkToken = await encodeConfig(draft);
-      let short = null;
-      if (cloudReady()) short = await saveMachine(linkToken).catch(() => null);
-      const url = shareBase() + '#' + (short ? 's.' + short : linkToken);
-      $('link').value = url;
-      $('link-out').hidden = false;
-      const imgs = draft.items.filter((it) => it.img).length;
-      const meta = $('link-meta');
-      const long = !short && url.length > 8000;
-      meta.textContent = short ? t('linkMetaShort') : t(imgs ? 'linkMetaPhotos' : 'linkMeta', { n: url.length.toLocaleString(), m: imgs });
-      if (!short && cloudReady()) meta.textContent += t('link.cloudDown');
-      meta.classList.toggle('warn', long || upFail > 0);
-      if (long) meta.textContent += t('linkWarn');
-      const locals = draft.items.filter((it) => it.media?.k === 'file' && !mediaToLink(it.media)).length;
-      const shared = draft.items.filter((it) => it.media?.k === 'file' && mediaToLink(it.media)).length;
-      if (shared) meta.textContent += t('media.cloudShared', { n: shared });
-      if (locals) meta.textContent += t('media.localInLink', { n: locals });
-      $('link').scrollTop = 0;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = t('makeLink');
-    }
+  $('make-link').onclick = () => requestSync(false);
+  $('restock').onclick = restock;
+  $('new-link').onclick = () => {
+    // 舊連結停在目前的內容；之後的修改只會更新新連結
+    delete draft.cloud;
+    saveDraft();
+    requestSync(false).then(() => draft.cloud && toast(t('t.newLink')));
   };
   $('copy').onclick = async () => {
     try {
@@ -545,9 +544,156 @@ function bindForm() {
     }
   };
   $('try').onclick = async () => {
-    if (!linkToken) return;
+    if (!linkToken) linkToken = await encodeConfig(draft);
     await enterPlay(linkToken);
   };
+}
+
+// ---------- 連結（雲端短連結，改設定自動更新同一條） ----------
+let linkState = null; // 最近一次顯示的連結狀態（換語言時重寫說明）
+let syncTimer = 0;
+let syncing = null;
+let syncAgain = false;
+
+// 改設定 → 1.5 秒沒再動就更新（連續改只送最後一次）
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  if (linkState) showLinkStatus({ ...linkState, syncing: true });
+  syncTimer = setTimeout(() => requestSync(true), 1500);
+}
+
+// 同一時間只跑一個；跑的途中又有修改 → 跑完再跑一次（不會讓舊的內容蓋掉新的）
+async function requestSync(auto) {
+  if (syncing) {
+    syncAgain = true;
+    return syncing;
+  }
+  syncing = publishLink(auto);
+  try {
+    await syncing;
+  } finally {
+    syncing = null;
+  }
+  if (syncAgain) {
+    syncAgain = false;
+    return requestSync(true);
+  }
+}
+
+// 上傳的影音先放上雲端 → 機台存進雲端（有鑰匙就改同一條）→ 短連結；雲端不通就給完整的長連結
+async function publishLink(auto) {
+  const btn = $('make-link');
+  btn.disabled = true;
+  let upFail = 0;
+  try {
+    if (cloudReady()) {
+      for (const it of draft.items) {
+        if (it.media?.k !== 'file' || it.media.remote) continue;
+        btn.textContent = t('link.uploading', { name: it.media.name });
+        try {
+          const u = await localUrl(it.media);
+          if (!u) throw new Error('missing');
+          const blob = await (await fetch(u)).blob();
+          it.media.remote = await uploadMedia(blob, it.media.name, it.media.kind);
+          saveDraft();
+        } catch (e) {
+          upFail++;
+        }
+      }
+      btn.textContent = t('link.making');
+    }
+    ensureUids(draft);
+    const token = await encodeConfig(draft);
+    let failed = false;
+    if (cloudReady()) {
+      const stock = stockOf(draft);
+      try {
+        draft.cloud = await saveMachine(token, draft.cloud, stock);
+      } catch (e) {
+        if (e.message === 'e.locked') draft.cloud = await saveMachine(token, null, stock).catch(() => null);
+        failed = !draft.cloud || e.message !== 'e.locked';
+      }
+      if (draft.cloud && !failed) draft.sample = false; // 已經發出去的機台：換語言不再重寫範例內容
+      saveDraft();
+    }
+    linkToken = token;
+    const c = draft.cloud;
+    showLinkStatus({ url: shareBase() + '#' + (c ? 's.' + c.id : token), short: !!c, failed, upFail, auto, at: Date.now() });
+    if (c && !failed) refreshStats();
+    if (failed && c) {
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => requestSync(true), 15000); // 連不上 → 15 秒後再試
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('makeLink');
+  }
+}
+
+// 賣家：每個獎品被轉走幾個（開頁、更新連結、回到這個分頁、補貨後重抓）
+let cloudStats = null;
+async function refreshStats() {
+  if (!draft.cloud || !cloudReady()) return;
+  try {
+    cloudStats = await pulledCounts(draft.cloud.id);
+    renderItems();
+  } catch (e) {
+    /* 抓不到就先不顯示 */
+  }
+}
+
+// 補貨：按兩下（第一下變成「確定補貨？」）→ 被轉走的紀錄歸零
+let restockArmed = 0;
+async function restock() {
+  const b = $('restock');
+  if (!draft.cloud) return;
+  if (Date.now() - restockArmed > 3000) {
+    restockArmed = Date.now();
+    b.textContent = t('stock.confirm');
+    setTimeout(() => (b.textContent = t('stock.restock')), 3000);
+    return;
+  }
+  restockArmed = 0;
+  b.disabled = true;
+  try {
+    await restockCloud(draft.cloud);
+    toast(t('stock.done'));
+    await refreshStats();
+  } catch (e) {
+    toast(t('t.badLink', { msg: t(e.message) }));
+  } finally {
+    b.disabled = false;
+    b.textContent = t('stock.restock');
+  }
+}
+
+function showLinkStatus(s) {
+  linkState = s;
+  $('link').value = s.url;
+  $('link-out').hidden = false;
+  $('new-link').hidden = !s.short;
+  $('restock').hidden = !s.short;
+  const meta = $('link-meta');
+  const imgs = draft.items.filter((it) => it.img).length;
+  const long = !s.short && s.url.length > 8000;
+  let text;
+  if (s.syncing) text = t('link.syncing');
+  else if (s.short && s.failed) text = t('link.syncFail');
+  else if (s.short && s.auto) text = t('link.synced', { time: new Date(s.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+  else if (s.short) text = t('linkMetaShort');
+  else {
+    text = t(imgs ? 'linkMetaPhotos' : 'linkMeta', { n: s.url.length.toLocaleString(), m: imgs });
+    if (cloudReady()) text += t('link.cloudDown');
+    if (long) text += t('linkWarn');
+  }
+  if (!s.syncing) {
+    const shared = draft.items.filter((it) => it.media?.k === 'file' && mediaToLink(it.media)).length;
+    const locals = draft.items.filter((it) => it.media?.k === 'file' && !mediaToLink(it.media)).length;
+    if (shared) text += t('media.cloudShared', { n: shared });
+    if (locals) text += t('media.localInLink', { n: locals });
+  }
+  meta.textContent = text;
+  meta.classList.toggle('warn', !s.syncing && (long || s.failed || s.upFail > 0));
 }
 
 // #g1z.…＝整台機器在連結裡；#s.xxxxxxxxxx＝雲端短連結
@@ -610,8 +756,12 @@ function playKey() {
 
 async function enterPlay(token) {
   let cfg;
+  const link = token;
+  const sid = token.startsWith('s.') ? token.slice(2) : null;
+  let pulled = null;
   try {
-    if (token.startsWith('s.')) token = await loadMachine(token.slice(2)); // 短連結 → 雲端的機台字串
+    // 短連結 → 雲端上最新的機台字串＋每個獎品被轉走幾個（庫存大家共用）
+    if (sid) [token, pulled] = await Promise.all([loadMachine(sid), pulledCounts(sid)]);
     cfg = token === 'draft' ? draft : await decodeConfig(token);
   } catch (e) {
     toast(t('t.badLink', { msg: t(e.message) }));
@@ -619,11 +769,11 @@ async function enterPlay(token) {
   }
   if (token === 'draft') token = await encodeConfig(draft);
   machine?.clearCapsules();
-  const id = shortId(token);
-  play = { cfg, token, id, phase: 'coin', inserted: 0, busy: false };
-  const saved = store.get('clatter.play.' + id);
+  const id = sid ? 's' + sid : shortId(token);
+  play = { cfg, token, link: sid ? link : token, id, cloud: sid, phase: 'coin', inserted: 0, busy: false };
+  const saved = reconcile(store.get('clatter.play.' + id), cfg);
   const totalQ = cfg.items.map((it) => it.qty);
-  if (saved && Array.isArray(saved.remaining) && saved.remaining.length === cfg.items.length) {
+  if (saved) {
     play.remaining = saved.remaining.map((n, i) => Math.min(totalQ[i], Math.max(0, n | 0)));
     play.got = saved.got || {};
     play.coins = Number.isInteger(saved.coins) ? saved.coins : cfg.price.coins * 3;
@@ -648,6 +798,18 @@ async function enterPlay(token) {
     play.coins = cfg.price.coins * 3;
     play.pulls = 0;
   }
+  if (sid) {
+    // 共用庫存：剩下＝店家放的數量 − 被轉走的（不管是誰轉走的）
+    play.remaining = cfg.items.map((it) => Math.max(0, it.qty - (pulled[itemKey(it)] || 0)));
+    // 上次投好幣（伺服器已經抽了）還沒打開就離開 → 放進收藏
+    const idx = saved?.pend;
+    if (Number.isInteger(idx) && idx >= 0 && idx < cfg.items.length) {
+      play.got[idx] = (play.got[idx] || 0) + 1;
+      toast(t('t.pendRestored'));
+    }
+    savePlay();
+  }
+  $('c-reset').hidden = !!sid; // 雲端機台只有店家能補貨
   setMode('play');
   renderPlate();
   showMachine(cfg, left(), cfg.items.reduce((a, b) => a + b.qty, 0));
@@ -673,7 +835,40 @@ function left() {
 function savePlay() {
   const m = play.multi;
   const multi = m?.opened.includes(false) ? { picks: m.picks, opened: m.opened } : null; // 10 連還沒開完的
-  store.set(playKey(), { remaining: play.remaining, got: play.got, coins: play.coins, pulls: play.pulls, multi });
+  // 名稱、數量一起記：賣家改了獎品（增刪、補貨）時用名稱對回來
+  const names = play.cfg.items.map((it) => it.name);
+  const qtys = play.cfg.items.map((it) => it.qty);
+  // 雲端機台：投好幣、伺服器已經抽了但還沒打開的那顆（離開再回來會放進收藏）
+  const pend = play.cloud && play.pending != null ? play.pending : null;
+  store.set(playKey(), { remaining: play.remaining, got: play.got, coins: play.coins, pulls: play.pulls, multi, names, qtys, pend });
+}
+
+// 賣家更新了同一條連結 → 買家的剩餘數量、收藏照獎品名稱對回新的獎品表
+//   數量照差額加減（賣家補 5 顆 → 剩的多 5 顆）；新獎品照新數量；被拿掉的獎品就不見了
+function reconcile(saved, cfg) {
+  if (!saved || !Array.isArray(saved.remaining)) return null;
+  const names = cfg.items.map((it) => it.name);
+  if (!Array.isArray(saved.names)) return saved.remaining.length === names.length ? saved : null; // 舊紀錄：長度對得上才用
+  const map = []; // 舊的第 j 個 → 新的第 i 個
+  const used = new Set();
+  const remaining = names.map((n, i) => {
+    const j = saved.names.findIndex((m, k) => m === n && !used.has(k));
+    const q = cfg.items[i].qty;
+    if (j < 0) return q;
+    used.add(j);
+    map[j] = i;
+    const oldQ = Number.isInteger(saved.qtys?.[j]) ? saved.qtys[j] : q;
+    return Math.min(q, Math.max(0, (saved.remaining[j] | 0) + q - oldQ));
+  });
+  const got = {};
+  for (const [j, n] of Object.entries(saved.got || {})) if (map[j] != null) got[map[j]] = n;
+  let multi = null;
+  if (saved.multi && Array.isArray(saved.multi.picks)) {
+    const keep = saved.multi.picks.map((j, k) => [map[j], saved.multi.opened?.[k]]).filter(([i]) => i != null);
+    multi = { picks: keep.map(([i]) => i), opened: keep.map(([, o]) => !!o) };
+  }
+  const pend = Number.isInteger(saved.pend) ? map[saved.pend] ?? null : null;
+  return { ...saved, remaining, got, multi, pend };
 }
 
 function setPhase(ph) {
@@ -741,10 +936,68 @@ async function insertCoin(fromX, fromY) {
   play.inserted++;
   savePlay();
   if (play.inserted >= play.cfg.price.coins) {
-    play.pending = draw();
+    if (play.cloud) {
+      setPhase('busy');
+      const r = await pullFromCloud(1);
+      if (!r) return refundCoins(play.inserted);
+      play.pending = r[0];
+      savePlay();
+    } else play.pending = draw();
     machine.setForeshadow(foreshadowLevel([play.cfg.items[play.pending].rarity]));
     setPhase('turn');
   } else setPhase('coin');
+}
+
+// 買家回到分頁：店家改了機台 → 重新載入；只是庫存變了 → 更新剩幾顆（投到一半的時候不動）
+async function refreshPlay() {
+  if (!play?.cloud || play.inserted > 0 || !['coin', 'soldout'].includes(play.phase)) return;
+  try {
+    const [data, pulled] = await Promise.all([loadMachine(play.cloud), pulledCounts(play.cloud)]);
+    if (data !== play.token) {
+      await enterPlay(play.link);
+      toast(t('t.machineUpdated'));
+      return;
+    }
+    const before = left();
+    play.remaining = play.cfg.items.map((it) => Math.max(0, it.qty - (pulled[itemKey(it)] || 0)));
+    if (left() !== before) {
+      machine.setPile(left(), play.cfg.items.reduce((a, b) => a + b.qty, 0));
+      savePlay();
+      setPhase(left() === 0 ? 'soldout' : 'coin');
+    }
+  } catch (e) {
+    /* 連不上就維持原樣 */
+  }
+}
+
+// 雲端機台：跟伺服器抽 n 顆 → 獎品編號（抽不到、連不上 → null；剩下的數量一律用伺服器的）
+async function pullFromCloud(n) {
+  let res;
+  try {
+    res = await pullCloud(play.cloud, n);
+  } catch (e) {
+    toast(t('t.pullFail'));
+    return null;
+  }
+  const keys = play.cfg.items.map(itemKey);
+  keys.forEach((k, i) => {
+    if (Number.isInteger(res.remaining[k])) play.remaining[i] = Math.max(0, res.remaining[k]);
+  });
+  const picks = res.picks.map((k) => keys.indexOf(k)).filter((i) => i >= 0);
+  if (!picks.length) {
+    toast(t('t.soldOutNow'));
+    return null;
+  }
+  play.pulls += picks.length;
+  return picks;
+}
+
+// 沒抽成 → 投進去的硬幣退回
+function refundCoins(n) {
+  play.coins += n;
+  play.inserted = 0;
+  savePlay();
+  setPhase(left() === 0 ? 'soldout' : 'coin');
 }
 
 // 前兆：SSR 75%、SR 50% 會在轉把手時發光（不是每次都有，保留驚喜）
@@ -773,8 +1026,10 @@ async function onTurned() {
   play.inserted = 0;
   const idx = play.pending ?? draw();
   play.pending = idx;
-  play.remaining[idx]--;
-  play.pulls++;
+  if (!play.cloud) {
+    play.remaining[idx]--; // 雲端機台：伺服器抽的時候已經扣了
+    play.pulls++;
+  }
   savePlay();
   renderWallet();
   await machine.dispense(play.cfg.items[idx].rarity);
@@ -900,7 +1155,7 @@ const wait = (sec) => machine.after(sec);
 
 async function tenPull() {
   if (!play || play.phase !== 'coin' || play.inserting) return;
-  const n = Math.min(10, left());
+  let n = Math.min(10, left());
   if (n < 2) return;
   const need = play.cfg.price.coins;
   const cost = n * need - play.inserted; // 已經投進去的也算
@@ -920,13 +1175,24 @@ async function tenPull() {
     await wait(0.12);
   }
   await wait(0.5);
-  // 先抽好 n 顆（抽一顆少一顆）
-  const picks = [];
-  for (let i = 0; i < n; i++) {
-    const idx = draw();
-    play.remaining[idx]--;
-    play.pulls++;
-    picks.push(idx);
+  // 先抽好 n 顆（抽一顆少一顆）；雲端機台由伺服器抽，可能被別人先抽走幾顆
+  let picks = [];
+  if (play.cloud) {
+    picks = (await pullFromCloud(n)) || [];
+    if (picks.length < n) {
+      play.coins += (n - picks.length) * need;
+      renderWallet();
+      if (picks.length) toast(t('ten.partial', { n: picks.length }));
+    }
+    if (!picks.length) return refundCoins(0);
+    n = picks.length;
+  } else {
+    for (let i = 0; i < n; i++) {
+      const idx = draw();
+      play.remaining[idx]--;
+      play.pulls++;
+      picks.push(idx);
+    }
   }
   play.multi = { picks, opened: picks.map(() => false), isNew: [] };
   savePlay();
@@ -1346,7 +1612,7 @@ function toast(msg) {
 // 換語言：介面字、還沒改過的範例機台、機台上的貼紙字全部重畫
 async function changeLang(k) {
   setLang(k);
-  if (draft.sample) {
+  if (draft.sample && !draft.cloud) {
     draft = SAMPLE();
     saveDraft();
     if (app.dataset.mode === 'create') showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
@@ -1354,7 +1620,8 @@ async function changeLang(k) {
   const cur = $('cur');
   for (const o of cur.options) o.textContent = o.value === '代幣' ? t('cur.token') : o.value;
   renderForm();
-  if (!$('link-out').hidden && linkToken) $('make-link').click();
+  if (linkState?.short) showLinkStatus(linkState);
+  else if (!$('link-out').hidden && linkToken) requestSync(false);
   if (play) {
     renderPlate();
     if (STEPS[play.phase]) setPhase(play.phase);
@@ -1375,6 +1642,16 @@ async function boot() {
   ls.addEventListener('change', () => changeLang(ls.value));
   bindForm();
   renderForm();
+  if (draft.cloud && cloudReady()) {
+    showLinkStatus({ url: shareBase() + '#s.' + draft.cloud.id, short: true });
+    refreshStats();
+  }
+  // 回到這個分頁：賣家重抓被轉走的數量；買家重抓庫存（店家可能補貨或改了機台）
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (app.dataset.mode === 'create') refreshStats();
+    else refreshPlay();
+  });
   bindCoinDrag();
 
   $('tab-create').onclick = () => setMode('create');
@@ -1421,7 +1698,7 @@ async function boot() {
   $('c-reset').onclick = () => {
     store.del(playKey());
     closeSheet('sheet-collection');
-    enterPlay(play.token);
+    enterPlay(play.link);
     toast(t('t.restocked'));
   };
   document.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => closeSheet(b.closest('.sheet').id)));
