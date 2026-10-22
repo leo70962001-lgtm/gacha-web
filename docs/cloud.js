@@ -72,15 +72,16 @@ export async function saveMachine(token, cred, stock) {
   throw new Error(err.code === '42501' ? 'e.locked' : 'e.network');
 }
 
-// 短 id → 機台字串（每次都拿最新的，不用快取）
+// 短 id → { data: 機台字串, shared: 有沒有共用庫存 }（每次都拿最新的，不用快取）
+// 第一版的短連結（共用庫存之前存的）stock 是空的 → shared＝false，庫存照舊記在各自的裝置
 export async function loadMachine(id) {
   if (!isShortId(id)) throw new Error('e.format');
-  const r = await req(`/rest/v1/machines?id=eq.${id}&select=data`, { cache: 'no-store' });
+  const r = await req(`/rest/v1/machines?id=eq.${id}&select=data,stock`, { cache: 'no-store' });
   if (!r.ok) throw new Error('e.network');
   const rows = await r.json().catch(() => null);
-  const data = Array.isArray(rows) && typeof rows[0]?.data === 'string' ? rows[0].data : null;
-  if (!data) throw new Error('e.notFound');
-  return data;
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (typeof row?.data !== 'string') throw new Error('e.notFound');
+  return { data: row.data, shared: !!row.stock && Object.keys(row.stock).length > 0 };
 }
 
 // ---------- 共用庫存 ----------

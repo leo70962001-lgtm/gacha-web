@@ -759,9 +759,15 @@ async function enterPlay(token) {
   const link = token;
   const sid = token.startsWith('s.') ? token.slice(2) : null;
   let pulled = null;
+  let shared = false;
   try {
     // 短連結 → 雲端上最新的機台字串＋每個獎品被轉走幾個（庫存大家共用）
-    if (sid) [token, pulled] = await Promise.all([loadMachine(sid), pulledCounts(sid)]);
+    if (sid) {
+      const [m, p] = await Promise.all([loadMachine(sid), pulledCounts(sid)]);
+      token = m.data;
+      shared = m.shared;
+      pulled = p;
+    }
     cfg = token === 'draft' ? draft : await decodeConfig(token);
   } catch (e) {
     toast(t('t.badLink', { msg: t(e.message) }));
@@ -770,7 +776,8 @@ async function enterPlay(token) {
   if (token === 'draft') token = await encodeConfig(draft);
   machine?.clearCapsules();
   const id = sid ? 's' + sid : shortId(token);
-  play = { cfg, token, link: sid ? link : token, id, cloud: sid, phase: 'coin', inserted: 0, busy: false };
+  // cloud：共用庫存的機台 id（第一版短連結沒有共用庫存 → null，照舊用這台裝置的庫存）
+  play = { cfg, token, link: sid ? link : token, id, cloud: shared ? sid : null, phase: 'coin', inserted: 0, busy: false };
   const saved = reconcile(store.get('clatter.play.' + id), cfg);
   const totalQ = cfg.items.map((it) => it.qty);
   if (saved) {
@@ -798,7 +805,7 @@ async function enterPlay(token) {
     play.coins = cfg.price.coins * 3;
     play.pulls = 0;
   }
-  if (sid) {
+  if (play.cloud) {
     // 共用庫存：剩下＝店家放的數量 − 被轉走的（不管是誰轉走的）
     play.remaining = cfg.items.map((it) => Math.max(0, it.qty - (pulled[itemKey(it)] || 0)));
     // 上次投好幣（伺服器已經抽了）還沒打開就離開 → 放進收藏
@@ -809,7 +816,7 @@ async function enterPlay(token) {
     }
     savePlay();
   }
-  $('c-reset').hidden = !!sid; // 雲端機台只有店家能補貨
+  $('c-reset').hidden = !!play.cloud; // 共用庫存只有店家能補貨
   setMode('play');
   renderPlate();
   showMachine(cfg, left(), cfg.items.reduce((a, b) => a + b.qty, 0));
@@ -952,7 +959,7 @@ async function insertCoin(fromX, fromY) {
 async function refreshPlay() {
   if (!play?.cloud || play.inserted > 0 || !['coin', 'soldout'].includes(play.phase)) return;
   try {
-    const [data, pulled] = await Promise.all([loadMachine(play.cloud), pulledCounts(play.cloud)]);
+    const [{ data }, pulled] = await Promise.all([loadMachine(play.cloud), pulledCounts(play.cloud)]);
     if (data !== play.token) {
       await enterPlay(play.link);
       toast(t('t.machineUpdated'));
