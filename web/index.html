@@ -28,6 +28,7 @@
   --r-r: #2f80ed;
   --r-sr: #a45cf0;
   --r-ssr: #e8a000;
+  --gain: #17884a;
   --font-display: "Huninn", "Noto Sans TC", system-ui, sans-serif;
   --font-num: "Dela Gothic One", "Huninn", "Noto Sans TC", system-ui, sans-serif;
   --font-body: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
@@ -39,7 +40,7 @@
     --bg: #111725; --stage: #172034; --floor: #1b2539; --surface: #1b2436; --surface-2: #222d44;
     --ink: #eef2f8; --muted: #9ba7bc; --line: #33415c; --stroke: #56658a;
     --accent: #ff5a50; --accent-ink: #ffffff; --sun: #ffd25a; --sky: #5cb8ff; --mint: #3fd1aa;
-    --r-n: #a9b4c4; --r-r: #5aa0ff; --r-sr: #c08bff; --r-ssr: #ffc233;
+    --r-n: #a9b4c4; --r-r: #5aa0ff; --r-sr: #c08bff; --r-ssr: #ffc233; --gain: #4fd68a;
     color-scheme: dark;
   }
 }
@@ -47,7 +48,7 @@
   --bg: #111725; --stage: #172034; --floor: #1b2539; --surface: #1b2436; --surface-2: #222d44;
   --ink: #eef2f8; --muted: #9ba7bc; --line: #33415c; --stroke: #56658a;
   --accent: #ff5a50; --accent-ink: #ffffff; --sun: #ffd25a; --sky: #5cb8ff; --mint: #3fd1aa;
-  --r-n: #a9b4c4; --r-r: #5aa0ff; --r-sr: #c08bff; --r-ssr: #ffc233;
+  --r-n: #a9b4c4; --r-r: #5aa0ff; --r-sr: #c08bff; --r-ssr: #ffc233; --gain: #4fd68a;
   color-scheme: dark;
 }
 /* 日文用日本字形（同一個漢字，日文和繁中字形不同） */
@@ -94,6 +95,23 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .panel-inner { padding-block: 22px 40px; padding-left: max(22px, env(safe-area-inset-left, 0px)); padding-right: max(22px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
 .panel h1 { font-family: var(--font-display); font-weight: 400; font-size: 28px; line-height: 1.2; margin: 0; text-wrap: balance; }
 .lede { margin: -10px 0 0; color: var(--muted); }
+/* 錢包卡：開店頁最上面 */
+.wallet-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; text-align: left; font: inherit; color: inherit; cursor: pointer; background: var(--surface); border: 2px solid var(--stroke); border-radius: 16px; padding: 10px 14px; box-shadow: 3px 3px 0 var(--stroke); }
+.wallet-card:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--stroke); }
+.wallet-card .w-coin { grid-row: 1 / span 2; width: 40px; height: 40px; border-radius: 50%; background: url("assets/tex/coin.webp") center / cover, var(--sun); filter: drop-shadow(2px 2px 0 var(--stroke)); }
+.wallet-card .w-main { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.wallet-card .w-label { font-size: 12px; font-weight: 700; color: var(--muted); }
+.wallet-card strong { font-family: var(--font-num); font-size: 24px; font-variant-numeric: tabular-nums; }
+.wallet-card small { font-size: 12px; color: var(--muted); }
+.wallet-card .w-text { grid-column: 2; font-size: 12px; color: var(--muted); }
+.wallet-card .w-more { grid-row: 1 / span 2; grid-column: 3; font-size: 13px; font-weight: 700; border: 1.5px solid var(--stroke); border-radius: 999px; padding: 3px 10px; }
+.w-big { margin: 0; } .w-big strong { font-family: var(--font-num); font-size: 40px; font-variant-numeric: tabular-nums; }
+.ledger { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 46vh; overflow: auto; }
+.ledger li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; font-size: 14px; border-bottom: 1.5px dashed var(--line); padding-bottom: 6px; }
+.ledger li small { grid-column: 1; color: var(--muted); font-size: 12px; }
+.ledger li b { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.ledger li b.plus { color: var(--gain); } .ledger li b.minus { color: var(--accent); }
+.coin-count.tap { cursor: pointer; }
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
 .step { border: 2px solid var(--stroke); border-radius: 18px; padding: 16px; background: var(--surface); display: grid; gap: 12px; box-shadow: 4px 4px 0 var(--stroke); }
 .step > header { display: flex; align-items: center; gap: 10px; }
@@ -438,6 +456,12 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <div class="panel-inner">
         <h1 data-i18n="h1">開一台你的轉蛋機</h1>
         <p class="lede" data-i18n="lede"></p>
+        <button type="button" class="wallet-card" id="wallet-card" hidden>
+          <span class="w-coin" aria-hidden="true"></span>
+          <span class="w-main"><span class="w-label" data-i18n="wallet.title">我的錢包</span><strong id="w-bal">0</strong><small data-i18n="wallet.unit">枚</small></span>
+          <span class="w-text" data-i18n="wallet.cardText"></span>
+          <span class="w-more" data-i18n="wallet.details">明細</span>
+        </button>
         <ol class="steps">
           <li class="step">
             <header><span class="num">1</span><h2 data-i18n="step1">放進獎品</h2><span class="aside" id="items-sum"></span></header>
@@ -512,6 +536,16 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     <p class="meta-line" id="c-meta"></p>
     <div class="grid" id="c-grid"></div>
     <button class="btn" id="c-reset" data-i18n="restock">重新補貨（清掉這台的試玩紀錄）</button>
+  </div>
+</div>
+
+<div class="sheet" id="sheet-wallet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="w-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="w-title" data-i18n="wallet.title">我的錢包</h2>
+    <p class="w-big"><strong id="w-bal2">0</strong> <span data-i18n="wallet.unit">枚</span></p>
+    <p class="meta-line" data-i18n="wallet.explain"></p>
+    <ul class="ledger" id="w-ledger"></ul>
   </div>
 </div>
 

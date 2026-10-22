@@ -5,7 +5,7 @@ import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
-import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud } from './cloud.js';
+import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -607,10 +607,12 @@ async function publishLink(auto) {
     let failed = false;
     if (cloudReady()) {
       const stock = stockOf(draft);
+      const price = draft.price.coins;
+      const w = await loadWallet().catch(() => null); // 別人轉這台 → 錢進這個錢包
       try {
-        draft.cloud = await saveMachine(token, draft.cloud, stock);
+        draft.cloud = await saveMachine(token, draft.cloud, stock, price, w);
       } catch (e) {
-        if (e.message === 'e.locked') draft.cloud = await saveMachine(token, null, stock).catch(() => null);
+        if (e.message === 'e.locked') draft.cloud = await saveMachine(token, null, stock, price, w).catch(() => null);
         failed = !draft.cloud || e.message !== 'e.locked';
       }
       if (draft.cloud && !failed) draft.sample = false; // 已經發出去的機台：換語言不再重寫範例內容
@@ -628,6 +630,68 @@ async function publishLink(auto) {
     btn.disabled = false;
     btn.textContent = t('makeLink');
   }
+}
+
+// ---------- 錢包 ----------
+// 每個使用者（瀏覽器）一個，一開始 1000 枚：轉別人的機台扣錢，別人轉你的機台加錢（都在伺服器算）
+let wallet = null; // { id, key, balance, ledger }
+let walletP = null;
+function loadWallet() {
+  if (!cloudReady()) return Promise.resolve(null);
+  if (walletP) return walletP;
+  walletP = (async () => {
+    let c = store.get('clatter.wallet');
+    if (!isWalletCred(c)) {
+      c = newWalletCred();
+      store.set('clatter.wallet', c);
+    }
+    let w;
+    try {
+      w = await walletOpen(c);
+    } catch (e) {
+      if (e.message !== 'e.locked') throw e;
+      c = newWalletCred(); // 鑰匙對不上（不太會發生）→ 開新錢包
+      store.set('clatter.wallet', c);
+      w = await walletOpen(c);
+    }
+    wallet = { id: c.id, key: c.key, ...w };
+    renderWalletUi();
+    return wallet;
+  })().finally(() => (walletP = null));
+  return walletP;
+}
+
+function renderWalletUi() {
+  $('wallet-card').hidden = !wallet;
+  if (!wallet) return;
+  $('w-bal').textContent = wallet.balance.toLocaleString();
+  $('w-bal2').textContent = wallet.balance.toLocaleString();
+  const ul = $('w-ledger');
+  ul.textContent = '';
+  if (!wallet.ledger.length) {
+    const li = document.createElement('li');
+    li.textContent = t('wallet.empty');
+    ul.append(li);
+  }
+  for (const e of wallet.ledger) {
+    const li = document.createElement('li');
+    const what = document.createElement('span');
+    const name = e.m && e.m === draft.cloud?.id ? draft.name : e.m && e.m === play?.cloud ? play.cfg.name : '';
+    what.textContent = t('wallet.k.' + e.k, { n: e.n }) + (name ? `｜${name}` : '');
+    const when = document.createElement('small');
+    when.textContent = new Date(e.t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const amt = document.createElement('b');
+    amt.className = e.d >= 0 ? 'plus' : 'minus';
+    amt.textContent = (e.d >= 0 ? '+' : '−') + Math.abs(e.d).toLocaleString();
+    li.append(what, amt, when);
+    ul.append(li);
+  }
+}
+
+async function openWallet() {
+  renderWalletUi();
+  openSheet('sheet-wallet', $('sheet-wallet').querySelector('[data-close]'));
+  await loadWallet().catch(() => {});
 }
 
 // 賣家：每個獎品被轉走幾個（開頁、更新連結、回到這個分頁、補貨後重抓）
@@ -817,6 +881,15 @@ async function enterPlay(token) {
     savePlay();
   }
   $('c-reset').hidden = !!play.cloud; // 共用庫存只有店家能補貨
+  // 共用庫存的機台用錢包付錢：硬幣＝錢包餘額，沒有免費的「＋5 枚」
+  $('btn-topup').hidden = !!play.cloud;
+  document.querySelector('.coin-count small').textContent = t(play.cloud ? 'walletCoins' : 'trialCoins');
+  document.querySelector('.coin-count').classList.toggle('tap', !!play.cloud);
+  if (play.cloud) {
+    const w = await loadWallet().catch(() => null);
+    if (w) play.coins = w.balance;
+    else toast(t('t.pullFail'));
+  }
   setMode('play');
   renderPlate();
   showMachine(cfg, left(), cfg.items.reduce((a, b) => a + b.qty, 0));
@@ -888,7 +961,7 @@ function setPhase(ph) {
   if (ph === 'coin') {
     text =
       play.coins + play.inserted < need
-        ? t('s.coinBroke')
+        ? t(play.cloud ? 'wallet.broke' : 's.coinBroke')
         : t('s.coinNeed', { n: need - play.inserted });
   }
   if (ph === 'multiOpen') text = t('ten.openText', { n: play.multi.opened.filter((o) => !o).length });
@@ -981,10 +1054,20 @@ async function refreshPlay() {
 async function pullFromCloud(n) {
   let res;
   try {
-    res = await pullCloud(play.cloud, n);
+    const w = wallet || (await loadWallet());
+    res = await pullCloud(play.cloud, n, w);
   } catch (e) {
-    toast(t('t.pullFail'));
+    if (e.message === 'e.insufficient') {
+      if (wallet && Number.isFinite(e.balance)) wallet.balance = e.balance;
+      toast(t('wallet.notEnough', { n: wallet?.balance ?? 0 }));
+    } else toast(t('t.pullFail'));
     return null;
+  }
+  if (res.balance != null && wallet) {
+    // 伺服器扣好錢了：錢包餘額＝伺服器的數字（投進去還沒用到的硬幣另外算）
+    wallet.balance = res.balance;
+    play.coins = res.balance;
+    loadWallet().catch(() => {}); // 明細背景更新
   }
   const keys = play.cfg.items.map(itemKey);
   keys.forEach((k, i) => {
@@ -999,9 +1082,9 @@ async function pullFromCloud(n) {
   return picks;
 }
 
-// 沒抽成 → 投進去的硬幣退回
+// 沒抽成 → 投進去的硬幣退回（錢包機台：直接用錢包餘額，伺服器沒扣）
 function refundCoins(n) {
-  play.coins += n;
+  play.coins = play.cloud && wallet ? wallet.balance : play.coins + n;
   play.inserted = 0;
   savePlay();
   setPhase(left() === 0 ? 'soldout' : 'coin');
@@ -1166,6 +1249,10 @@ async function tenPull() {
   if (n < 2) return;
   const need = play.cfg.price.coins;
   const cost = n * need - play.inserted; // 已經投進去的也算
+  if (play.cloud && play.coins < cost) {
+    toast(t('wallet.notEnough', { n: play.coins + play.inserted }));
+    return;
+  }
   if (play.coins < cost) {
     const add = cost - play.coins;
     play.coins += add; // 體驗版：不夠就自動換試玩硬幣
@@ -1186,9 +1273,9 @@ async function tenPull() {
   let picks = [];
   if (play.cloud) {
     picks = (await pullFromCloud(n)) || [];
-    if (picks.length < n) {
-      play.coins += (n - picks.length) * need;
-      renderWallet();
+    if (!picks.length) play.coins = wallet ? wallet.balance : play.coins + n * need;
+    if (picks.length && picks.length < n) {
+      renderWallet(); // 伺服器只扣了抽到的部分，餘額已經是伺服器的數字
       if (picks.length) toast(t('ten.partial', { n: picks.length }));
     }
     if (!picks.length) return refundCoins(0);
@@ -1653,9 +1740,13 @@ async function boot() {
     showLinkStatus({ url: shareBase() + '#s.' + draft.cloud.id, short: true });
     refreshStats();
   }
+  loadWallet().catch(() => {}); // 一開始就有 1000 枚
+  $('wallet-card').onclick = openWallet;
+  document.querySelector('.coin-count').onclick = () => play?.cloud && openWallet();
   // 回到這個分頁：賣家重抓被轉走的數量；買家重抓庫存（店家可能補貨或改了機台）
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
+    loadWallet().catch(() => {});
     if (app.dataset.mode === 'create') refreshStats();
     else refreshPlay();
   });

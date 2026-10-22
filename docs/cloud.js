@@ -59,13 +59,16 @@ function randB62(n) {
 
 // 存機台：cred＝{ id, key }（上次的）→ 更新同一條；沒有就開新的。回傳要記下來的 cred
 // 鑰匙對不上（或撞到別人的 id）→ 丟 e.locked，呼叫的地方改開新連結
-// stock＝{ 獎品 key: 放進機台的數量 }（伺服器照這個算剩下幾個）
-export async function saveMachine(token, cred, stock) {
+// stock＝{ 獎品 key: 放進機台的數量 }（伺服器照這個算剩下幾個）、price＝每轉一次幾枚、wallet＝收錢的錢包
+export async function saveMachine(token, cred, stock, price, wallet) {
   const c = cred && isShortId(cred.id) && isKey(cred.key) ? cred : { id: randB62(10), key: randB62(24) };
   const r = await req('/rest/v1/rpc/save_machine', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_id: c.id, p_key: c.key, p_data: token, p_stock: stock }),
+    body: JSON.stringify({
+      p_id: c.id, p_key: c.key, p_data: token, p_stock: stock, p_price: price,
+      p_wallet: wallet?.id ?? null, p_wallet_key: wallet?.key ?? null,
+    }),
   });
   if (r.ok) return { id: c.id, key: c.key };
   const err = await r.json().catch(() => ({}));
@@ -84,18 +87,50 @@ export async function loadMachine(id) {
   return { data: row.data, shared: !!row.stock && Object.keys(row.stock).length > 0 };
 }
 
+// ---------- 錢包 ----------
+// 每個使用者（瀏覽器）一個：id＋鑰匙存在這台裝置，一開始 1000 枚（supabase/04_wallet.sql）
+export const newWalletCred = () => ({ id: randB62(10), key: randB62(24) });
+export const isWalletCred = (c) => !!c && isShortId(c.id) && isKey(c.key);
+
+// 打開錢包（第一次會開戶）→ { balance, ledger: [{ d: 增減, k: start|buy|sell, m: 機台, n: 顆數, t: 時間 }] }
+export async function walletOpen(c) {
+  const r = await req('/rest/v1/rpc/wallet_open', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: c.id, p_key: c.key }),
+  });
+  if (!r.ok) throw new Error(r.status === 401 ? 'e.locked' : 'e.network');
+  const j = await r.json().catch(() => null);
+  if (!j || !Number.isFinite(j.balance)) throw new Error('e.network');
+  return { balance: j.balance, ledger: Array.isArray(j.ledger) ? j.ledger : [] };
+}
+
 // ---------- 共用庫存 ----------
-// 買家投完幣 → 伺服器照「剩下的數量」抽 n 顆並記下來 → { picks: [獎品 key], remaining: { key: 剩幾個 } }
-export async function pullCloud(id, n) {
+// 買家投完幣 → 伺服器照「剩下的數量」抽 n 顆、從買家錢包扣錢、加進機台主人的錢包
+//   → { picks: [獎品 key], remaining: { key: 剩幾個 }, balance: 買家餘額 }
+// 錢不夠 → 丟 e.insufficient（err.balance＝目前餘額），什麼都不扣
+export async function pullCloud(id, n, wallet) {
   const r = await req('/rest/v1/rpc/pull', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_id: id, p_n: n }),
+    body: JSON.stringify({ p_id: id, p_n: n, p_wallet: wallet.id, p_wallet_key: wallet.key }),
   });
-  if (!r.ok) throw new Error(r.status === 404 ? 'e.notFound' : 'e.network');
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    if (err.message === 'insufficient') {
+      const e = new Error('e.insufficient');
+      e.balance = parseInt(err.details, 10);
+      throw e;
+    }
+    throw new Error(r.status === 404 ? 'e.notFound' : 'e.network');
+  }
   const j = await r.json().catch(() => null);
   if (!j || !Array.isArray(j.picks)) throw new Error('e.network');
-  return { picks: j.picks.map(String), remaining: j.remaining && typeof j.remaining === 'object' ? j.remaining : {} };
+  return {
+    picks: j.picks.map(String),
+    remaining: j.remaining && typeof j.remaining === 'object' ? j.remaining : {},
+    balance: Number.isFinite(j.balance) ? j.balance : null,
+  };
 }
 
 // 每個獎品被轉走幾個：{ key: n }
