@@ -201,8 +201,46 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
 .result .new { font-family: var(--font-display); color: var(--accent); font-size: 16px; }
 .result.r3 .prize { animation: rainbow 2.4s linear infinite; }
 @keyframes rainbow { 0% { box-shadow: 0 0 0 6px #ffcf33; } 33% { box-shadow: 0 0 0 6px #ff6fae; } 66% { box-shadow: 0 0 0 6px #5cc8ff; } 100% { box-shadow: 0 0 0 6px #ffcf33; } }
-.flash { position: fixed; inset: 0; background: #fff; z-index: 39; pointer-events: none; animation: flash .7s ease-out forwards; }
+.flash { position: absolute; inset: 0; background: #fff; z-index: 5; pointer-events: none; animation: flash .55s ease-out forwards; }
+.flash.f2 { background: radial-gradient(circle at 50% 45%, #fff 0%, #e6d2ff 35%, rgba(164,92,240,0.35) 100%); animation-duration: .6s; }
+.flash.f3 { background: radial-gradient(circle at 50% 45%, #fff 0%, #fff6d0 30%, rgba(255,207,51,0.45) 100%); animation: flash3 1s ease-out forwards; }
 @keyframes flash { from { opacity: .95; } to { opacity: 0; } }
+@keyframes flash3 { 0% { opacity: 1; } 12% { opacity: .85; } 35% { opacity: .3; } 100% { opacity: 0; } }
+
+/* 爆開時的稀有度大字：R 小、SR 中、SSR 一個字一個字跳出來＋彩虹 */
+.rarity-banner { position: absolute; left: 50%; top: 24%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none; display: grid; justify-items: center; gap: 6px; text-align: center; white-space: nowrap; }
+.rarity-banner strong { font-family: var(--font-num); font-weight: 400; letter-spacing: 0.06em; line-height: 1; display: flex; }
+.rarity-banner strong span { display: inline-block; animation: letterPop .45s cubic-bezier(.2, 1.8, .4, 1) both; }
+.rarity-banner em { font-style: normal; font-family: var(--font-display); font-size: 15px; color: #fff; background: #1c2340; padding: 3px 14px; border-radius: 999px; animation: letterPop .4s .25s both; }
+.rarity-banner.r1 strong { font-size: clamp(26px, 6vw, 40px); color: #8cc3ff; filter: drop-shadow(3px 3px 0 #1c2340); }
+.rarity-banner.r2 strong { font-size: clamp(32px, 8.5vw, 60px); color: #f3e8ff; filter: drop-shadow(3px 3px 0 #1c2340) drop-shadow(0 0 14px #b57bff); }
+.rarity-banner.r3 strong { font-size: clamp(44px, 13vw, 92px); }
+.rarity-banner.r3 strong span { background: linear-gradient(180deg, #fffbe6 0%, #ffd54a 45%, #ff9a1f 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(4px 4px 0 #1c2340) drop-shadow(0 0 18px rgba(255, 213, 74, 0.9)); animation: letterPop .5s cubic-bezier(.2, 1.8, .4, 1) both, shimmer 1.4s linear .5s infinite; }
+.rarity-banner.r3 em { background: linear-gradient(90deg, #ff6fae, #ffcf33, #5cc8ff, #a45cf0); background-size: 200% 100%; animation: letterPop .4s .45s both, slide 1.2s linear infinite; color: #1c2340; font-weight: 700; }
+.rarity-banner { animation: bannerOut .35s ease-in forwards; }
+.rarity-banner.r1 { animation-delay: .8s; }
+.rarity-banner.r2 { animation-delay: 1.35s; }
+.rarity-banner.r3 { animation-delay: 2.3s; }
+@keyframes letterPop { from { transform: scale(0) rotate(-12deg); opacity: 0; } }
+@keyframes bannerOut { to { opacity: 0; transform: translate(-50%, -70%) scale(1.15); } }
+@keyframes shimmer { 0%, 100% { filter: drop-shadow(4px 4px 0 #1c2340) drop-shadow(0 0 14px rgba(255, 213, 74, 0.8)); } 50% { filter: drop-shadow(4px 4px 0 #1c2340) drop-shadow(0 0 26px rgba(255, 240, 180, 1)) brightness(1.15); } }
+@keyframes slide { to { background-position: 200% 0; } }
+
+/* 結果卡：越稀有越華麗 */
+.result.r1 .prize { animation: glowR 1.6s ease-in-out infinite; }
+@keyframes glowR { 50% { box-shadow: 0 0 0 6px var(--rc), 0 0 26px 6px rgba(47, 128, 237, 0.55); } }
+.result.r2 { background: linear-gradient(160deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 82%, #b57bff) 100%); }
+.result.r2 .prize { animation: glowSR 1.4s ease-in-out infinite; }
+@keyframes glowSR { 50% { box-shadow: 0 0 0 6px var(--rc), 0 0 34px 10px rgba(181, 123, 255, 0.6); } }
+.result.r3 { background: linear-gradient(160deg, color-mix(in srgb, var(--surface) 80%, #ffe27a) 0%, color-mix(in srgb, var(--surface) 60%, #ffcf33) 100%); overflow: hidden; }
+.result.r3 h2 { background: linear-gradient(180deg, #b86e00, #e8a000 60%, #8a5200); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.result.r3::after { content: ""; position: absolute; inset: -40% -60%; background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.55) 50%, transparent 58%); animation: sweep 2.2s ease-in-out .3s infinite; pointer-events: none; }
+.result.r3::before { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(circle, #fff 0 1.5px, transparent 2.5px), radial-gradient(circle, #ffe27a 0 1.5px, transparent 2.5px); background-size: 46px 46px, 70px 70px; background-position: 0 0, 23px 31px; opacity: .7; animation: twinkle 1.8s ease-in-out infinite alternate; }
+.result.r3 > * { position: relative; z-index: 1; }
+@keyframes sweep { from { transform: translateX(-45%); } to { transform: translateX(45%); } }
+@keyframes twinkle { to { opacity: .2; background-position: 6px -8px, 29px 21px; } }
+.result.r3 { animation: popin3 .7s cubic-bezier(.2, 1.6, .35, 1); }
+@keyframes popin3 { 0% { transform: scale(.3) rotate(-10deg); opacity: 0; } 60% { transform: scale(1.08) rotate(2deg); opacity: 1; } }
 
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .list li { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px; border-radius: 12px; background: var(--surface-2); }

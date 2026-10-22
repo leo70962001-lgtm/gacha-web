@@ -119,6 +119,63 @@ export const sfx = {
     noise(t, 0.12, 0.5, 'bandpass', 700, 3500, 1.5);
     tone('sine', 380, 1300, t, 0.12, 0.3);
   },
+  // 集氣：音高往上爬＋雜訊越來越亮（SSR 從更低開始、更長）
+  charge(dur, rarity) {
+    if (!ready() || dur <= 0) return;
+    const t = now();
+    const f0 = rarity === 3 ? 110 : 180;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 8, t + dur);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(400, t);
+    lp.frequency.exponentialRampToValueAtTime(5000, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t + dur * 0.9);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
+    o.connect(lp).connect(g).connect(master);
+    o.start(t);
+    o.stop(t + dur + 0.1);
+    noise(t, dur, 0.12, 'bandpass', 500, 7000, 2);
+  },
+  // 心跳（SSR 關燈後）
+  heartbeat(n) {
+    if (!ready()) return;
+    const t = now();
+    for (let i = 0; i < n; i++) {
+      const at = t + i * 0.75;
+      tone('sine', 70, 45, at, 0.16, 0.5);
+      tone('sine', 65, 42, at + 0.2, 0.14, 0.35);
+    }
+  },
+  // 升格（銀蛋變金蛋）
+  upgrade() {
+    if (!ready()) return;
+    const t = now();
+    [0, 4, 7, 12, 16, 19, 24].forEach((s, i) => {
+      const f = 880 * Math.pow(2, s / 12);
+      tone('triangle', f, f, t + i * 0.045, 0.3, 0.12);
+    });
+    noise(t, 0.6, 0.08, 'highpass', 7000);
+  },
+  // 爆開：低音重擊，越稀有越重
+  boom(rarity) {
+    if (!ready()) return;
+    const t = now();
+    const v = [0.15, 0.3, 0.5, 0.7][rarity];
+    tone('sine', 120, 38, t, 0.5 + rarity * 0.2, v);
+    noise(t, 0.3 + rarity * 0.15, v * 0.6, 'lowpass', 1200, 200);
+    if (rarity >= 2) noise(t, 1.2, 0.08, 'highpass', 6000);
+  },
+  firework() {
+    if (!ready()) return;
+    const t = now();
+    noise(t, 0.12, 0.35, 'bandpass', 1500, 600, 1);
+    for (let i = 0; i < 9; i++) noise(t + 0.15 + Math.random() * 0.5, 0.025, 0.06, 'highpass', 5000);
+  },
   // 開獎音：稀有度越高，音階越長、越亮
   reveal(rarity) {
     if (!ready()) return;

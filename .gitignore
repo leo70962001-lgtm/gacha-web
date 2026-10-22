@@ -2,3 +2,4 @@
 *.blend
 *.blend1
 __pycache__/
+renders/fx_frames/*.jpg

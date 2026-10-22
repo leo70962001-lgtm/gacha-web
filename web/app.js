@@ -540,12 +540,6 @@ async function openIt() {
   const idx = play.pending;
   const it = play.cfg.items[idx];
   await machine.openCapsule();
-  if (it.rarity === 3 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const f = document.createElement('div');
-    f.className = 'flash';
-    document.body.append(f);
-    setTimeout(() => f.remove(), 800);
-  }
   sfx.reveal(it.rarity);
   const first = !play.got[idx];
   play.got[idx] = (play.got[idx] || 0) + 1;
@@ -569,7 +563,37 @@ function showResult(idx, first) {
   openSheet('sheet-result', $('r-again'));
 }
 
+// 爆開那一刻：閃光＋稀有度大字（R 小、SR 中、SSR 一個字一個字跳出來）
+const BANNER = ['', 'RARE', 'SUPER RARE', 'SECRET'];
+function onBurst(r) {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (r >= 2 && !reduced) {
+    const f = document.createElement('div');
+    f.className = `flash f${r}`;
+    $('stage').append(f); // 在舞台裡、壓在稀有度大字底下
+    setTimeout(() => f.remove(), r === 3 ? 1100 : 700);
+  }
+  if (r === 0) return;
+  const R = RARITY[r];
+  const el = document.createElement('div');
+  el.className = `rarity-banner r${r}`;
+  el.setAttribute('aria-hidden', 'true');
+  const big = document.createElement('strong');
+  [...BANNER[r]].forEach((ch, i) => {
+    const sp = document.createElement('span');
+    sp.textContent = ch === ' ' ? ' ' : ch; // 一個字一個 inline-block，空白要用不換行空格
+    sp.style.animationDelay = `${0.05 + i * (r === 3 ? 0.07 : 0.035)}s`;
+    big.append(sp);
+  });
+  const small = document.createElement('em');
+  small.textContent = `${R.key} ${R.label}`;
+  el.append(big, small);
+  $('stage').append(el);
+  setTimeout(() => el.remove(), [0, 1100, 1700, 2700][r]);
+}
+
 function afterResult() {
+  machine.setDim(0, 0.8);
   closeSheet('sheet-result');
   if (left() === 0) setPhase('soldout');
   else setPhase('coin');
@@ -840,6 +864,7 @@ async function boot() {
     onTurned: () => onTurned(),
     onExitCapsule: () => take(),
     onOpenCapsule: () => openIt(),
+    onBurst: (r) => onBurst(r),
   });
   window.__gacha = { machine, get play() { return play; }, get draft() { return draft; } }; // 除錯用
   const ro = new ResizeObserver(() => updateInsets());

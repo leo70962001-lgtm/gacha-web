@@ -33,6 +33,23 @@ class H(http.server.SimpleHTTPRequestHandler):
             return
         return super().do_GET()
 
+    # 測試用：頁面把 3D 畫面 POST 過來存檔（只在本機預覽有）
+    def do_POST(self):
+        from urllib.parse import urlparse, parse_qs
+        u = urlparse(self.path)
+        if u.path != '/__snap':
+            self.send_error(404)
+            return
+        name = ''.join(ch for ch in parse_qs(u.query).get('name', ['snap'])[0] if ch.isalnum() or ch in '-_')[:60] or 'snap'
+        n = int(self.headers.get('Content-Length', 0))
+        data = self.rfile.read(n)
+        out = os.path.join(os.path.dirname(ROOT), 'renders', 'fx_frames')
+        os.makedirs(out, exist_ok=True)
+        with open(os.path.join(out, name + '.jpg'), 'wb') as f:
+            f.write(data)
+        self.send_response(204)
+        self.end_headers()
+
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()
