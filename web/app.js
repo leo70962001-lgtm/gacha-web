@@ -623,6 +623,7 @@ function renderPlate() {
   $('p-kinds').textContent = t('kinds', { n: cfg.items.length });
   $('p-price').textContent = priceText(cfg.price);
   $('p-coins').textContent = t('coinsN', { n: cfg.price.coins });
+  $('p-price2').textContent = `${t('oneSpin')} ${priceText(cfg.price)} · ${t('coinsN', { n: cfg.price.coins })}`; // 手機版：價錢收在名牌裡
 }
 
 function left() {
@@ -1269,9 +1270,13 @@ function updateInsets() {
   if (app.dataset.mode !== 'play') return machine.setInsets(0, 0);
   const st = $('stage').getBoundingClientRect();
   const narrow = st.width < 640;
-  const top = narrow ? $('hud').querySelector('.plate').getBoundingClientRect().bottom - st.top + 4 : 0;
+  const plate = $('hud').querySelector('.plate').getBoundingClientRect();
+  const tr = $('hud').querySelector('.top-right').getBoundingClientRect();
+  const top = narrow ? plate.bottom - st.top + 4 : 0;
   const bottom = st.bottom - $('hud').querySelector('.bottom').getBoundingClientRect().top + 4;
-  machine.setInsets(Math.max(0, top), Math.max(0, bottom));
+  // 10 連的格子連左上名牌、右上價錢章都要避開（寬螢幕的機台不用，它們在兩側）
+  const gridTop = Math.max(plate.bottom, tr.height ? tr.bottom : 0) - st.top + 6;
+  machine.setInsets(Math.max(0, top), Math.max(0, bottom), Math.max(0, gridTop));
 }
 
 function setMode(mode) {
@@ -1413,6 +1418,7 @@ async function boot() {
   ro.observe($('stage'));
   ro.observe($('hud').querySelector('.bottom'));
   ro.observe($('hud').querySelector('.plate'));
+  ro.observe($('hud').querySelector('.top-right'));
   syncStage();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncStage);
   new MutationObserver(syncStage).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });

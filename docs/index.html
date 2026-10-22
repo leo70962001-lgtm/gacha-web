@@ -166,6 +166,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .chip { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); border: 1.5px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
 button.chip { cursor: pointer; border-color: var(--stroke); }
 .chip-col { display: none; }
+.plate-price { display: none; }
 .chip-col b { color: var(--accent); font-variant-numeric: tabular-nums; }
 .top-right { position: absolute; top: 14px; right: var(--gutter-r); display: grid; justify-items: end; gap: 10px; }
 .top-right .stamp { width: 96px; height: 96px; }
@@ -341,9 +342,18 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   .hint .stepno { font-size: 11px; }
   .hint h3 { font-size: 16px; }
   .hint p { font-size: 12px; line-height: 1.4; }
-  .plate { max-width: calc(100% - 128px); padding: 7px 11px; top: 10px; }
-  .plate h2 { font-size: 17px; }
-  .top-right { top: 10px; gap: 8px; }
+  .plate { left: var(--gutter-l); right: var(--gutter-r); max-width: none; padding: 6px 10px; top: 8px; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; border-radius: 14px; }
+  .plate .shop { display: none; }
+  .plate h2 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plate-price { display: inline-block; font-family: var(--font-num); font-size: 12px; color: #fff; background: var(--accent); border: 2px solid var(--stroke); border-radius: 999px; padding: 2px 9px; white-space: nowrap; box-shadow: 2px 2px 0 var(--stroke); }
+  .chips { grid-column: 1 / -1; gap: 5px; }
+  #p-kinds { display: none; }
+  .top-right { display: none; }
+  .hint .stepno { display: none; }
+  .hint .hint-actions { grid-row: 1 / span 2; gap: 5px; }
+  .hint-actions .btn { padding: 6px 14px; font-size: 14px; min-height: 36px; box-shadow: 2px 2px 0 var(--stroke); }
+  .wallet { padding: 4px 8px; }
+  .coin-chip { width: 30px; height: 30px; }
   .top-right .stamp { width: 74px; height: 74px; box-shadow: 0 0 0 4px var(--accent), 0 0 0 6px var(--stroke); }
   .top-right .stamp small { font-size: 12px; }
   .top-right .stamp strong { font-size: 13px; }
@@ -385,6 +395,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         <div class="plate">
           <span class="shop" id="p-shop"></span>
           <h2 id="p-name"></h2>
+          <span class="plate-price" id="p-price2"></span>
           <div class="chips">
             <span class="chip" id="p-kinds"></span>
             <span class="chip" id="p-left"></span>

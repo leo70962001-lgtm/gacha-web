@@ -1116,27 +1116,41 @@ export class Machine {
   }
 
   // ---------- 10 連抽 ----------
-  // 每顆：窗裡掉一顆 → 出口跳出 → 飛到鏡頭前的格子（橫向 5×2、直向 2×5）
+  // 每顆：窗裡掉一顆 → 出口跳出 → 飛到鏡頭前的格子
+  // 格子只排在上下 UI 之間那塊空間（不壓到名牌、提示卡）；欄數挑能讓扭蛋最大的（橫向多半 5×2、直向手機 2-3-3-2）
   _gridSlot(i, n) {
-    const portrait = this.camera.aspect < 0.85;
-    const cols = portrait ? 2 : Math.min(5, n);
-    const rows = Math.ceil(n / cols);
     const dist = 1.7;
+    const H = this.host.clientHeight || 1;
+    const { top = 0, bottom = 0, gridTop = top } = this.insets || {};
     const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const viewH = 2 * dist * tanV;
-    const viewW = viewH * this.camera.aspect;
-    const step = Math.min(0.2, (viewW * 0.86) / cols, (viewH * 0.62) / rows);
-    const c = i % cols;
-    const r = Math.floor(i / cols);
+    const halfH = dist * tanV;
+    const yTop = (1 - (2 * gridTop) / H) * halfH;
+    const yBot = (-1 + (2 * bottom) / H) * halfH;
+    const regionH = Math.max(0.2, yTop - yBot) * 0.94;
+    const regionW = 2 * halfH * this.camera.aspect * 0.92;
+    let best = null;
+    for (let cols = 1; cols <= n; cols++) {
+      const rows = Math.ceil(n / cols);
+      const step = Math.min(0.24, regionW / cols, regionH / rows);
+      if (!best || step > best.step + 1e-6) best = { rows, step };
+    }
+    const { rows, step } = best;
+    // 每列幾顆：平均分，多的給中間的列；每列置中
+    const counts = Array(rows).fill(Math.floor(n / rows));
+    const mid = [...counts.keys()].sort((a, b) => Math.abs(a - (rows - 1) / 2) - Math.abs(b - (rows - 1) / 2));
+    for (let k = 0; k < n % rows; k++) counts[mid[k]]++;
+    let r = 0;
+    let c = i;
+    while (c >= counts[r]) c -= counts[r++];
     const fwd = new THREE.Vector3();
     this.camera.getWorldDirection(fwd);
     const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
     return {
       pos: this.camera.position.clone().addScaledVector(fwd, dist)
-        .addScaledVector(right, (c - (cols - 1) / 2) * step)
-        .addScaledVector(up, ((rows - 1) / 2 - r) * step + viewH * 0.06),
-      scale: (step / (2 * CAP_R)) * 0.78,
+        .addScaledVector(right, (c - (counts[r] - 1) / 2) * step)
+        .addScaledVector(up, ((rows - 1) / 2 - r) * step + (yTop + yBot) / 2),
+      scale: (step / (2 * CAP_R)) * 0.86,
       step,
     };
   }
@@ -1168,6 +1182,7 @@ export class Machine {
     const floorY = EXIT.floor + this.capR;
     const c = { g, rarity, mat, fake, i };
     g.userData.gridIdx = i;
+    this.gridN = n;
     this.grid = this.grid || [];
     this.grid[i] = c;
     this.gridSlots = this.gridSlots || [];
@@ -1197,9 +1212,12 @@ export class Machine {
           g.quaternion.slerpQuaternions(q0, qTo, e);
           g.scale.setScalar(s0 + (slot.scale - s0) * e);
         }).then(() => {
-          c.home = slot.pos.clone();
+          const s = this.gridSlots[i]; // 飛的途中版面可能變了 → 用最新的格子
+          c.home = s.pos.clone();
           c.q = g.quaternion.clone();
-          g.userData.s0 = slot.scale;
+          g.position.copy(s.pos);
+          g.scale.setScalar(s.scale);
+          g.userData.s0 = s.scale;
           if (shown >= 2) this.show.gridGlow(c, shown);
         });
       });
@@ -1316,6 +1334,33 @@ export class Machine {
     this.grid = [];
     this.gridCards = [];
     this.gridSlots = [];
+    this.gridN = 0;
+  }
+
+  // 版面變了（UI 高度、螢幕轉向）→ 格子重排，扭蛋跟小卡移到新位置
+  _layoutGrid() {
+    if (!this.gridN) return;
+    for (let i = 0; i < this.gridN; i++) {
+      const old = this.gridSlots[i];
+      if (!old) continue;
+      const slot = this._gridSlot(i, this.gridN);
+      this.gridSlots[i] = slot;
+      const k = slot.step / old.step;
+      const c = this.grid[i];
+      if (c?.home) {
+        c.home.copy(slot.pos);
+        c.g.position.copy(slot.pos);
+        c.g.userData.s0 = slot.scale;
+        if (!c.g.userData.scaling) c.g.scale.setScalar(slot.scale);
+      }
+      const m = this.gridCards?.[i];
+      if (m) {
+        m.position.copy(slot.pos);
+        m.quaternion.copy(this.camera.quaternion);
+        m.userData.s0 *= k;
+        m.scale.multiplyScalar(k);
+      }
+    }
   }
 
   // 鏡頭衝擊：視角先縮再彈回（看起來像往前撞一下）
@@ -1373,12 +1418,16 @@ export class Machine {
     this.camera.updateProjectionMatrix();
     this._frameCamera();
     this._fitBg();
+    this._layoutGrid();
   }
 
-  // 畫面上下被 UI 蓋住的高度（px）：機器要放在剩下的空間裡
-  setInsets(top, bottom) {
-    this.insets = { top, bottom };
+  // 畫面上下被 UI 蓋住的高度（px）：機器要放在剩下的空間裡；gridTop＝10 連格子的上緣（連右上的價錢章都避開）
+  setInsets(top, bottom, gridTop = top) {
+    const o = this.insets;
+    if (o && o.top === top && o.bottom === bottom && o.gridTop === gridTop) return;
+    this.insets = { top, bottom, gridTop };
     this._frameCamera();
+    this._layoutGrid();
   }
 
   // 讓整台機器剛好入鏡：直式螢幕要退遠一點
