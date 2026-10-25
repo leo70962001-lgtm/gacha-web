@@ -171,12 +171,14 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .pk.r3 .pk-card { border-color: #e2b13c; border-image: linear-gradient(135deg, #8a5a0a, #ffe28a 30%, #c8901c 50%, #fff3c0 70%, #a8740e) 1; border-radius: 0; }
 .pk-name { position: absolute; left: 5%; right: 5%; bottom: 5%; padding: 2px 4px; border-radius: 5px; background: rgba(28,35,64,.86); color: #fff; font-size: 10px; font-weight: 900; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pk-holo { position: absolute; inset: 0; mix-blend-mode: color-dodge; opacity: 0; pointer-events: none; }
-.pk.r1 .pk-holo { opacity: .35; background: var(--rb110) 0 0 / 300% 300%; animation: pkHolo 5s linear infinite; }
-.pk.r2 .pk-holo { opacity: .45; background: var(--lat), var(--rb133); background-size: auto, 300% 300%; animation: pkHolo 4s linear infinite; }
-.pk.r3 .pk-holo { opacity: .75; background: var(--glitter), var(--rb-30); background-size: 120px 120px, 300% 300%; background-blend-mode: soft-light; animation: pkHolo 3s linear infinite; }
-@keyframes pkHolo { to { background-position: 0 0, 300% 150%; } }
-.pk.r1 .pk-holo { animation-name: pkHolo1; }
-@keyframes pkHolo1 { to { background-position: 300% 150%; } }
+/* 卡套裡的閃：慢慢來回晃（使用者 2026-10-26：「特效的跑的速度太快」— 原本 3–5 秒就整條虹光跑過去） */
+.pk.r1 .pk-holo { opacity: .35; background: var(--rb110) 0 0 / 300% 300%; animation: pkHolo1 9s ease-in-out infinite alternate; }
+.pk.r2 .pk-holo { opacity: .45; background: var(--lat), var(--rb133); background-size: auto, 300% 300%; animation: pkHolo 8s ease-in-out infinite alternate; }
+.pk.r3 .pk-holo { opacity: .75; background: var(--glitter), var(--rb-30); background-size: 120px 120px, 300% 300%; background-blend-mode: soft-light; animation: pkHolo 7s ease-in-out infinite alternate; }
+@keyframes pkHolo { to { background-position: 0 0, 100% 60%; } }
+@keyframes pkHolo1 { to { background-position: 100% 60%; } }
+.bk-grid > :nth-child(3n+2) .pk-holo { animation-delay: -2.5s; } /* 每張錯開，不要整頁一起動 */
+.bk-grid > :nth-child(3n) .pk-holo { animation-delay: -5s; }
 /* 透明卡套：上緣一條開口、斜斜的反光 */
 .pk-sleeve { position: absolute; inset: -3px; border-radius: 8px; pointer-events: none; border: 1.5px solid rgba(255,255,255,.9); box-shadow: inset 0 0 0 1px rgba(28,35,64,.12);
   background: linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.45) 38%, rgba(255,255,255,0) 46%), linear-gradient(180deg, rgba(255,255,255,.55) 0 5px, rgba(255,255,255,.08) 5px); }
