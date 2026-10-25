@@ -558,6 +558,21 @@ export class Machine {
     sh.position.set(-0.0925, 0.889, 0.4352);
     sh.renderOrder = 12;
     this._dg.add(sh);
+    // 轉的動畫（模型不動，使用者 2026-10-25：「模型不變但是要有轉的動畫」）：
+    //   旋鈕表面外圈兩道白色動線，跟著旋鈕轉、轉越快越亮；旁邊的弧形箭頭也跟著轉（_setHandle）
+    const fx = new THREE.Group();
+    fx.position.set(0.4905, 0.4298, 0); // 旋鈕表面（x 0.488）外面一點，面向 +X
+    fx.rotation.set(0, Math.PI / 2, 0);
+    for (const [r0, r1, start] of [[0.126, 0.141, 0.2], [0.146, 0.158, Math.PI + 0.6]]) {
+      const arc = new THREE.Mesh(
+        new THREE.RingGeometry(r0, r1, 32, 1, start, 1.7),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }),
+      );
+      arc.renderOrder = 13;
+      fx.add(arc);
+    }
+    this._dg.add(fx);
+    this.turnFx = fx;
   }
 
   // 換機台種類：第一次換到轉卡機會先載入模型
@@ -1178,6 +1193,11 @@ export class Machine {
   _setHandle(a) {
     this.handleAngle = a;
     this.handle.rotation[this.spec.handleAxis] = this.handleBase - a; // 順時針（從把手那一面看）
+    if (this.kind === 'card') {
+      // 平的圓柱旋鈕轉了看不出來 → 弧形箭頭、動線跟著轉（都在旋鈕那一面的平面上轉）
+      this.decals.arrow.rotation.z = -a;
+      if (this.turnFx) this.turnFx.rotation.z = -a;
+    }
   }
 
   _handleTick(prev, next) {
@@ -2128,6 +2148,11 @@ export class Machine {
       // 轉盤速度＝把手角速度的 0.4 倍（放開後慢慢停）
       const hs = Math.max(0, (this.handleAngle - this._lastHA) / Math.max(dt, 1e-3));
       this._lastHA = this.handleAngle;
+      if (this.kind === 'card' && this.turnFx) {
+        // 轉越快動線越亮，停下來慢慢淡掉
+        this.turnK = Math.max((this.turnK || 0) * Math.exp(-6 * dt), Math.min(1, hs / 5));
+        for (const arc of this.turnFx.children) arc.material.opacity = 0.85 * this.turnK;
+      }
       this.stirW = Math.max(this.stirW * Math.exp(-2.5 * dt), hs * 0.4);
       if (this.kind === 'capsule') {
         this.acc += dt;
