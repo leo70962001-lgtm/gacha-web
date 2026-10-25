@@ -615,7 +615,7 @@ export class Machine {
       const { x, y, w, h } = CARD_WIN;
       const depth = cardTex(front.depth);
       depth.colorSpace = THREE.NoColorSpace;
-      layers = { photo: cardTex(front.photo), depth, over: cardTex(front.over), win: [x / W, 1 - (y + h) / H, (x + w) / W, 1 - y / H] };
+      layers = { photo: cardTex(front.photo), bg: front.bg ? cardTex(front.bg) : null, depth, over: cardTex(front.over), win: [x / W, 1 - (y + h) / H, (x + w) / W, 1 - y / H] };
     }
     const g = makeCard(cardTex(face || drawCardBack(null, 0)), this.backTex[shown], fm, bm, this.cardEdge, layers);
     addOutline(g.userData.edge, 0.0024, this.hullCache);

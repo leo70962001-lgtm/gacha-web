@@ -5,6 +5,7 @@ import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
+import { cutout } from './seg.js';
 import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
@@ -78,8 +79,56 @@ let machine = null;
 let linkToken = null; // 最近一次產生的連結內容
 let play = null; // 玩家模式的狀態
 
+// ---------- 主體遮罩（去背）----------
+// 照片 → seg.js 去背 → 120 px 寬的灰階遮罩（白＝主體）存在 item.mask；做不出來記 noMask，不再重試
+async function makeMask(it) {
+  if (!it.img || it.mask || it.noMask || it.masking) return;
+  it.masking = true;
+  try {
+    const bmp = await createImageBitmap(new Blob([it.img.bytes], { type: it.img.mime }));
+    const m = await cutout(bmp);
+    if (!m) {
+      it.noMask = true;
+      return;
+    }
+    const w = 120;
+    const h = Math.round((w * m.height) / m.width);
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    c.getContext('2d').drawImage(m, 0, 0, w, h);
+    let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.85));
+    if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    if (!draft.items.includes(it) || !it.img) return; // 做的途中被刪了或換了圖
+    it.mask = { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
+    draftChanged();
+  } catch (e) {
+    console.warn(e);
+  } finally {
+    it.masking = false;
+  }
+}
+// 以前上傳、還沒去背的照片：開店頁打開時一張一張補
+async function autoMasks() {
+  for (const it of draft.items) if (it.img && !it.mask && !it.noMask) await makeMask(it);
+}
+
 // ---------- 圖片 ----------
 const thumbCache = new WeakMap(); // item.img → { url, bmp }
+const maskCache = new WeakMap(); // item.mask → { bmp, ready }
+function maskOf(cfg, i) {
+  const it = cfg.items[i];
+  if (!it.mask) return null;
+  let m = maskCache.get(it.mask);
+  if (!m) {
+    m = { bmp: null };
+    m.ready = createImageBitmap(new Blob([it.mask.bytes], { type: it.mask.mime }))
+      .then((b) => (m.bmp = b))
+      .catch(() => {});
+    maskCache.set(it.mask, m);
+  }
+  return m;
+}
 function thumbOf(cfg, i) {
   const it = cfg.items[i];
   if (it.img) {
@@ -156,6 +205,8 @@ function loadDraft(uid = shop.cur) {
     rarity: Math.min(3, Math.max(0, it.rarity | 0)),
     qty: Math.min(LIMITS.qty, Math.max(1, it.qty | 0)),
     img: it.img ? { bytes: Uint8Array.from(atob(it.img.b64), (ch) => ch.charCodeAt(0)), mime: it.img.mime } : null,
+    mask: it.img && it.mask?.b64 ? { bytes: Uint8Array.from(atob(it.mask.b64), (ch) => ch.charCodeAt(0)), mime: it.mask.mime } : null,
+    noMask: !!it.noMask,
     media: draftMedia(it.media),
     uid: typeof it.uid === 'string' ? it.uid : null,
   }));
@@ -193,6 +244,7 @@ function saveDraft() {
     items: draft.items.map((it) => ({
       ...it,
       img: it.img ? { b64: btoa(String.fromCharCode(...it.img.bytes)), mime: it.img.mime } : null,
+      mask: it.mask ? { b64: btoa(String.fromCharCode(...it.mask.bytes)), mime: it.mask.mime } : null,
     })),
   });
 }
@@ -517,8 +569,12 @@ function bindForm() {
     if (!f || fileFor < 0) return;
     if (/^(audio|video)\//.test(f.type)) return attachFile(fileFor, f);
     try {
-      draft.items[fileFor].img = await shrinkImage(f);
+      const it = draft.items[fileFor];
+      it.img = await shrinkImage(f);
+      it.mask = null;
+      it.noMask = false;
       draftChanged(true);
+      makeMask(it); // 主體去背（背景跑，好了再更新）
     } catch (e) {
       toast(t('t.badImage'));
     }
@@ -837,7 +893,9 @@ async function cardFront(idx) {
   const it = play.cfg.items[idx];
   const th = thumbOf(play.cfg, idx);
   if (!th.bmp && th.ready) await th.ready;
-  return drawCardLayers(it, th.bmp || placeholderThumb(it.name, idx), it.rarity);
+  const mk = maskOf(play.cfg, idx);
+  if (mk && !mk.bmp) await mk.ready;
+  return drawCardLayers(it, th.bmp || placeholderThumb(it.name, idx), it.rarity, mk?.bmp || null);
 }
 function scheduleDecor() {
   clearTimeout(decorTimer);
@@ -877,6 +935,7 @@ function playKey() {
 async function enterPlay(token) {
   let cfg;
   const link = token;
+  const fromDraft = token === 'draft' ? shop.cur : null; // 開店的人自己試玩：收集簿用固定的 key（設定一改 play id 就會變）
   const sid = token.startsWith('s.') ? token.slice(2) : null;
   let pulled = null;
   let shared = false;
@@ -898,7 +957,7 @@ async function enterPlay(token) {
   const id = sid ? 's' + sid : shortId(token);
   // cloud：共用庫存的機台 id（第一版短連結沒有共用庫存 → null，照舊用這台裝置的庫存）
   // phase 'loading'：機台（轉卡機第一次要載入模型）準備好、setPhase('coin') 之前不能投幣
-  play = { cfg, token, link: sid ? link : token, id, cloud: shared ? sid : null, phase: 'loading', inserted: 0, busy: false };
+  play = { cfg, token, link: sid ? link : token, id, cloud: shared ? sid : null, fromDraft, phase: 'loading', inserted: 0, busy: false };
   const saved = reconcile(store.get('clatter.play.' + id), cfg);
   const totalQ = cfg.items.map((it) => it.qty);
   if (saved) {
@@ -1789,6 +1848,7 @@ function afterSwitch() {
     refreshStats();
   }
   if (app.dataset.mode === 'create') showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
+  autoMasks();
 }
 
 async function newMachine() {
@@ -1992,15 +2052,89 @@ async function albumThumb(idx) {
   g.drawImage(src, (W - src.width * s) / 2, (H - src.height * s) / 2, src.width * s, src.height * s);
   let url = c.toDataURL('image/webp', 0.72);
   if (!url.startsWith('data:image/webp')) url = c.toDataURL('image/jpeg', 0.75);
-  albumThumbs.set(key, url);
-  return url;
+  // 有主體遮罩：多做兩張給 3D 大卡用 — 主體去背圖（透明背景）、背景圖（主體那塊模糊掉，前後分開時不會看到兩隻）
+  let subj = null;
+  let back = null;
+  let top = null;
+  const mk = maskOf(play.cfg, idx);
+  if (mk && !mk.bmp) await mk.ready;
+  if (mk?.bmp) {
+    const cover = (cg, im) => cg.drawImage(im, (W - im.width * s2(im)) / 2, (H - im.height * s2(im)) / 2, im.width * s2(im), im.height * s2(im));
+    const s2 = (im) => Math.max(W / (im.width || 1), H / (im.height || 1));
+    const mc = document.createElement('canvas'); // 遮罩 → alpha
+    mc.width = W;
+    mc.height = H;
+    const mg = mc.getContext('2d');
+    cover(mg, mk.bmp);
+    const md = mg.getImageData(0, 0, W, H);
+    for (let p = 0; p < md.data.length; p += 4) md.data[p + 3] = md.data[p];
+    mg.putImageData(md, 0, 0);
+    // 主體最上緣在哪（大卡用來決定照片窗開多低，讓頭剛好衝出窗）
+    top = 0;
+    for (let y = 0; y < H; y++) {
+      let n = 0;
+      for (let x = 0; x < W; x++) if (md.data[(y * W + x) * 4 + 3] > 128) n++;
+      if (n > W * 0.03) {
+        top = y / H;
+        break;
+      }
+    }
+    const sc = document.createElement('canvas');
+    sc.width = W;
+    sc.height = H;
+    const sg = sc.getContext('2d');
+    sg.drawImage(c, 0, 0);
+    sg.globalCompositeOperation = 'destination-in';
+    sg.drawImage(mc, 0, 0);
+    subj = sc.toDataURL('image/webp', 0.8);
+    if (!subj.startsWith('data:image/webp')) subj = sc.toDataURL('image/png');
+    const bc = document.createElement('canvas');
+    bc.width = W;
+    bc.height = H;
+    const bg = bc.getContext('2d');
+    bg.drawImage(c, 0, 0);
+    const blur = document.createElement('canvas');
+    blur.width = W;
+    blur.height = H;
+    const bl = blur.getContext('2d');
+    bl.filter = 'blur(10px) brightness(0.85)';
+    bl.drawImage(c, 0, 0);
+    bl.filter = 'none';
+    bl.globalCompositeOperation = 'destination-in';
+    bl.filter = 'blur(6px)'; // 遮罩放寬一點再套，主體邊緣不會留一圈
+    bl.drawImage(mc, 0, 0);
+    bg.drawImage(blur, 0, 0);
+    back = bc.toDataURL('image/webp', 0.72);
+    if (!back.startsWith('data:image/webp')) back = bc.toDataURL('image/jpeg', 0.75);
+  }
+  const res = { t: url, s: subj, b: back, st: top };
+  albumThumbs.set(key, res);
+  return res;
 }
 
 // 收集簿跟著這台機台的紀錄更新（轉到東西、進機台時）
 async function albumSync() {
   if (!play?.cfg) return;
   const a = store.get('clatter.album') || {};
-  const e = a[play.id] || { items: {}, got: {}, order: [] };
+  const key = play.fromDraft ? 'draft.' + play.fromDraft : play.id;
+  // 舊版用 play id 記的自己機台（設定每改一次就多一筆）：同名、不是短連結的全部併過來
+  if (!a[key] && play.fromDraft) {
+    const olds = Object.entries(a)
+      .filter(([k, v]) => !k.startsWith('draft.') && v.name === play.cfg.name && !/^s\./.test(v.link || ''))
+      .sort((x, y) => (x[1].ts || 0) - (y[1].ts || 0));
+    if (olds.length) {
+      const m = { items: {}, got: {}, order: [] };
+      for (const [k, v] of olds) {
+        Object.assign(m.items, v.items);
+        for (const [n, c] of Object.entries(v.got || {})) m.got[n] = Math.max(c, m.got[n] || 0);
+        m.order = [...m.order, ...(v.order || []).filter((n) => !m.order.includes(n))];
+        m.ts = v.ts;
+        delete a[k];
+      }
+      a[key] = m;
+    }
+  }
+  const e = a[key] || { items: {}, got: {}, order: [] };
   e.name = play.cfg.name;
   e.kind = play.cfg.kind === 'card' ? 'card' : 'capsule';
   e.link = play.link;
@@ -2010,7 +2144,9 @@ async function albumSync() {
   for (let i = 0; i < play.cfg.items.length; i++) {
     const it = play.cfg.items[i];
     const prev = e.items[it.name];
-    e.items[it.name] = { r: it.rarity, t: prev?.t || (await albumThumb(i)) };
+    const need = !prev?.t || (it.mask && (!prev.s || prev.st == null)); // 還沒有縮圖，或後來才去背 → 重做
+    const th = need ? await albumThumb(i) : prev;
+    e.items[it.name] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null };
     const n = play.got[i] || 0;
     if (n) {
       e.got[it.name] = Math.max(n, e.got[it.name] || 0);
@@ -2019,7 +2155,7 @@ async function albumSync() {
   }
   if (!any && !Object.keys(e.got).length) return; // 還沒轉到東西 → 先不放進收集簿
   e.ts = Date.now();
-  a[play.id] = e;
+  a[key] = e;
   store.set('clatter.album', a);
 }
 
@@ -2127,13 +2263,22 @@ function openCardView(e, name) {
   const tilt = $('v-tilt');
   tilt.classList.toggle('round', e.kind !== 'card');
   tilt.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
-  $('v-art').style.backgroundImage = `url("${it.t}")`;
+  // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層
+  $('v-art').style.backgroundImage = `url("${it.s ? it.b || it.t : it.t}")`;
+  $('v-subj').style.backgroundImage = it.s ? `url("${it.s}")` : 'none';
+  $('v-subj').hidden = !it.s;
+  tilt.classList.toggle('pop', !!it.s);
   $('v-holo').className = 'holo r' + it.r;
   $('v-tag').textContent = name;
   $('v-name').textContent = name;
   $('v-meta').textContent = `${R.key} ${R.label} · ×${e.got[name]} · ${e.name}`;
   tilt.style.transform = '';
   openSheet('sheet-card', $('sheet-card').querySelector('[data-close]'));
+  // 照片窗的上緣：比主體頭頂低一截（主體從窗的下緣放大 1.07 倍，算進去），最多壓到卡高的 22%
+  const h = tilt.offsetHeight;
+  const subjTop = h * (0.96 - (0.96 - (0.05 + 0.9 * (it.st ?? 0.3))) * 1.07);
+  const bt = e.kind === 'card' && it.s ? Math.max(0, Math.min(h * 0.22 - 25, subjTop + h * 0.08 - 25)) : 0;
+  tilt.style.setProperty('--bt', `${Math.round(bt)}px`);
   // 沒在動滑鼠／手機 → 自己慢慢晃（看得出前後層的立體感）
   viewMoved = 0;
   const loop = (now) => {
@@ -2200,6 +2345,7 @@ async function boot() {
     refreshStats();
   }
   loadWallet().catch(() => {}); // 一開始就有 1000 枚
+  autoMasks(); // 以前上傳、還沒去背的照片
   $('wallet-card').onclick = openWallet;
   document.querySelector('.coin-count').onclick = () => play?.cloud && openWallet();
   // 回到這個分頁：賣家重抓被轉走的數量；買家重抓庫存（店家可能補貨或改了機台）

@@ -20,7 +20,8 @@ export async function encodeConfig(cfg) {
     s: cfg.shop,
     t: cfg.theme,
     p: [cfg.price.coins, cfg.price.unit, cfg.price.cur],
-    // 每列：[名稱, 稀有度, 數量, 圖片長度, 圖片格式, 影音連結, 獎品 id]（後面沒有就省略）
+    // 每列：[名稱, 稀有度, 數量, 圖片長度, 圖片格式, 影音連結, 獎品 id, 遮罩長度, 遮罩格式]（後面沒有就省略）
+    //   遮罩＝主體去背（seg.js），位元組接在同一個獎品的照片後面
     i: cfg.items.map((it) => {
       const row = [it.name, it.rarity, it.qty];
       if (it.img) {
@@ -32,10 +33,14 @@ export async function encodeConfig(cfg) {
         if (row.length === 3) row.push(0, '');
         row.push(media);
       }
-      if (it.uid) {
+      if (it.uid || it.mask) {
         if (row.length === 3) row.push(0, '');
         if (row.length === 5) row.push(0);
-        row.push(it.uid);
+        row.push(it.uid || '');
+      }
+      if (it.mask && it.img) {
+        imgs.push(it.mask.bytes);
+        row.push(it.mask.bytes.length, it.mask.mime === 'image/webp' ? 'w' : 'p');
       }
       return row;
     }),
@@ -83,11 +88,16 @@ export async function decodeConfig(token) {
   }
   let off = j.__off;
   const items = (Array.isArray(j.i) ? j.i : []).slice(0, LIMITS.items).map((r) => {
-    const [name, rarity, qty, len, fmt, media, uid] = Array.isArray(r) ? r : [];
+    const [name, rarity, qty, len, fmt, media, uid, mlen, mfmt] = Array.isArray(r) ? r : [];
     let img = null;
+    let mask = null;
     if (Number.isInteger(len) && len > 0 && off + len <= buf.length) {
       img = { bytes: buf.slice(off, off + len), mime: fmt === 'w' ? 'image/webp' : 'image/jpeg' };
       off += len;
+      if (Number.isInteger(mlen) && mlen > 0 && mlen < 60000 && off + mlen <= buf.length) {
+        mask = { bytes: buf.slice(off, off + mlen), mime: mfmt === 'w' ? 'image/webp' : 'image/png' };
+        off += mlen;
+      }
     }
     return {
       name: str(name, LIMITS.name) || '?',
@@ -96,6 +106,7 @@ export async function decodeConfig(token) {
       img,
       media: mediaFromLink(media),
       uid: typeof uid === 'string' && /^[0-9A-Za-z]{4,12}$/.test(uid) ? uid : null,
+      mask,
     };
   });
   if (!items.length) throw new Error('e.empty');

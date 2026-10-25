@@ -142,8 +142,15 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .t-shadow { inset: 6%; background: rgba(10, 14, 30, .45); filter: blur(16px); transform: translateZ(-60px) translateY(18px); }
 .t-photo { inset: 5%; background: #fffaf2 center / cover no-repeat; transform: translateZ(-24px) scale(1.05); } /* 退後一點，但斜到底也不會跑出框外 */
 .t-frame { inset: 0; border: 14px solid var(--rc); box-shadow: 0 0 0 3px #1c2340, inset 0 0 0 3px #1c2340, inset 0 10px 22px rgba(0,0,0,.45); }
+.t-subj { inset: 5%; background: center / cover no-repeat; transform: translateZ(26px) scale(1.02); filter: drop-shadow(0 10px 10px rgba(0,0,0,.4)); } /* 去背的主體浮在框前面（斜的時候會蓋過框） */
 .t-tag { left: 10%; right: 10%; top: auto; bottom: 7%; padding: 6px 10px; text-align: center; background: rgba(28,35,64,.92); color: #fff; font-weight: 900; font-size: 15px; border-radius: 12px; border: 2px solid #fff; transform: translateZ(46px); box-shadow: 0 12px 20px rgba(0,0,0,.4); }
 .tilt.round .t-tag { bottom: 12%; }
+/* 有去背（使用者 2026-10-25：「主體跟背景分開」）：框內多一圈底紙、照片窗變小、背景退更後面還柔焦；
+   主體放大一點、從窗的下緣往上長 → 頭、耳朵會衝出窗蓋到框上（iPhone 景深桌布那種前後分開） */
+.tilt.pop .t-frame { --mat: color-mix(in srgb, var(--rc) 28%, #fffaf2); box-shadow: 0 0 0 3px #1c2340, inset 0 0 0 3px #1c2340, inset 0 var(--bt, 0px) 0 22px var(--mat), inset 0 0 0 22px var(--mat), inset 0 var(--bt, 0px) 0 25px #1c2340, inset 0 0 0 25px #1c2340; } /* --bt：上面那條底紙加寬多少（JS 依主體頭頂算） */
+.tilt.pop .t-photo { transform: translateZ(-40px) scale(1.08); filter: blur(1.4px) brightness(.9) saturate(.92); }
+.tilt.pop .t-subj { transform-origin: 50% 96%; transform: translateZ(30px) scale(1.07); clip-path: inset(-12% -12% 3% -12%); filter: drop-shadow(0 8px 6px rgba(0,0,0,.45)); -webkit-mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent); mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent); }
+.tilt.pop.round .t-subj { clip-path: inset(-12% -12% 9% -12%); }
 .holo { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; mix-blend-mode: color-dodge; opacity: .35; transform: translateZ(8px); background: linear-gradient(115deg, transparent 20%, rgba(255,255,255,.7) var(--hx, 45%), transparent 70%); }
 .holo.r2 { opacity: .55; background: linear-gradient(115deg, transparent 25%, rgba(255,214,90,.85) var(--hx, 45%), transparent 65%); }
 .holo.r3 { opacity: .7; background: linear-gradient(115deg, #ff5a7a33, #ffe94a88 var(--hx, 45%), #52e08a66, #4cc3ff88, #9b6bff55); }
@@ -673,6 +680,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         <div class="t-shadow"></div>
         <div class="t-photo" id="v-art"></div>
         <div class="t-frame"></div>
+        <div class="t-subj" id="v-subj" hidden></div>
         <div class="holo" id="v-holo"></div>
         <div class="t-tag" id="v-tag"></div>
       </div>

@@ -43,10 +43,28 @@ void main(){
   gl_Position = projectionMatrix * viewMatrix * wp;
 }`;
 const FS = `uniform sampler2D map; uniform float uMode; uniform float uTime; uniform float uWhite; uniform float uOpacity; uniform float uSil;
-uniform sampler2D photo; uniform sampler2D depthMap; uniform sampler2D overMap; uniform float uLayered; uniform vec4 uWin; uniform float uDepth;
+uniform sampler2D photo; uniform sampler2D bgPhoto; uniform sampler2D depthMap; uniform sampler2D overMap; uniform float uLayered; uniform vec4 uWin; uniform float uDepth;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vVo;
 // 圖片的深度：0.85＝背景退到卡面後面、−0.5＝主體浮到卡面前面（像 iPhone 空間照片的主體往前跳）
 float hgt(vec2 w) { return 0.85 - 1.35 * texture2D(depthMap, w).r; }
+// 沿著視線往卡片裡面走（視差遮擋）：從最前面（−0.5）走到最後面（0.85），第一次走到「表面底下」的地方就是看到的點
+//   之前只逼近三次，主體邊緣斜著看會有一條背景色的帶子；一步一步走＋最後一段內插就不會
+vec3 march(vec2 z, vec2 d) {
+  float pt = -0.5;
+  float pd = pt - hgt(z - d * pt);
+  if (pd >= 0.) return vec3(z - d * pt, pt);
+  for (int i = 1; i <= 24; i++) {
+    float t = -0.5 + 1.35 * float(i) / 24.;
+    float dd = t - hgt(z - d * t);
+    if (dd >= 0.) {
+      float tt = mix(pt, t, pd / (pd - dd));
+      return vec3(z - d * tt, tt);
+    }
+    pt = t;
+    pd = dd;
+  }
+  return vec3(z - d * 0.85, 0.85);
+}
 void main(){
   vec4 c = texture2D(map, vUv);
   vec3 col;
@@ -60,15 +78,17 @@ void main(){
   if (ov.a > 0.5) col = ov.rgb;
   else {
     // 主體跑出框：框的地方，如果主體位移過來、而且是「前面」的東西，就畫在框上面
-    vec2 pq = w + par * uDepth * 0.5;
-    bool pop = uLayered > 0.5 && c.a >= 0.5 && pq.x > 0. && pq.x < 1. && pq.y > 0. && pq.y < 1. && texture2D(depthMap, pq).r > 0.66;
+    // 圖片放大 1.16 倍（斜著看邊緣也不露底）：深度圖、照片都用同一個放大後的座標，主體跟它的深度才對得齊
+    float k = uDepth / 1.16;
+    vec2 z = (w - 0.5) / 1.16 + 0.5;
+    bool want = uLayered > 0.5 && ((inWin && c.a < 0.5) || (c.a >= 0.5 && z.x > -0.3 && z.x < 1.3 && z.y > -0.3 && z.y < 1.3));
+    vec3 hit = want ? march(z, par * k) : vec3(0., 0., 1.);
+    bool pop = want && c.a >= 0.5 && hit.z < -0.1 && hit.x > 0. && hit.x < 1. && hit.y > 0. && hit.y < 1.;
     if ((inWin && c.a < 0.5) || pop) {
-      // 3D 照片：兩次逼近視差（背景退後、主體浮出）
-      vec2 p = w - par * uDepth * hgt(w);
-      p = w - par * uDepth * hgt(p);
-      p = w - par * uDepth * hgt(p);
-      p = (p - 0.5) / 1.16 + 0.5; // 放大一點，斜著看邊緣也不露底
-      col = texture2D(photo, clamp(p, 0.002, 0.998)).rgb;
+      // 3D 照片：背景退後、主體浮出
+      vec2 p = clamp(hit.xy, 0.002, 0.998);
+      // 落在背景 → 用「主體補掉」的背景圖（不然斜的時候背景裡會再看到一次主體的邊）
+      col = mix(texture2D(bgPhoto, p).rgb, texture2D(photo, p).rgb, smoothstep(0.4, 0.7, texture2D(depthMap, p).r));
       // 窗框落在圖片上的影子：往卡片斜的方向偏（凹進去的感覺）
       vec2 ws = w + par * 0.035;
       float e = min(min(ws.x, 1. - ws.x), min(ws.y, 1. - ws.y));
@@ -110,7 +130,7 @@ function faceMat(tex, mode) {
   const m = new THREE.ShaderMaterial({
     uniforms: {
       map: { value: tex }, uMode: { value: mode }, uTime: { value: 0 }, uWhite: { value: 0 }, uOpacity: { value: 1 }, uSil: { value: 0 },
-      photo: { value: null }, depthMap: { value: null }, overMap: { value: null }, uLayered: { value: 0 }, uWin: { value: new THREE.Vector4() }, uDepth: { value: 0.2 },
+      photo: { value: null }, bgPhoto: { value: null }, depthMap: { value: null }, overMap: { value: null }, uLayered: { value: 0 }, uWin: { value: new THREE.Vector4() }, uDepth: { value: 0.2 },
     },
     vertexShader: VS,
     fragmentShader: FS,
@@ -135,6 +155,7 @@ export function makeCard(frontTex, backTex, frontMode, backMode, edgeMat, layers
   const fm = faceMat(frontTex, frontMode);
   if (layers) {
     fm.uniforms.photo.value = layers.photo;
+    fm.uniforms.bgPhoto.value = layers.bg || layers.photo;
     fm.uniforms.depthMap.value = layers.depth;
     fm.uniforms.overMap.value = layers.over;
     fm.uniforms.uWin.value.set(...layers.win);
@@ -186,6 +207,7 @@ export function makeCard(frontTex, backTex, frontMode, backMode, edgeMat, layers
       live.delete(fm);
       live.delete(bm);
       fm.uniforms.map.value?.dispose();
+      if (fm.uniforms.bgPhoto.value !== fm.uniforms.photo.value) fm.uniforms.bgPhoto.value?.dispose();
       fm.uniforms.photo.value?.dispose();
       fm.uniforms.depthMap.value?.dispose();
       fm.uniforms.overMap.value?.dispose();

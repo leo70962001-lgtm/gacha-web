@@ -389,7 +389,7 @@ export const CARD_PX = { w: 512, h: 746 };
 export const CARD_WIN = { x: 18, y: 18, w: 476, h: 710 }; // 圖片窗（px）
 const STARS = [1, 2, 3, 4];
 
-export function drawCardLayers(item, thumb, rarity = item.rarity) {
+export function drawCardLayers(item, thumb, rarity = item.rarity, mask = null) {
   const { w: W, h: H } = CARD_PX;
   const { x: wx, y: wy, w: ww, h: wh } = CARD_WIN;
   const rar = RARITY[rarity];
@@ -416,7 +416,76 @@ export function drawCardLayers(item, thumb, rarity = item.rarity) {
   roundRect(g, wx, wy, ww, wh, 22);
   g.fill();
   g.globalCompositeOperation = 'source-over';
-  return { frame, photo, over: drawCardOver(item, rarity), depth: estimateDepth(photo) };
+  return {
+    frame,
+    photo,
+    bg: mask ? inpaintBehind(photo, mask) : null,
+    over: drawCardOver(item, rarity),
+    depth: mask ? depthFromMask(mask, ww, wh) : estimateDepth(photo),
+  };
+}
+
+// 主體後面的背景（3D 卡斜著看時露出來的地方）：把主體挖掉，用四周的顏色由粗到細補回去（push-pull）
+function inpaintBehind(photo, mask) {
+  const w = 160;
+  const h = Math.round((w * photo.height) / photo.width);
+  const m = canvas(w, h);
+  const mg = m.getContext('2d', { willReadFrequently: true });
+  mg.filter = 'blur(3px)'; // 放寬一點，主體的毛邊也一起挖掉
+  drawCover(mg, mask, 0, 0, w, h);
+  mg.filter = 'none';
+  const md = mg.getImageData(0, 0, w, h).data;
+  const hole = canvas(w, h);
+  const hg = hole.getContext('2d', { willReadFrequently: true });
+  hg.drawImage(photo, 0, 0, w, h);
+  const hd = hg.getImageData(0, 0, w, h);
+  for (let i = 0; i < md.length; i += 4) hd.data[i + 3] = Math.round(255 * (1 - Math.min(1, (md[i] / 255) * 4)));
+  hg.putImageData(hd, 0, 0);
+  const lv = [hole];
+  let cur = hole;
+  while (cur.width > 6) {
+    const n = canvas(Math.max(1, cur.width >> 1), Math.max(1, cur.height >> 1));
+    n.getContext('2d').drawImage(cur, 0, 0, n.width, n.height);
+    lv.push(n);
+    cur = n;
+  }
+  // 最粗那層：還是透明的格子填平均色，其他的不透明
+  const cg = cur.getContext('2d', { willReadFrequently: true });
+  const cd = cg.getImageData(0, 0, cur.width, cur.height);
+  let r = 0, gg = 0, b = 0, n = 0;
+  for (let i = 0; i < cd.data.length; i += 4) {
+    const a = cd.data[i + 3];
+    r += cd.data[i] * a;
+    gg += cd.data[i + 1] * a;
+    b += cd.data[i + 2] * a;
+    n += a;
+  }
+  for (let i = 0; i < cd.data.length; i += 4) {
+    if (!cd.data[i + 3] && n) [cd.data[i], cd.data[i + 1], cd.data[i + 2]] = [r / n, gg / n, b / n];
+    cd.data[i + 3] = 255;
+  }
+  cg.putImageData(cd, 0, 0);
+  let acc = cur;
+  for (let i = lv.length - 2; i >= 0; i--) {
+    const o = canvas(lv[i].width, lv[i].height);
+    const og = o.getContext('2d');
+    og.drawImage(acc, 0, 0, o.width, o.height);
+    og.drawImage(lv[i], 0, 0);
+    acc = o;
+  }
+  // 補好的背景放大回照片尺寸；主體外面還是用原圖（清楚）
+  const out = canvas(photo.width, photo.height);
+  const g = out.getContext('2d');
+  g.filter = 'blur(2px)';
+  g.drawImage(acc, 0, 0, out.width, out.height);
+  g.filter = 'none';
+  const keep = canvas(photo.width, photo.height);
+  const kg = keep.getContext('2d');
+  kg.drawImage(photo, 0, 0);
+  kg.globalCompositeOperation = 'destination-in';
+  kg.drawImage(hole, 0, 0, out.width, out.height);
+  g.drawImage(keep, 0, 0);
+  return out;
 }
 
 // 浮在卡面上的一層（稀有度章、星星、名字帶）：3D 時比卡面更靠近你，底下有影子
@@ -472,6 +541,23 @@ export function drawTradingCard(item, thumb, rarity = item.rarity) {
   g.drawImage(L.frame, 0, 0);
   g.drawImage(L.over, 0, 0);
   return c;
+}
+
+// 主體遮罩（seg.js）→ 深度：主體＝前、背景＝後，邊緣模糊一點才不會切得太硬；混一點「中間比較前面」
+export function depthFromMask(mask, ww, wh) {
+  const out = canvas(128, Math.round((128 * wh) / ww));
+  const g = out.getContext('2d');
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, out.width, out.height);
+  g.filter = 'blur(2px)';
+  drawCover(g, mask, 0, 0, out.width, out.height); // 跟照片一樣的裁切（照片也是 cover 進窗）
+  g.filter = 'none';
+  const grd = g.createRadialGradient(out.width / 2, out.height / 2, 0, out.width / 2, out.height / 2, out.height * 0.6);
+  grd.addColorStop(0, 'rgba(255,255,255,0.14)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, out.width, out.height);
+  return out;
 }
 
 // 從一張圖估深度（像 iPhone 的「空間照片」：主體在前、背景在後）
