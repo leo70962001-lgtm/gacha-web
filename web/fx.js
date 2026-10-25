@@ -111,6 +111,10 @@ export class Spectacle {
     );
     this.seam.rotation.x = Math.PI / 2;
     this.seam.renderOrder = 5;
+    // 卡片集氣：卡片後面一團光（轉卡機用，取代扭蛋的接縫光）
+    this.aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+    this.aura.renderOrder = 1;
+    this.aura.raycast = () => {};
     // 打在扭蛋上的光（場景變暗時扭蛋本身還看得到）
     this.capLight = new THREE.PointLight(0xffffff, 0, 1.6, 1.5);
     g.add(this.capLight);
@@ -187,8 +191,13 @@ export class Spectacle {
     const m = this.m;
     const dur = m.reduced ? Math.min(T.charge, 0.6) : T.charge;
     const g = c.g;
+    const card = !!g.userData.card;
     const col = new THREE.Color(c.fake ? BEAM[2] : BEAM[rarity]);
-    g.add(this.seam);
+    if (card) {
+      this.aura.position.set(0, 0, 0.03); // 卡背朝鏡頭 → 光在卡片後面（卡面那一側）
+      this.aura.material.color.copy(col);
+      g.add(this.aura);
+    } else g.add(this.seam);
     this.seam.material.color.copy(col);
     this.capLight.color.copy(col);
     this._placeLight(home);
@@ -202,8 +211,13 @@ export class Spectacle {
       const amp = (0.04 + 0.16 * k * k) * (k < 0.96 ? 1 : 0);
       const a = Math.sin(m.time * (28 + 40 * k)) * amp;
       g.position.set(home.x + Math.sin(m.time * 51) * 0.012 * k, home.y + 0.02 * k, home.z);
-      g.quaternion.copy(c.q).multiply(_q.setFromAxisAngle(_z, a));
-      g.rotateY(k * k * (rarity === 3 ? 9 : 4)); // 越轉越快
+      g.quaternion.copy(c.q).multiply(_q.setFromAxisAngle(_z, card ? a * 0.6 : a));
+      if (card) {
+        // 卡片不能轉一圈（會先看到正面）→ 左右晃＋後面的光越來越大
+        g.rotateY(Math.sin(m.time * 7) * 0.14 * k);
+        this.aura.material.opacity = Math.min(1, k * 1.4) * (0.6 + 0.4 * Math.sin(m.time * 30));
+        this.aura.scale.setScalar(0.42 + 0.22 * k);
+      } else g.rotateY(k * k * (rarity === 3 ? 9 : 4)); // 越轉越快
       this.seam.material.opacity = Math.min(1, k * 1.6) * (0.6 + 0.4 * Math.sin(m.time * 30));
       this.capLight.intensity = 0.25 + 0.9 * k;
       // 光粒子往扭蛋收
@@ -213,9 +227,14 @@ export class Spectacle {
       // 升格：銀蛋 → 金蛋
       if (!upgraded && k > 0.55) {
         upgraded = true;
-        g.userData.bot.material = m.capRare[3];
-        g.userData.top.material = m.capRare[3];
-        this.addGlints(g, 3);
+        if (card) {
+          g.userData.upgrade(); // 金卡背 → 彩虹卡背
+          this.aura.material.color.set(BEAM[3]);
+        } else {
+          g.userData.bot.material = m.capRare[3];
+          g.userData.top.material = m.capRare[3];
+          this.addGlints(g, 3);
+        }
         this.seam.material.color.set(BEAM[3]);
         this.capLight.color.set(BEAM[3]);
         sfx.upgrade();
@@ -243,6 +262,8 @@ export class Spectacle {
     sfx.boom(rarity);
     this.seam.removeFromParent();
     this.seam.material.opacity = 0;
+    this.aura.removeFromParent();
+    this.aura.material.opacity = 0;
     // 中心爆光
     this._coreFlash(at, BEAM[rarity], T.glow, rarity >= 2 ? 0.7 : 0.5);
     this._placeLight(at);
@@ -414,14 +435,17 @@ export class Spectacle {
   }
 
   // 金蛋表面一閃一閃的亮點（跟著扭蛋動）
-  addGlints(group, n) {
+  addGlints(group, n, card = false) {
     this.glints = this.glints || [];
     for (let i = 0; i < n; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.starTex, color: i % 2 ? '#fff6c8' : '#ffffff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
       const dir = new THREE.Vector3(rnd(-1, 1), rnd(-0.6, 1), rnd(0.2, 1)).normalize();
       s.position.copy(dir.multiplyScalar(0.068));
+      // 卡片：亮點貼在卡面兩側（卡片 0.19 × 0.277）
+      if (card) s.position.set(rnd(-0.08, 0.08), rnd(-0.12, 0.12), i % 2 ? 0.004 : -0.004);
       s.renderOrder = 6;
       s.scale.setScalar(0.001);
+      s.raycast = () => {};
       group.add(s);
       this.glints.push({ s, group, ph: rnd(0, 6), sp: rnd(2.5, 4.5) });
     }
@@ -433,10 +457,11 @@ export class Spectacle {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: BEAM[shown], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     s.renderOrder = 1;
     s.scale.setScalar(0.001);
+    s.raycast = () => {}; // 光比卡片大 → 不能吃掉點擊（不然會點到隔壁那張）
     c.g.add(s);
     c.glow = s;
     this.glows = this.glows || [];
-    this.glows.push({ s, c, ph: Math.random() * 6 });
+    this.glows.push({ s, c, ph: Math.random() * 6, base: c.card ? 0.5 : 0.32 });
   }
 
   // 小開：彩色光點炸開＋一圈光（N 白、R 藍）
@@ -469,7 +494,7 @@ export class Spectacle {
       this.glows = this.glows.filter((o) => {
         if (!o.c.g.parent) return false;
         o.ph += dt * 5;
-        o.s.scale.setScalar(0.32 + 0.06 * Math.sin(o.ph));
+        o.s.scale.setScalar(o.base + 0.06 * Math.sin(o.ph));
         return true;
       });
     }

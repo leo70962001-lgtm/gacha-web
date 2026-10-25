@@ -113,6 +113,20 @@ export const sfx = {
     const t = now();
     for (let i = 0; i < 6; i++) noise(t + i * 0.08, 0.04, 0.1 + i * 0.03, 'bandpass', 1600, 1600, 5);
   },
+  // 轉卡機：卡片從出卡口滑出來（紙擦過塑膠的沙一聲＋喀）
+  cardOut() {
+    if (!ready()) return;
+    const t = now();
+    noise(t, 0.22, 0.35, 'bandpass', 2600, 900, 1.2);
+    tone('square', 180, 120, t + 0.2, 0.05, 0.08);
+  },
+  // 翻卡：紙片甩過空氣
+  flip() {
+    if (!ready()) return;
+    const t = now();
+    noise(t, 0.16, 0.4, 'highpass', 1800, 5200, 0.8);
+    tone('sine', 520, 980, t + 0.02, 0.12, 0.12);
+  },
   pop() {
     if (!ready()) return;
     const t = now();

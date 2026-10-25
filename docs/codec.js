@@ -48,6 +48,7 @@ export async function encodeConfig(cfg) {
     imgs.push(bg.img.bytes);
     json.b = ['i', bg.img.bytes.length, bg.img.mime === 'image/webp' ? 'w' : 'j'];
   }
+  if (cfg.kind === 'card') json.k = 'c'; // 機台種類：沒寫＝轉蛋機
   const jb = te.encode(JSON.stringify(json));
   const size = 4 + jb.length + imgs.reduce((a, b) => a + b.length, 0);
   const buf = new Uint8Array(size);
@@ -118,6 +119,7 @@ export async function decodeConfig(token) {
     },
     items,
     bg,
+    kind: j.k === 'c' ? 'card' : 'capsule',
   };
 }
 

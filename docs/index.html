@@ -158,6 +158,11 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .field label, .field > span { font-size: 13px; font-weight: 700; color: var(--muted); }
 .field input { border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kind-btn { display: flex; align-items: center; gap: 8px; justify-content: center; border: 2px solid var(--stroke); border-radius: 14px; padding: 8px 10px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; box-shadow: 3px 3px 0 var(--stroke); }
+.kind-btn svg { width: 28px; height: 28px; color: #1c2340; flex: none; }
+.kind-btn[aria-checked="true"] { background: var(--sun); color: #1c2340; }
+.kind-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--stroke); }
 .swatch { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--stroke); cursor: pointer; padding: 0; background: var(--c); position: relative; }
 .bgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 8px; }
 .bg-tile { aspect-ratio: 16 / 10; border-radius: 10px; border: 2px solid var(--stroke); padding: 0; overflow: hidden; cursor: pointer; background: var(--surface-2) center / cover no-repeat; position: relative; display: grid; align-items: end; justify-items: start; }
@@ -480,6 +485,12 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
             </div>
             <div class="field"><label for="m-name" data-i18n="machineName">機台名稱</label><input id="m-name" maxlength="24"></div>
             <div class="field"><label for="m-shop" data-i18n="shopName">店名（選填）</label><input id="m-shop" maxlength="24"></div>
+            <div class="field"><span id="kind-label" data-i18n="kind.label">機台種類</span>
+              <div class="kinds" id="kinds" role="radiogroup" aria-labelledby="kind-label">
+                <button type="button" class="kind-btn" data-kind="capsule" role="radio"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12" fill="#fff" stroke="currentColor" stroke-width="2.5"/><path d="M4 16a12 12 0 0 0 24 0z" fill="#e8423b" stroke="currentColor" stroke-width="2.5"/></svg><span data-i18n="kind.capsule">轉蛋機</span></button>
+                <button type="button" class="kind-btn" data-kind="card" role="radio"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="9" y="4" width="15" height="22" rx="2.5" fill="#5aa0ff" stroke="currentColor" stroke-width="2.5" transform="rotate(12 16 15)"/><rect x="7" y="6" width="15" height="22" rx="2.5" fill="#ffd23f" stroke="currentColor" stroke-width="2.5"/><path d="M14.5 12l1.4 2.9 3.1.4-2.3 2.1.6 3.1-2.8-1.6-2.8 1.6.6-3.1-2.3-2.1 3.1-.4z" fill="#fff" stroke="currentColor" stroke-width="1.2"/></svg><span data-i18n="kind.card">轉卡機</span></button>
+              </div>
+            </div>
             <div class="field"><span id="sw-label" data-i18n="machineColor">機台顏色</span><div class="swatches" id="swatches" role="radiogroup" aria-labelledby="sw-label"></div></div>
             <div class="field"><span id="bg-label" data-i18n="bg.label">背景</span><div class="bgs" id="bgs" role="radiogroup" aria-labelledby="bg-label"></div></div>
           </li>

@@ -381,6 +381,246 @@ export function drawPrizeCard(item, thumb, isNew) {
   return c;
 }
 
+// ---------- 轉卡機 ----------
+// 卡片正面（59 × 86 mm 的比例）：轉卡機以圖為主 → 全圖卡（圖片鋪滿整張卡，外面一圈細稀有度框）
+// 分三層給 3D 照片效果用（cardkit.js 的 shader）：
+//   frame＝框＋稀有度章＋星星＋名字帶（窗的地方透明）、photo＝鋪滿窗的圖、depth＝從圖估出來的深度（白＝前、黑＝後）
+export const CARD_PX = { w: 512, h: 746 };
+export const CARD_WIN = { x: 18, y: 18, w: 476, h: 710 }; // 圖片窗（px）
+const STARS = [1, 2, 3, 4];
+
+export function drawCardLayers(item, thumb, rarity = item.rarity) {
+  const { w: W, h: H } = CARD_PX;
+  const { x: wx, y: wy, w: ww, h: wh } = CARD_WIN;
+  const rar = RARITY[rarity];
+  // 圖片層
+  const photo = canvas(ww, wh);
+  const pg = photo.getContext('2d');
+  pg.fillStyle = '#fffaf2';
+  pg.fillRect(0, 0, ww, wh);
+  if (thumb) drawCover(pg, thumb, 0, 0, ww, wh);
+  // 框層
+  const frame = canvas(W, H);
+  const g = frame.getContext('2d');
+  g.fillStyle = '#1c2340'; // toon 粗描邊
+  roundRect(g, 0, 0, W, H, 34);
+  g.fill();
+  const grd = g.createLinearGradient(0, 0, W, H);
+  grd.addColorStop(0, rar.glow);
+  grd.addColorStop(0.55, rar.color);
+  grd.addColorStop(1, rar.glow);
+  g.fillStyle = grd;
+  roundRect(g, 7, 7, W - 14, H - 14, 28);
+  g.fill();
+  g.globalCompositeOperation = 'destination-out'; // 挖出圖片窗
+  roundRect(g, wx, wy, ww, wh, 22);
+  g.fill();
+  g.globalCompositeOperation = 'source-over';
+  // 左上：稀有度章
+  g.fillStyle = '#1c2340';
+  roundRect(g, 26, 26, 128, 64, 20);
+  g.fill();
+  g.fillStyle = rar.color;
+  roundRect(g, 31, 31, 118, 54, 16);
+  g.fill();
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `40px ${FONT_NUM}`;
+  g.fillText(rar.key, 90, 60);
+  // 右上：星星
+  g.font = `40px ${FONT_NUM}`;
+  g.lineWidth = 7;
+  g.strokeStyle = '#1c2340';
+  g.lineJoin = 'round';
+  const n = STARS[rarity];
+  for (let i = 0; i < n; i++) {
+    const x = W - 50 - i * 44;
+    g.fillStyle = rarity >= 2 ? '#ffd23f' : '#ffffff';
+    g.strokeText('★', x, 58);
+    g.fillText('★', x, 58);
+  }
+  // 下方：名字帶
+  g.fillStyle = 'rgba(28,35,64,0.9)';
+  roundRect(g, 26, H - 104, W - 52, 76, 22);
+  g.fill();
+  g.fillStyle = '#ffffff';
+  fitText(g, item.name, W - 100, 40, bodyFont(), '900');
+  g.fillText(item.name, W / 2, H - 66);
+  return { frame, photo, depth: estimateDepth(photo) };
+}
+
+// 平面的全圖卡（台紙、截圖用）＝圖片層＋框層疊起來
+export function drawTradingCard(item, thumb, rarity = item.rarity) {
+  const L = drawCardLayers(item, thumb, rarity);
+  const c = canvas(CARD_PX.w, CARD_PX.h);
+  const g = c.getContext('2d');
+  g.save();
+  roundRect(g, CARD_WIN.x, CARD_WIN.y, CARD_WIN.w, CARD_WIN.h, 22);
+  g.clip();
+  g.drawImage(L.photo, CARD_WIN.x, CARD_WIN.y);
+  g.restore();
+  g.drawImage(L.frame, 0, 0);
+  return c;
+}
+
+// 從一張圖估深度（像 iPhone 的「空間照片」：主體在前、背景在後）
+//   背景色＝四周一圈的平均色；跟背景差越多越「前面」；再混一點「中間比較前面」的假設；最後模糊成平滑的深度
+export function estimateDepth(photo) {
+  const w = 64;
+  const h = Math.round((w * photo.height) / photo.width);
+  const s = canvas(w, h);
+  const sg = s.getContext('2d', { willReadFrequently: true });
+  sg.drawImage(photo, 0, 0, w, h);
+  const d = sg.getImageData(0, 0, w, h);
+  const px = d.data;
+  const band = Math.max(2, Math.round(w * 0.07));
+  let br = 0, bgc = 0, bb = 0, bn = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (x >= band && x < w - band && y >= band && y < h - band) continue;
+      const i = (y * w + x) * 4;
+      br += px[i];
+      bgc += px[i + 1];
+      bb += px[i + 2];
+      bn++;
+    }
+  }
+  br /= bn;
+  bgc /= bn;
+  bb /= bn;
+  const diff = new Float32Array(w * h);
+  let max = 1e-3;
+  for (let i = 0; i < w * h; i++) {
+    const r = px[i * 4] - br, gg = px[i * 4 + 1] - bgc, b = px[i * 4 + 2] - bb;
+    diff[i] = Math.sqrt(r * r + gg * gg + b * b);
+    max = Math.max(max, diff[i]);
+  }
+  const sm = (a, b, x) => Math.min(1, Math.max(0, (x - a) / (b - a)));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const fg = sm(0.12, 0.42, diff[i] / max);
+      const nx = (x / (w - 1)) * 2 - 1;
+      const ny = (y / (h - 1)) * 2 - 1;
+      const center = Math.max(0, 1 - (nx * nx + ny * ny) * 0.7);
+      const v = Math.round(255 * Math.min(1, fg * 0.72 + center * 0.28));
+      px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v;
+      px[i * 4 + 3] = 255;
+    }
+  }
+  sg.putImageData(d, 0, 0);
+  const out = canvas(128, Math.round((128 * h) / w));
+  const og = out.getContext('2d');
+  og.filter = 'blur(4px)';
+  og.drawImage(s, 0, 0, out.width, out.height);
+  return out;
+}
+
+// 卡背：Gemini 的卡背圖（沒有字）＋描邊圓角；tier 2＝金箔、3＝彩虹（SR、SSR 從卡背就看得出來）
+export function drawCardBack(art, tier = 0) {
+  const { w: W, h: H } = CARD_PX;
+  const c = canvas(W, H);
+  const g = c.getContext('2d');
+  g.fillStyle = '#1c2340';
+  roundRect(g, 0, 0, W, H, 34);
+  g.fill();
+  g.save();
+  roundRect(g, 10, 10, W - 20, H - 20, 26);
+  g.clip();
+  if (art) drawCover(g, art, 10, 10, W - 20, H - 20);
+  else {
+    // 備用：藍色放射＋星星
+    const grd = g.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, H * 0.7);
+    grd.addColorStop(0, '#5aa0ff');
+    grd.addColorStop(1, '#1f3f9e');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#ffd23f';
+    g.font = `220px ${FONT_NUM}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('★', W / 2, H / 2);
+  }
+  if (tier >= 2) {
+    // 金：整張蓋一層金色（保留圖案明暗）；彩虹：斜向七彩
+    g.globalCompositeOperation = 'color';
+    if (tier === 2) g.fillStyle = '#e8a000';
+    else {
+      const rb = g.createLinearGradient(0, 0, W, H);
+      ['#ff5a7a', '#ffb13b', '#ffe94a', '#52e08a', '#4cc3ff', '#9b6bff', '#ff5ad1'].forEach((col, i, a) => rb.addColorStop(i / (a.length - 1), col));
+      g.fillStyle = rb;
+    }
+    g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'source-over';
+  }
+  g.restore();
+  return c;
+}
+
+// 轉卡機的窗（直的 0.387 × 0.694 m）：台紙＝機台名稱＋獎品陣容（卡片小圖、兩欄）
+export function drawBoard(cfg, thumbs) {
+  const W = 560;
+  const H = 1004;
+  const c = canvas(W, H);
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, '#fffaf2');
+  grd.addColorStop(1, '#ffe9c9');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(255, 210, 63, 0.35)';
+  for (let i = 0; i < 14; i++) {
+    g.beginPath();
+    g.arc((i * 137) % W, (i * 271) % H, 18 + (i % 4) * 10, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = 'rgba(28,35,64,0.94)';
+  roundRect(g, 24, 24, W - 48, 110, 30);
+  g.fill();
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  fitText(g, cfg.name, W - 100, 52, FONT_DISPLAY);
+  g.fillText(cfg.name, W / 2, 66);
+  g.fillStyle = '#ffd23f';
+  fitText(g, t('d.kinds', { n: cfg.items.length }), W - 100, 30, FONT_DISPLAY);
+  g.fillText(t('d.kinds', { n: cfg.items.length }), W / 2, 112);
+  // 欄數挑卡片最大的（1–3 欄），整組置中
+  const n = Math.min(cfg.items.length, 9);
+  const AW = W - 48;
+  const AH = H - 156 - 60;
+  const gap = 14;
+  let best = null;
+  for (let cols = 1; cols <= 3; cols++) {
+    const rows = Math.ceil(n / cols);
+    const w = Math.min((AW - (cols - 1) * gap) / cols, ((AH - (rows - 1) * gap) / rows) * 0.686);
+    if (!best || w > best.w) best = { cols, rows, w };
+  }
+  const { cols, rows, w } = best;
+  const h = w / 0.686;
+  const ox = 24 + (AW - (cols * w + (cols - 1) * gap)) / 2;
+  const oy = 156 + (AH - (rows * h + (rows - 1) * gap)) / 2;
+  for (let i = 0; i < n; i++) {
+    const it = cfg.items[i];
+    const cx = ox + (i % cols) * (w + gap);
+    const cy = oy + Math.floor(i / cols) * (h + gap);
+    const card = drawTradingCard(it, thumbs[i], it.rarity);
+    g.save();
+    g.shadowColor = 'rgba(0,0,0,0.25)';
+    g.shadowBlur = 8;
+    g.shadowOffsetY = 4;
+    g.drawImage(card, cx, cy, w, h);
+    g.restore();
+  }
+  if (cfg.items.length > 9) {
+    g.fillStyle = '#1c2340';
+    g.font = `30px ${FONT_DISPLAY}`;
+    g.fillText(t('d.more', { n: cfg.items.length - 9 }), W / 2, H - 30);
+  }
+  return c;
+}
+
 // 機身側面（下段 0.70 × 0.60 m，上段 0.26 × 0.52 m）：直接用 Gemini 插畫，四周留圓角
 export function drawSide(art, w, h, theme) {
   const c = canvas(w, h);

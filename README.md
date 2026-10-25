@@ -32,6 +32,15 @@
 - 專案：Supabase 組織 Clatter／專案 `clatter-gacha`（東京，Free），帳號 GitHub leo70962001-lgtm。設定 SQL：`supabase/setup.sql`。公開 key（publishable）寫在 `cloud.js`
 - 免費專案 7 天沒動靜會暫停 → `.github/workflows/keepalive.yml` 每 3 天讀一次資料表
 
+## 轉卡機（2026-10-25）
+
+第 2 步「機台種類」選 轉蛋機／轉卡機（連結裡 `k:'c'`）。模型 `D:\ai\clatter-1.blend`（Carddass 型）：`blender/measure_card.py` 量部位 → `blender/build_card_glb.py`（跟扭蛋機同一套：套 Maya 群組、清自訂法線＋30° 銳邊＋Weighted Normal、依位置分材質、烘 AO）→ `web/assets/card.b64.txt`＋`ao_card_*.jpg`，第一次切到轉卡機才載入（`Machine.setKind`、`SPECS.card`）。
+- 投幣口＝投幣板最上面那條直的細縫（提示是方框）；把手＝右側面的旋鈕（繞 X 軸、從旋鈕那面看順時針；表面加了一條握把＋黃點才看得出在轉）；預設視角多轉一點（restYaw −0.5）看得到側面
+- 卡片（`web/cardkit.js`）：0.19 × 0.277 m 圓角薄片，從出卡口躺著滑出來（卡面朝下）→ 拿到鏡頭前卡背朝前 → 翻開。卡背 Gemini 生成（`D:\ai\gemini\gacha\card_sheet.png` → `tools/cut_card_sheet.py` → `tex/cardback.webp`、側面圖 `tex/cside.webp`）；SR 金卡背、SSR 彩虹卡背（一半先裝金卡，集氣中升格）
+- 翻牌（參考 Hearthstone、ポケポケ、マスターデュエル、原神／鳴潮、FGO）：蓋牌有稀有度光（R 藍、SR 紫、SSR 金）；可以點、也可以左右滑卡片翻；SR／SSR 集氣 → 定格 → 爆光＋連轉 1–2 圈（正面是剪影＋稀有度色邊光）→ 停一拍再上色
+- 全圖卡＋3D 照片（像 iPhone 的空間照片）：卡面整張是獎品圖（轉卡機上傳的圖存直的 240 × 350），框／名字帶／稀有度章／星星在上層；`estimateDepth` 從圖估深度（跟四周背景色差越多越前面＋中間比較前面），shader 做視差：卡片一斜，背景比主體多位移、主體浮出一點；翻開的卡片跟著游標（手機是陀螺儀）傾斜，閃卡的光也跟著動
+- 10 連：卡片排在格子裡，點一張翻一張或全部翻開；SR 以上一樣拿到中間跑完整演出
+
 ## 影音獎品（`web/media.js`）
 
 - 貼連結：YouTube／Shorts（直式播放器）、SoundCloud、Spotify、https 的 mp3／mp4 網址 → 放進分享連結（`[k, u]`，解碼時重新解析、對不上就丟掉）

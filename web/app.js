@@ -2,7 +2,7 @@
 import { Machine, THEMES } from './machine.js';
 import { unlock, setMuted, sfx } from './sfx.js';
 import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS } from './codec.js';
-import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard } from './decor.js';
+import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
 import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred } from './cloud.js';
@@ -25,6 +25,7 @@ const SAMPLE = () => {
   const shape = [[1, 8], [0, 12], [0, 9], [2, 3], [3, 1]];
   return {
     sample: true,
+    kind: 'capsule',
     name: S.name,
     shop: S.shop,
     theme: 'red',
@@ -70,7 +71,7 @@ function thumbOf(cfg, i) {
     if (!th) {
       const blob = new Blob([it.img.bytes], { type: it.img.mime });
       th = { url: URL.createObjectURL(blob), bmp: null };
-      createImageBitmap(blob)
+      th.ready = createImageBitmap(blob)
         .then((b) => {
           th.bmp = b;
           scheduleDecor();
@@ -94,14 +95,18 @@ function thumbOf(cfg, i) {
 const placeholderCache = new Map();
 
 // 上傳的照片：裁成正方形 96 px、轉 webp（一張約 1.5 KB，連結裡放得下）
+// 獎品照片：轉蛋機 128 px 正方形；轉卡機以圖為主 → 直的 240 × 350（卡片比例），卡面整張都是這張圖
 async function shrinkImage(file) {
   const bmp = await createImageBitmap(file);
-  const S = 128;
+  const card = draft?.kind === 'card';
+  const SW = card ? 240 : 128;
+  const SH = card ? 350 : 128;
   const c = document.createElement('canvas');
-  c.width = c.height = S;
+  c.width = SW;
+  c.height = SH;
   const g = c.getContext('2d');
-  const s = Math.max(S / bmp.width, S / bmp.height);
-  g.drawImage(bmp, (S - bmp.width * s) / 2, (S - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
+  const s = Math.max(SW / bmp.width, SH / bmp.height);
+  g.drawImage(bmp, (SW - bmp.width * s) / 2, (SH - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
   let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.78));
   if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
@@ -140,6 +145,7 @@ function loadDraft() {
   }));
   ensureUids(d);
   if (!THEME_KEYS.includes(d.theme)) d.theme = 'red';
+  d.kind = d.kind === 'card' ? 'card' : 'capsule';
   d.bg = draftBg(d.bg);
   if (!d.price || !CURRENCIES.includes(d.price.cur)) d.price = { coins: 5, unit: 10, cur: 'NT$' };
   // 雲端短連結的 id＋修改鑰匙：有的話之後改設定會自動更新到同一條連結
@@ -279,6 +285,7 @@ function renderForm() {
   $('m-name').value = draft.name;
   $('m-shop').value = draft.shop || '';
   for (const b of $('swatches').children) b.setAttribute('aria-checked', String(b.dataset.k === draft.theme));
+  for (const b of $('kinds').children) b.setAttribute('aria-checked', String(b.dataset.kind === (draft.kind || 'capsule')));
   renderBgs();
 }
 
@@ -429,6 +436,15 @@ function draftChanged(redrawItems = false) {
 }
 
 function bindForm() {
+  // 機台種類：轉蛋機／轉卡機
+  for (const b of $('kinds').children) {
+    b.onclick = () => {
+      if (draft.kind === b.dataset.kind) return;
+      draft.kind = b.dataset.kind;
+      for (const x of $('kinds').children) x.setAttribute('aria-checked', String(x === b));
+      draftChanged();
+    };
+  }
   const sw = $('swatches');
   for (const k of THEME_KEYS) {
     const b = document.createElement('button');
@@ -775,13 +791,37 @@ function shareBase() {
 // ---------- 3D 機台 ----------
 let decorTimer = 0;
 let shown = null;
-function showMachine(cfg, capsules, total = capsules) {
+async function showMachine(cfg, capsules, total = capsules) {
   shown = cfg;
   if (!machine?.loaded) return;
+  curKind = cfg.kind === 'card' ? 'card' : 'capsule';
+  if (machine.kind !== curKind) {
+    try {
+      await machine.setKind(curKind);
+    } catch (e) {
+      console.error(e);
+      toast(t('loadFail'));
+    }
+    if (shown !== cfg) return; // 載入途中又換了機台
+  }
   machine.setTheme(cfg.theme);
   applyBg(cfg.bg);
   machine.setPile(capsules, total);
   scheduleDecor();
+}
+
+// 機台種類不同，提示文字也不同（扭蛋 → 卡片）：有「key.card」就用它
+let curKind = 'capsule';
+const tk = (key, vars) => (curKind === 'card' && hasKey(key + '.card') ? t(key + '.card', vars) : t(key, vars));
+const hasKey = (k) => t(k) !== k;
+
+// 轉卡機：這次抽到的獎品畫成卡片正面（照片第一次用時還在解碼 → 等它好）
+async function cardFront(idx) {
+  if (curKind !== 'card') return null;
+  const it = play.cfg.items[idx];
+  const th = thumbOf(play.cfg, idx);
+  if (!th.bmp && th.ready) await th.ready;
+  return drawCardLayers(it, th.bmp || placeholderThumb(it.name, idx), it.rarity);
 }
 function scheduleDecor() {
   clearTimeout(decorTimer);
@@ -841,7 +881,8 @@ async function enterPlay(token) {
   machine?.clearCapsules();
   const id = sid ? 's' + sid : shortId(token);
   // cloud：共用庫存的機台 id（第一版短連結沒有共用庫存 → null，照舊用這台裝置的庫存）
-  play = { cfg, token, link: sid ? link : token, id, cloud: shared ? sid : null, phase: 'coin', inserted: 0, busy: false };
+  // phase 'loading'：機台（轉卡機第一次要載入模型）準備好、setPhase('coin') 之前不能投幣
+  play = { cfg, token, link: sid ? link : token, id, cloud: shared ? sid : null, phase: 'loading', inserted: 0, busy: false };
   const saved = reconcile(store.get('clatter.play.' + id), cfg);
   const totalQ = cfg.items.map((it) => it.qty);
   if (saved) {
@@ -892,7 +933,7 @@ async function enterPlay(token) {
   }
   setMode('play');
   renderPlate();
-  showMachine(cfg, left(), cfg.items.reduce((a, b) => a + b.qty, 0));
+  await showMachine(cfg, left(), cfg.items.reduce((a, b) => a + b.qty, 0));
   if (left() === 0) setPhase('soldout');
   else setPhase('coin');
   renderWallet();
@@ -955,20 +996,22 @@ function setPhase(ph) {
   play.phase = ph;
   const s = STEPS[ph];
   $('h-step').textContent = t('stepNo', { n: s.no });
-  $('h-title').textContent = t(s.title);
+  $('h-title').textContent = tk(s.title);
   const need = play.cfg.price.coins;
-  let text = s.text ? t(s.text) : '';
+  let text = s.text ? tk(s.text) : '';
   if (ph === 'coin') {
     text =
       play.coins + play.inserted < need
         ? t(play.cloud ? 'wallet.broke' : 's.coinBroke')
         : t('s.coinNeed', { n: need - play.inserted });
   }
-  if (ph === 'multiOpen') text = t('ten.openText', { n: play.multi.opened.filter((o) => !o).length });
+  if (ph === 'multiOpen') text = tk('ten.openText', { n: play.multi.opened.filter((o) => !o).length });
+  if (ph === 'soldout' && play.cloud) text = t('s.soldoutCloud'); // 共用庫存：只有店家能補貨
+  document.querySelectorAll('[data-i18n="myCaps"]').forEach((el) => (el.textContent = tk('myCaps'))); // 我的扭蛋／我的卡片
   $('h-text').textContent = text;
   const b = $('h-btn');
   b.hidden = !s.btn;
-  if (s.btn) b.textContent = t(s.btn);
+  if (s.btn) b.textContent = tk(s.btn);
   b.disabled = ph === 'coin' && play.coins <= 0;
   // 10 連抽：投幣階段、剩 2 顆以上才出現（剩不到 10 顆就抽剩下的）
   const ten = $('h-ten');
@@ -1122,7 +1165,7 @@ async function onTurned() {
   }
   savePlay();
   renderWallet();
-  await machine.dispense(play.cfg.items[idx].rarity);
+  await machine.dispense(play.cfg.items[idx].rarity, await cardFront(idx));
   machine.setForeshadow(0);
   setPhase('take');
 }
@@ -1224,6 +1267,7 @@ function afterResult() {
   resultPlayer = null;
   machine.setDim(0, 0.8);
   machine.show.endPersist();
+  machine.dismissShown(); // 轉卡機：翻開的那張卡收掉
   closeSheet('sheet-result');
   if (left() === 0) setPhase('soldout');
   else setPhase('coin');
@@ -1294,7 +1338,7 @@ async function tenPull() {
   let last = null;
   for (let i = 0; i < n; i++) {
     await machine.quickTurn();
-    last = machine.dispenseToGrid(i, n, play.cfg.items[picks[i]].rarity);
+    last = machine.dispenseToGrid(i, n, play.cfg.items[picks[i]].rarity, await cardFront(picks[i]));
     $('p-left').textContent = t('left', { l: left() + n - 1 - i, t: play.cfg.items.reduce((a, b) => a + b.qty, 0) });
   }
   await last;
