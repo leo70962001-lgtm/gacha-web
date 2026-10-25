@@ -105,6 +105,18 @@ export async function walletOpen(c) {
   return { balance: j.balance, ledger: Array.isArray(j.ledger) ? j.ledger : [] };
 }
 
+// 每台機台賣了多少（錢包的「賣出」明細加總）→ { 機台 id: { coins, n } }
+export async function walletSales(w) {
+  const r = await req('/rest/v1/rpc/wallet_sales', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: w.id, p_key: w.key }),
+  });
+  if (!r.ok) throw new Error('e.network');
+  const j = await r.json().catch(() => null);
+  return j && typeof j === 'object' ? j : {};
+}
+
 // ---------- 共用庫存 ----------
 // 買家投完幣 → 伺服器照「剩下的數量」抽 n 顆、從買家錢包扣錢、加進機台主人的錢包
 //   → { picks: [獎品 key], remaining: { key: 剩幾個 }, balance: 買家餘額 }

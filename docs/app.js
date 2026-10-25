@@ -5,7 +5,7 @@ import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
-import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred } from './cloud.js';
+import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -57,6 +57,22 @@ const store = {
   },
 };
 
+// 我的商店：可以開好幾台機台。clatter.shop＝{ cur: 正在編輯的那台, list: [機台 uid…] }，每台的草稿在 clatter.draft.<uid>
+//   舊版只有一台（clatter.draft）→ 第一次打開時搬成第一台
+function shopIndex() {
+  let s = store.get('clatter.shop');
+  if (!s || !Array.isArray(s.list) || !s.list.length) {
+    const uid = 'm' + newUid();
+    const old = store.get('clatter.draft');
+    if (old) store.set('clatter.draft.' + uid, old);
+    s = { cur: uid, list: [uid] };
+    store.set('clatter.shop', s);
+  }
+  if (!s.list.includes(s.cur)) s.cur = s.list[0];
+  return s;
+}
+let shop = shopIndex();
+const draftKey = (uid = shop.cur) => 'clatter.draft.' + uid;
 let draft = loadDraft();
 let machine = null;
 let linkToken = null; // 最近一次產生的連結內容
@@ -132,8 +148,8 @@ const itemKey = (it) => it.uid || ('n:' + it.name).slice(0, 40);
 const stockOf = (cfg) => Object.fromEntries(cfg.items.map((it) => [itemKey(it), it.qty]));
 
 // ---------- 草稿（開店表單）存在本機 ----------
-function loadDraft() {
-  const d = store.get('clatter.draft');
+function loadDraft(uid = shop.cur) {
+  const d = store.get(draftKey(uid));
   if (!d || !Array.isArray(d.items) || !d.items.length) return SAMPLE();
   d.items = d.items.slice(0, LIMITS.items).map((it) => ({
     name: String(it.name || t('defaultPrize')).slice(0, LIMITS.name),
@@ -171,7 +187,7 @@ function draftMedia(m) {
 
 function saveDraft() {
   const bg = draft.bg?.k === 'img' ? { k: 'img', img: { b64: btoa(String.fromCharCode(...draft.bg.img.bytes)), mime: draft.bg.img.mime } } : draft.bg;
-  store.set('clatter.draft', {
+  store.set(draftKey(), {
     ...draft,
     bg,
     items: draft.items.map((it) => ({
@@ -922,6 +938,7 @@ async function enterPlay(token) {
     savePlay();
   }
   $('c-reset').hidden = !!play.cloud; // 共用庫存只有店家能補貨
+  albumSync(); // 以前轉到的也補進收集簿
   // 共用庫存的機台用錢包付錢：硬幣＝錢包餘額，沒有免費的「＋5 枚」
   $('btn-topup').hidden = !!play.cloud;
   document.querySelector('.coin-count small').textContent = t(play.cloud ? 'walletCoins' : 'trialCoins');
@@ -1188,6 +1205,7 @@ async function openIt() {
   play.got[idx] = (play.got[idx] || 0) + 1;
   play.pending = null;
   savePlay();
+  albumSync();
   showResult(idx, first);
   setPhase('result');
 }
@@ -1356,6 +1374,7 @@ function creditMulti(i) {
   m.isNew[i] = !play.got[idx];
   play.got[idx] = (play.got[idx] || 0) + 1;
   m.opened[i] = true;
+  albumSync();
 }
 
 function prizeCard(i) {
@@ -1728,6 +1747,12 @@ function setMode(mode) {
   app.dataset.mode = mode;
   $('tab-create').setAttribute('aria-selected', String(mode === 'create'));
   $('tab-play').setAttribute('aria-selected', String(mode === 'play'));
+  $('tab-shop').setAttribute('aria-selected', String(mode === 'shop'));
+  $('tab-album').setAttribute('aria-selected', String(mode === 'album'));
+  $('page-shop').hidden = mode !== 'shop'; // 樣式表有 [hidden]{display:none} → 用屬性切換
+  $('page-album').hidden = mode !== 'album';
+  if (mode === 'shop') renderShop();
+  if (mode === 'album') renderAlbum();
   requestAnimationFrame(updateInsets);
   if (mode === 'create') {
     machine?.clearCapsules();
@@ -1735,6 +1760,386 @@ function setMode(mode) {
     machine?.setHandleEnabled(false);
     showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
   }
+}
+
+// ---------- 我的商店 ----------
+// 換到另一台：先把這台還沒送出去的修改送完、存好，再載入那台
+async function switchMachine(uid) {
+  if (uid === shop.cur) return;
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+    syncTimer = 0;
+    if (draft.cloud && cloudReady()) await requestSync(true).catch(() => {});
+  }
+  saveDraft();
+  shop.cur = uid;
+  store.set('clatter.shop', shop);
+  draft = loadDraft();
+  afterSwitch();
+}
+
+function afterSwitch() {
+  linkToken = null;
+  linkState = null;
+  cloudStats = null;
+  $('link-out').hidden = true;
+  renderForm();
+  if (draft.cloud && cloudReady()) {
+    showLinkStatus({ url: shareBase() + '#s.' + draft.cloud.id, short: true });
+    refreshStats();
+  }
+  if (app.dataset.mode === 'create') showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
+}
+
+async function newMachine() {
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+    syncTimer = 0;
+    if (draft.cloud && cloudReady()) await requestSync(true).catch(() => {});
+  }
+  saveDraft();
+  const uid = 'm' + newUid();
+  shop.list.push(uid);
+  shop.cur = uid;
+  store.set('clatter.shop', shop);
+  draft = SAMPLE();
+  saveDraft();
+  afterSwitch();
+  setMode('create');
+  toast(t('shop.made'));
+}
+
+// 從我的商店拿掉（只刪這台裝置上的草稿；發出去的連結還在）
+async function removeMachine(uid) {
+  shop.list = shop.list.filter((u) => u !== uid);
+  store.del(draftKey(uid));
+  if (!shop.list.length) {
+    const nu = 'm' + newUid();
+    shop.list = [nu];
+    shop.cur = nu;
+    store.set('clatter.shop', shop);
+    draft = SAMPLE();
+    saveDraft();
+    afterSwitch();
+  } else if (shop.cur === uid) {
+    shop.cur = shop.list[0];
+    store.set('clatter.shop', shop);
+    draft = loadDraft();
+    afterSwitch();
+  } else store.set('clatter.shop', shop);
+  renderShop();
+}
+
+const KIND_ICON = {
+  capsule: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12" fill="#fff" stroke="#1c2340" stroke-width="2.5"/><path d="M4 16a12 12 0 0 0 24 0z" fill="#e8423b" stroke="#1c2340" stroke-width="2.5"/></svg>',
+  card: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="9" y="4" width="15" height="22" rx="2.5" fill="#5aa0ff" stroke="#1c2340" stroke-width="2.5" transform="rotate(12 16 15)"/><rect x="7" y="6" width="15" height="22" rx="2.5" fill="#ffd23f" stroke="#1c2340" stroke-width="2.5"/></svg>',
+};
+
+let noSalesRpc = false; // wallet_sales 還沒裝（404）→ 這次開頁面就不再問
+function salesFromLedger(w) {
+  const out = {};
+  for (const e of w.ledger || []) {
+    if (e.k !== 'sell' || !e.m) continue;
+    const o = (out[e.m] = out[e.m] || { coins: 0, n: 0 });
+    o.coins += e.d;
+    o.n += e.n;
+  }
+  return out;
+}
+
+let shopDelArm = null;
+async function renderShop() {
+  const list = $('shop-list');
+  list.textContent = '';
+  saveDraft();
+  const w = await loadWallet().catch(() => null);
+  // 每台賣了多少：wallet_sales（supabase/05_sales.sql）；還沒裝好就用錢包明細（最近 30 筆）加總
+  let sales = {};
+  if (w && !noSalesRpc) sales = await walletSales(w).catch(() => ((noSalesRpc = true), salesFromLedger(w)));
+  else if (w) sales = salesFromLedger(w);
+  let sold = 0;
+  for (const v of Object.values(sales)) sold += v.coins;
+  const sum = $('shop-sum');
+  sum.textContent = '';
+  const stat = (label, value) => {
+    const d = document.createElement('div');
+    d.className = 'stat card-box';
+    const s = document.createElement('small');
+    s.textContent = label;
+    const b = document.createElement('strong');
+    b.textContent = value;
+    d.append(s, b);
+    sum.append(d);
+  };
+  stat(t('shop.sumMachines'), shop.list.length.toLocaleString());
+  stat(t('shop.sumSales'), sold.toLocaleString());
+  if (w) stat(t('wallet.title'), w.balance.toLocaleString());
+  for (const uid of shop.list) {
+    const d = uid === shop.cur ? draft : store.get(draftKey(uid));
+    if (!d || !Array.isArray(d.items)) continue;
+    const kind = d.kind === 'card' ? 'card' : 'capsule';
+    const total = d.items.reduce((a, b) => a + (b.qty | 0), 0);
+    const box = document.createElement('article');
+    box.className = 'mach card-box' + (uid === shop.cur ? ' cur' : '');
+    const top = document.createElement('div');
+    top.className = 'mach-top';
+    const ico = document.createElement('div');
+    ico.className = 'mach-ico';
+    ico.style.setProperty('--c', (THEMES[d.theme] || THEMES.red).body);
+    ico.innerHTML = KIND_ICON[kind];
+    const tt = document.createElement('div');
+    const h = document.createElement('h2');
+    h.textContent = d.name || t('defaultMachine');
+    const sub = document.createElement('p');
+    sub.textContent = `${t('kind.' + kind)} · ${t('kinds', { n: d.items.length })} · ${priceText(d.price || { coins: 1, unit: 0, cur: 'NT$' })}` + (uid === shop.cur ? ' · ' + t('shop.editing') : '');
+    tt.append(h, sub);
+    top.append(ico, tt);
+    const stats = document.createElement('div');
+    stats.className = 'mach-stats';
+    const cell = (label, value) => {
+      const c = document.createElement('div');
+      const s = document.createElement('small');
+      s.textContent = label;
+      const b = document.createElement('b');
+      b.textContent = value;
+      c.append(s, b);
+      stats.append(c);
+      return b;
+    };
+    const id = d.cloud?.id;
+    const sv = id ? sales[id] : null;
+    const leftB = cell(t('shop.left'), id ? '…' : total.toLocaleString());
+    const pullB = cell(t('shop.pulled'), id ? '…' : '–');
+    cell(t('shop.sales'), sv ? sv.coins.toLocaleString() : '0');
+    if (id && cloudReady()) {
+      pulledCounts(id)
+        .then((pc) => {
+          const n = Object.values(pc).reduce((a, b) => a + b, 0);
+          pullB.textContent = n.toLocaleString();
+          leftB.textContent = Math.max(0, total - n).toLocaleString();
+        })
+        .catch(() => (leftB.textContent = pullB.textContent = '?'));
+    }
+    const link = document.createElement('div');
+    link.className = 'mach-link';
+    link.textContent = id ? shareBase() + '#s.' + id : t('shop.noLink');
+    const acts = document.createElement('div');
+    acts.className = 'mach-acts';
+    const btn = (label, cls, fn) => {
+      const b = document.createElement('button');
+      b.className = 'btn ' + cls;
+      b.textContent = label;
+      b.onclick = fn;
+      acts.append(b);
+      return b;
+    };
+    btn(t('shop.edit'), 'primary', async () => {
+      await switchMachine(uid);
+      setMode('create');
+    });
+    btn(t('shop.play'), 'sun', async () => {
+      if (id) return enterPlay('s.' + id);
+      await switchMachine(uid);
+      enterPlay('draft');
+    });
+    if (id)
+      btn(t('copy'), '', async () => {
+        try {
+          await navigator.clipboard.writeText(shareBase() + '#s.' + id);
+          toast(t('t.copied'));
+        } catch (e) {
+          toast(shareBase() + '#s.' + id);
+        }
+      });
+    const del = btn(t('shop.del'), 'ghost', () => {
+      // 按兩下才刪（第一下變成「確定拿掉？」）
+      if (shopDelArm !== uid) {
+        shopDelArm = uid;
+        del.textContent = t('shop.delConfirm');
+        setTimeout(() => {
+          if (shopDelArm === uid) shopDelArm = null;
+          del.textContent = t('shop.del');
+        }, 3000);
+        return;
+      }
+      shopDelArm = null;
+      removeMachine(uid);
+    });
+    box.append(top, stats, link, acts);
+    list.append(box);
+  }
+}
+
+// ---------- 收集簿 ----------
+// clatter.album＝{ [機台的 play id]: { name, kind, link, ts, order:[獎品名…], items:{ 名: { r, t（縮圖） } }, got:{ 名: 個數 } } }
+//   用獎品名稱記（店家改了獎品也對得上）；店家拿掉的獎品，收過的還留在收集簿裡
+const albumThumbs = new Map(); // play id＋名稱 → 縮圖（同一台只做一次）
+async function albumThumb(idx) {
+  const it = play.cfg.items[idx];
+  const key = play.id + '|' + it.name;
+  if (albumThumbs.has(key)) return albumThumbs.get(key);
+  const th = thumbOf(play.cfg, idx);
+  if (!th.bmp && th.ready) await th.ready;
+  const src = th.bmp || placeholderThumb(it.name, idx);
+  const card = play.cfg.kind === 'card';
+  const W = card ? 180 : 112;
+  const H = card ? 262 : 112;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  const s = Math.max(W / (src.width || 1), H / (src.height || 1));
+  g.drawImage(src, (W - src.width * s) / 2, (H - src.height * s) / 2, src.width * s, src.height * s);
+  let url = c.toDataURL('image/webp', 0.72);
+  if (!url.startsWith('data:image/webp')) url = c.toDataURL('image/jpeg', 0.75);
+  albumThumbs.set(key, url);
+  return url;
+}
+
+// 收集簿跟著這台機台的紀錄更新（轉到東西、進機台時）
+async function albumSync() {
+  if (!play?.cfg) return;
+  const a = store.get('clatter.album') || {};
+  const e = a[play.id] || { items: {}, got: {}, order: [] };
+  e.name = play.cfg.name;
+  e.kind = play.cfg.kind === 'card' ? 'card' : 'capsule';
+  e.link = play.link;
+  const names = play.cfg.items.map((it) => it.name);
+  e.order = [...names, ...e.order.filter((n) => !names.includes(n))];
+  let any = false;
+  for (let i = 0; i < play.cfg.items.length; i++) {
+    const it = play.cfg.items[i];
+    const prev = e.items[it.name];
+    e.items[it.name] = { r: it.rarity, t: prev?.t || (await albumThumb(i)) };
+    const n = play.got[i] || 0;
+    if (n) {
+      e.got[it.name] = Math.max(n, e.got[it.name] || 0);
+      any = true;
+    }
+  }
+  if (!any && !Object.keys(e.got).length) return; // 還沒轉到東西 → 先不放進收集簿
+  e.ts = Date.now();
+  a[play.id] = e;
+  store.set('clatter.album', a);
+}
+
+let albumFilter = 'all';
+function renderAlbum() {
+  const a = store.get('clatter.album') || {};
+  const entries = Object.entries(a).sort((x, y) => (y[1].ts || 0) - (x[1].ts || 0));
+  const filt = $('album-filter');
+  filt.textContent = '';
+  for (const k of ['all', 'capsule', 'card']) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(albumFilter === k));
+    b.textContent = k === 'all' ? t('album.all') : t('kind.' + k);
+    b.onclick = () => {
+      albumFilter = k;
+      renderAlbum();
+    };
+    filt.append(b);
+  }
+  let kinds = 0;
+  let pieces = 0;
+  for (const [, e] of entries) {
+    kinds += Object.keys(e.got).length;
+    pieces += Object.values(e.got).reduce((s, n) => s + n, 0);
+  }
+  $('album-sum').textContent = t('album.sum', { m: entries.length, k: kinds, n: pieces });
+  const list = $('album-list');
+  list.textContent = '';
+  const shown = entries.filter(([, e]) => albumFilter === 'all' || e.kind === albumFilter);
+  if (!shown.length) {
+    const p = document.createElement('p');
+    p.className = 'album-empty card-box';
+    p.textContent = t('album.empty');
+    list.append(p);
+    return;
+  }
+  for (const [pid, e] of shown) {
+    const box = document.createElement('section');
+    box.className = 'alb card-box';
+    const head = document.createElement('div');
+    head.className = 'alb-head';
+    const h = document.createElement('h2');
+    h.textContent = e.name;
+    const kind = document.createElement('span');
+    kind.className = 'kind';
+    kind.textContent = t('kind.' + e.kind);
+    const have = e.order.filter((n) => e.got[n]).length;
+    const prog = document.createElement('div');
+    prog.className = 'prog';
+    prog.title = `${have} / ${e.order.length}`;
+    const bar = document.createElement('i');
+    bar.style.width = `${Math.round((have / Math.max(1, e.order.length)) * 100)}%`;
+    prog.append(bar);
+    const cnt = document.createElement('small');
+    cnt.textContent = `${have} / ${e.order.length}`;
+    head.append(h, kind, prog, cnt);
+    if (e.link) {
+      const again = document.createElement('button');
+      again.className = 'btn sun';
+      again.textContent = t('album.again');
+      again.onclick = () => enterPlay(e.link);
+      head.append(again);
+    }
+    const grid = document.createElement('div');
+    grid.className = 'alb-grid';
+    for (const n of e.order) {
+      const it = e.items[n] || { r: 0 };
+      const got = e.got[n] || 0;
+      const R = RARITY[it.r] || RARITY[0];
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'alb-it' + (e.kind === 'card' ? ' card' : '') + (got ? '' : ' miss');
+      b.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
+      const pic = document.createElement('span');
+      pic.className = 'pic';
+      if (it.t) pic.style.backgroundImage = `url("${it.t}")`;
+      const nm = document.createElement('span');
+      nm.className = 'nm';
+      nm.textContent = got ? n : t('album.miss');
+      b.append(pic, nm);
+      if (got) {
+        const rk = document.createElement('span');
+        rk.className = 'rk';
+        rk.textContent = R.key;
+        const c = document.createElement('span');
+        c.className = 'cnt';
+        c.textContent = '×' + got;
+        b.append(rk, c);
+        b.onclick = () => openCardView(e, n);
+      } else b.disabled = true;
+      grid.append(b);
+    }
+    box.append(head, grid);
+    list.append(box);
+    box.dataset.pid = pid;
+  }
+}
+
+// 收集簿的大卡：跟著游標（手機是陀螺儀）傾斜的 3D 卡，SR 金光、SSR 彩虹光
+function openCardView(e, name) {
+  const it = e.items[name];
+  const R = RARITY[it.r] || RARITY[0];
+  const tilt = $('v-tilt');
+  tilt.classList.toggle('round', e.kind !== 'card');
+  tilt.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
+  $('v-art').style.backgroundImage = `url("${it.t}")`;
+  $('v-art').style.border = `6px solid var(--r-${R.key.toLowerCase()})`;
+  $('v-holo').className = 'holo r' + it.r;
+  $('v-name').textContent = name;
+  $('v-meta').textContent = `${R.key} ${R.label} · ×${e.got[name]} · ${e.name}`;
+  tilt.style.transform = '';
+  openSheet('sheet-card', $('sheet-card').querySelector('[data-close]'));
+}
+function tiltView(x, y) {
+  // x、y：−1..1
+  const tilt = $('v-tilt');
+  tilt.style.transform = `perspective(700px) rotateY(${x * 16}deg) rotateX(${-y * 12}deg)`;
+  $('v-holo').style.setProperty('--hx', `${50 + x * 35}%`);
 }
 
 function toast(msg) {
@@ -1797,6 +2202,18 @@ async function boot() {
   bindCoinDrag();
 
   $('tab-create').onclick = () => setMode('create');
+  $('tab-shop').onclick = () => setMode('shop');
+  $('tab-album').onclick = () => setMode('album');
+  $('shop-new').onclick = newMachine;
+  // 收集簿的大卡：滑鼠移動／手機傾斜 → 3D 傾斜
+  $('sheet-card').addEventListener('pointermove', (e) => {
+    const r = $('v-tilt').getBoundingClientRect();
+    tiltView(Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1)), Math.max(-1, Math.min(1, -(((e.clientY - r.top) / r.height) * 2 - 1))));
+  });
+  addEventListener('deviceorientation', (e) => {
+    if ($('sheet-card').hidden || e.gamma == null) return;
+    tiltView(Math.max(-1, Math.min(1, e.gamma / 25)), Math.max(-1, Math.min(1, -(e.beta - 50) / 25)));
+  });
   // 從連結進來的玩家 → 回到那台機器；賣家 → 用目前的表單內容試玩
   $('tab-play').onclick = () => {
     unlock();

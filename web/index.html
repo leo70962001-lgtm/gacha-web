@@ -80,6 +80,67 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ---------- 主區 ---------- */
 main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); min-height: 0; }
 .app[data-mode="play"] main { grid-template-columns: minmax(0, 1fr); }
+/* 我的商店、收集簿：整頁（機台舞台、開店表單都收起來） */
+.app[data-mode="shop"] main, .app[data-mode="album"] main { grid-template-columns: minmax(0, 1fr); }
+.app[data-mode="shop"] .stage, .app[data-mode="shop"] .panel, .app[data-mode="album"] .stage, .app[data-mode="album"] .panel { display: none; }
+.app[data-mode="shop"] #page-shop, .app[data-mode="album"] #page-album { display: block; }
+.page { display: none; overflow-y: auto; background: var(--stage); min-height: 0; }
+.page-inner { max-width: 980px; margin: 0 auto; padding: 22px var(--gutter-r) 48px var(--gutter-l); display: grid; gap: 18px; }
+.page-head h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; }
+.page-head .lede { margin: 4px 0 0; }
+.modes .tab-ico { display: inline-flex; align-items: center; gap: 6px; }
+.modes .tab-ico svg { width: 18px; height: 18px; flex: none; }
+.card-box { background: var(--surface); border: 2px solid var(--stroke); border-radius: 18px; box-shadow: 3px 3px 0 var(--stroke); }
+/* 我的商店 */
+.shop-sum { display: flex; flex-wrap: wrap; gap: 10px; }
+.shop-sum .stat { padding: 10px 14px; display: grid; gap: 2px; min-width: 130px; }
+.shop-sum .stat small { font-size: 12px; color: var(--muted); font-weight: 700; }
+.shop-sum .stat strong { font-family: var(--font-num); font-size: 24px; font-variant-numeric: tabular-nums; }
+.shop-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.mach { padding: 14px; display: grid; gap: 10px; }
+.mach.cur { outline: 3px solid var(--sun); outline-offset: 2px; }
+.mach-top { display: flex; gap: 12px; align-items: center; }
+.mach-ico { width: 54px; height: 64px; border-radius: 12px; border: 2px solid var(--stroke); display: grid; place-items: center; flex: none; background: var(--c); }
+.mach-ico svg { width: 30px; height: 30px; }
+.mach-top h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 20px; line-height: 1.2; overflow-wrap: anywhere; }
+.mach-top p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+.mach-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.mach-stats div { background: var(--surface-2); border-radius: 10px; padding: 6px 8px; display: grid; }
+.mach-stats small { font-size: 11px; color: var(--muted); font-weight: 700; }
+.mach-stats b { font-family: var(--font-num); font-size: 17px; font-variant-numeric: tabular-nums; }
+.mach-link { font-size: 12px; color: var(--muted); word-break: break-all; font-family: ui-monospace, Consolas, monospace; }
+.mach-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.mach-acts .btn { padding: 6px 12px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
+#shop-new { justify-self: start; }
+/* 收集簿 */
+.album-filter .chip[aria-selected="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.album-list { display: grid; gap: 16px; }
+.alb { padding: 14px; display: grid; gap: 12px; }
+.alb-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.alb-head h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 20px; }
+.alb-head .kind { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); border: 1.5px solid var(--line); }
+.alb-head .prog { flex: 1; min-width: 120px; height: 10px; border-radius: 999px; background: var(--surface-2); border: 1.5px solid var(--stroke); overflow: hidden; }
+.alb-head .prog i { display: block; height: 100%; background: var(--sun); }
+.alb-head .btn { padding: 5px 12px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
+.alb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+.alb-it { position: relative; display: grid; gap: 4px; justify-items: center; text-align: center; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.alb-it .pic { width: 100%; aspect-ratio: 1; border-radius: 50%; border: 3px solid var(--rc); background: var(--surface-2) center / cover no-repeat; box-shadow: 2px 2px 0 var(--stroke); }
+.alb-it.card .pic { aspect-ratio: 0.686; border-radius: 10px; }
+.alb-it .nm { font-size: 12px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.alb-it .rk { position: absolute; top: -4px; left: -4px; font-family: var(--font-num); font-size: 11px; color: #fff; background: var(--rc); border: 2px solid var(--stroke); border-radius: 999px; padding: 0 6px; }
+.alb-it .cnt { position: absolute; top: -4px; right: -4px; font-family: var(--font-num); font-size: 11px; background: var(--surface); border: 2px solid var(--stroke); border-radius: 999px; padding: 0 6px; }
+.alb-it.miss { cursor: default; }
+.alb-it.miss .pic { filter: grayscale(1) brightness(0.3); border-color: var(--line); }
+.alb-it.miss .nm { color: var(--muted); }
+.album-empty { padding: 22px; text-align: center; color: var(--muted); }
+/* 收集簿的大卡：跟著游標／手機傾斜的 3D 卡＋閃卡的光 */
+.view-card { justify-items: center; }
+.tilt { position: relative; width: min(300px, 70vw); aspect-ratio: var(--ar, 0.686); transform-style: preserve-3d; transition: transform .08s; border-radius: 16px; }
+.tilt-in { position: absolute; inset: 0; border-radius: inherit; background: center / cover no-repeat; box-shadow: 0 18px 40px rgba(0,0,0,.35); }
+.tilt.round { --ar: 1; border-radius: 50%; }
+.holo { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; mix-blend-mode: color-dodge; opacity: 0; background: linear-gradient(115deg, transparent 20%, rgba(255,255,255,.7) var(--hx, 45%), transparent 70%); }
+.holo.r2 { opacity: .55; background: linear-gradient(115deg, transparent 25%, rgba(255,214,90,.85) var(--hx, 45%), transparent 65%); }
+.holo.r3 { opacity: .7; background: linear-gradient(115deg, #ff5a7a33, #ffe94a88 var(--hx, 45%), #52e08a66, #4cc3ff88, #9b6bff55); }
 .app[data-mode="play"] .panel { display: none; }
 .app[data-mode="create"] .hud { display: none; }
 .stage { position: relative; min-height: 0; overflow: hidden; background: var(--stage); }
@@ -339,7 +400,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 
 @media (max-width: 860px) {
   main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(240px, 44%) minmax(0, 1fr); }
-  .app[data-mode="play"] main { grid-template-rows: minmax(0, 1fr); }
+  .app[data-mode="play"] main, .app[data-mode="shop"] main, .app[data-mode="album"] main { grid-template-rows: minmax(0, 1fr); }
   .panel { border-left: 0; border-top: 2px solid var(--stroke); }
 }
 @media (max-width: 640px) {
@@ -362,6 +423,11 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   #btn-topup { order: 4; margin-left: 0 !important; padding: 4px 10px !important; }
   .pip { width: 10px; height: 10px; border-width: 1.5px; }
   .side-btns { display: none; }
+  /* 手機：我的商店、收集簿只放圖示 */
+  .modes .tab-ico span { display: none; }
+  .modes .tab-ico { padding: 5px 8px; }
+  .page-head h1 { font-size: 24px; }
+  .shop-list { grid-template-columns: minmax(0, 1fr); }
   .chip-col { display: inline-flex; gap: 2px; }
   .hint { padding: 8px 12px; border-radius: 14px; }
   .hint .stepno { font-size: 11px; }
@@ -387,7 +453,15 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 }
 @media (max-width: 430px) {
   .brand-name { display: none; }
-  .modes { margin-left: auto; }
+  .modes { margin-left: auto; gap: 2px; }
+  /* 手機：四個分頁＋語言＋音效要塞進一列 */
+  .bar { gap: 6px; }
+  .modes button { padding: 5px 7px; font-size: 13px; }
+  .modes .tab-ico { padding: 5px 6px; }
+  .lang select { max-width: 58px; }
+}
+@media (max-width: 400px) {
+  .brand { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
@@ -400,6 +474,8 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     <nav class="modes" role="tablist" data-i18n-aria="mode.label" aria-label="模式">
       <button id="tab-create" role="tab" aria-selected="true" data-i18n="tab.create">開店設定</button>
       <button id="tab-play" role="tab" aria-selected="false" data-i18n="tab.play">轉轉看</button>
+      <button id="tab-shop" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.shop" aria-label="我的商店"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 0 1-5.3 1.9A3 3 0 0 1 12 14a3 3 0 0 1-2.7-1.1A3 3 0 0 1 4 11z"/><path d="M6 14v6h12v-6"/><path d="M10 20v-4h4v4"/></svg><span data-i18n="tab.shop">我的商店</span></button>
+      <button id="tab-album" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.album" aria-label="收集簿"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="15" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h4M12 12h4"/></svg><span data-i18n="tab.album">收集簿</span></button>
     </nav>
     <label class="lang" data-i18n-aria="lang.label" aria-label="語言">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18"/></svg>
@@ -512,6 +588,29 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         <p class="note" data-i18n="note"></p>
       </div>
     </aside>
+    <!-- 我的商店：我開的每一台機台 -->
+    <section class="page" id="page-shop" hidden aria-labelledby="shop-title">
+      <div class="page-inner">
+        <header class="page-head">
+          <h1 id="shop-title" data-i18n="shop.title">我的商店</h1>
+          <p class="lede" data-i18n="shop.lede"></p>
+        </header>
+        <div class="shop-sum" id="shop-sum"></div>
+        <div class="shop-list" id="shop-list"></div>
+        <button class="btn primary big" id="shop-new" data-i18n="shop.new">＋ 開一台新機台</button>
+      </div>
+    </section>
+    <!-- 收集簿：我轉到的所有獎品（每台機台一頁） -->
+    <section class="page" id="page-album" hidden aria-labelledby="album-title">
+      <div class="page-inner">
+        <header class="page-head">
+          <h1 id="album-title" data-i18n="album.title">收集簿</h1>
+          <p class="lede" id="album-sum"></p>
+        </header>
+        <div class="chips album-filter" id="album-filter" role="tablist"></div>
+        <div class="album-list" id="album-list"></div>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -557,6 +656,15 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     <p class="w-big"><strong id="w-bal2">0</strong> <span data-i18n="wallet.unit">枚</span></p>
     <p class="meta-line" data-i18n="wallet.explain"></p>
     <ul class="ledger" id="w-ledger"></ul>
+  </div>
+</div>
+
+<div class="sheet" id="sheet-card" hidden>
+  <div class="sheet-card view-card" role="dialog" aria-modal="true" aria-labelledby="v-name">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <div class="tilt" id="v-tilt"><div class="tilt-in" id="v-art"></div><div class="holo" id="v-holo"></div></div>
+    <h2 id="v-name"></h2>
+    <p class="meta-line" id="v-meta"></p>
   </div>
 </div>
 
