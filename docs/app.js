@@ -6,6 +6,7 @@ import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCar
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
 import { cutout } from './seg.js';
+import { Holo } from './holo.js';
 import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
@@ -1258,7 +1259,7 @@ async function openIt() {
   play.phase = 'opening';
   const idx = play.pending;
   const it = play.cfg.items[idx];
-  await machine.openCapsule();
+  await machine.openCapsule(curKind === 'card' ? null : drawPrizeCard(it, thumbOf(play.cfg, idx).bmp || placeholderThumb(it.name, idx), !play.got[idx]));
   sfx.reveal(it.rarity);
   const first = !play.got[idx];
   play.got[idx] = (play.got[idx] || 0) + 1;
@@ -1281,19 +1282,53 @@ function showResult(idx, first, view = false) {
   const kind = mediaKind(it.media);
   $('r-prize').hidden = kind === 'video'; // 影片直接取代獎品圖
   resultPlayer = mountPlayer($('r-media'), it.media, { poster: thumbOf(play.cfg, idx).url, delay: fresh ? 1100 : 0 });
+  resultIdx = idx;
   $('r-again').hidden = $('r-col').hidden = !!view;
   $('r-close').hidden = !view;
   $('r-close').textContent = view !== 'step' ? t('close') : play.multi.opened.includes(false) ? t('ten.next') : t('ten.toResults');
   const card = $('result-card');
-  card.className = `sheet-card result r${it.rarity}`;
+  card.className = `sheet-card result r${it.rarity}${fresh ? ' fresh' : ''}`;
   card.style.setProperty('--rc', `var(--r-${r.key.toLowerCase()})`);
   $('r-rank').textContent = `${r.key} ${r.label}`;
-  $('r-img').src = thumbOf(play.cfg, idx).url;
+  // 獎品＝3D 閃卡（寶可夢卡的閃法，holo.js）：轉卡機是卡片、轉蛋機是方形的壓克力牌；有去背的話做好大張的就換上
+  const isCard = play.cfg.kind === 'card';
+  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, shape: isCard ? 'card' : 'square', name: it.name, tag: isCard };
+  resHolo.set(hd);
+  if (it.mask) cutLayers(idx, 300, isCard ? 437 : 300).then((L) => resultIdx === idx && L.s && resHolo.set({ ...hd, s: L.s, b: L.b, st: L.st }));
+  // 剛轉到：獎品照稀有度登場（N 跳出來、R 翻一圈、SR 剪影→轉一圈上色、SSR 剪影集氣→轉兩圈爆光）＋放射光、光環、星星
+  const stage = $('r-prize');
+  stage.classList.remove('go');
+  void stage.offsetWidth;
+  stage.classList.toggle('go', fresh);
+  prizeSparks(fresh ? it.rarity : -1);
   $('r-name').textContent = it.name;
   $('r-new').hidden = !fresh || !first;
   const total = play.cfg.items.reduce((a, b) => a + b.qty, 0);
   $('r-sub').textContent = t('resultSub', { n: play.pulls, p: pct(it.qty / total), c: play.got[idx] });
   openSheet('sheet-result', view ? $('r-close') : $('r-again'));
+  resHolo.start(() => !$('sheet-result').hidden);
+}
+let viewHolo = null;
+let resHolo = null;
+let resultIdx = -1;
+// 獎品登場時往外噴的星星（亮的那一刻：R 0.35 秒、SR 1 秒、SSR 1.6 秒）
+function prizeSparks(r) {
+  const box = $('r-sparks');
+  box.textContent = '';
+  const n = [0, 10, 18, 30][r] || 0;
+  if (!n || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const at = [0, 0.35, 1.0, 1.6][r];
+  for (let i = 0; i < n; i++) {
+    const s = document.createElement('i');
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
+    const d = 80 + Math.random() * (60 + r * 30);
+    s.style.setProperty('--dx', `${Math.cos(a) * d}px`);
+    s.style.setProperty('--dy', `${Math.sin(a) * d}px`);
+    s.style.setProperty('--d', `${at + Math.random() * 0.25}s`);
+    s.style.setProperty('--s', `${6 + Math.random() * (6 + r * 3)}px`);
+    s.className = 'c' + (i % 4);
+    box.append(s);
+  }
 }
 
 // 爆開那一刻：閃光＋稀有度大字（R 小、SR 中、SSR 一個字一個字跳出來）
@@ -2034,16 +2069,18 @@ async function renderShop() {
 // clatter.album＝{ [機台的 play id]: { name, kind, link, ts, order:[獎品名…], items:{ 名: { r, t（縮圖） } }, got:{ 名: 個數 } } }
 //   用獎品名稱記（店家改了獎品也對得上）；店家拿掉的獎品，收過的還留在收集簿裡
 const albumThumbs = new Map(); // play id＋名稱 → 縮圖（同一台只做一次）
-async function albumThumb(idx) {
+function albumThumb(idx) {
+  const card = play.cfg.kind === 'card';
+  return cutLayers(idx, card ? 180 : 112, card ? 262 : 112);
+}
+// 一個獎品畫成 W×H：整張圖 t；有遮罩再加 去背主體 s、背景 b、主體頭頂 st（收集簿存小張，結果卡用大張）
+async function cutLayers(idx, W, H) {
   const it = play.cfg.items[idx];
-  const key = play.id + '|' + it.name;
+  const key = play.id + '|' + it.name + '|' + W;
   if (albumThumbs.has(key)) return albumThumbs.get(key);
   const th = thumbOf(play.cfg, idx);
   if (!th.bmp && th.ready) await th.ready;
   const src = th.bmp || placeholderThumb(it.name, idx);
-  const card = play.cfg.kind === 'card';
-  const W = card ? 180 : 112;
-  const H = card ? 262 : 112;
   const c = document.createElement('canvas');
   c.width = W;
   c.height = H;
@@ -2117,13 +2154,16 @@ async function albumSync() {
   if (!play?.cfg) return;
   const a = store.get('clatter.album') || {};
   const key = play.fromDraft ? 'draft.' + play.fromDraft : play.id;
-  // 舊版用 play id 記的自己機台（設定每改一次就多一筆）：同名、不是短連結的全部併過來
-  if (!a[key] && play.fromDraft) {
+  // 舊版用 play id 記的自己機台（設定每改一次就多一筆）：同名、不是短連結、獎品一半以上一樣的全部併過來
+  if (play.fromDraft) {
+    const names = new Set(play.cfg.items.map((it) => it.name));
     const olds = Object.entries(a)
       .filter(([k, v]) => !k.startsWith('draft.') && v.name === play.cfg.name && !/^s\./.test(v.link || ''))
+      .filter(([, v]) => Object.keys(v.items || {}).filter((n) => names.has(n)).length * 2 >= names.size)
       .sort((x, y) => (x[1].ts || 0) - (y[1].ts || 0));
     if (olds.length) {
       const m = { items: {}, got: {}, order: [] };
+      if (a[key]) olds.push([key, a[key]]); // 現在的也一起（放最後，縮圖用最新的）
       for (const [k, v] of olds) {
         Object.assign(m.items, v.items);
         for (const [n, c] of Object.entries(v.got || {})) m.got[n] = Math.max(c, m.got[n] || 0);
@@ -2260,41 +2300,12 @@ function renderAlbum() {
 function openCardView(e, name) {
   const it = e.items[name];
   const R = RARITY[it.r] || RARITY[0];
-  const tilt = $('v-tilt');
-  tilt.classList.toggle('round', e.kind !== 'card');
-  tilt.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
-  // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層
-  $('v-art').style.backgroundImage = `url("${it.s ? it.b || it.t : it.t}")`;
-  $('v-subj').style.backgroundImage = it.s ? `url("${it.s}")` : 'none';
-  $('v-subj').hidden = !it.s;
-  tilt.classList.toggle('pop', !!it.s);
-  $('v-holo').className = 'holo r' + it.r;
-  $('v-tag').textContent = name;
   $('v-name').textContent = name;
   $('v-meta').textContent = `${R.key} ${R.label} · ×${e.got[name]} · ${e.name}`;
-  tilt.style.transform = '';
   openSheet('sheet-card', $('sheet-card').querySelector('[data-close]'));
-  // 照片窗的上緣：比主體頭頂低一截（主體從窗的下緣放大 1.07 倍，算進去），最多壓到卡高的 22%
-  const h = tilt.offsetHeight;
-  const subjTop = h * (0.96 - (0.96 - (0.05 + 0.9 * (it.st ?? 0.3))) * 1.07);
-  const bt = e.kind === 'card' && it.s ? Math.max(0, Math.min(h * 0.22 - 25, subjTop + h * 0.08 - 25)) : 0;
-  tilt.style.setProperty('--bt', `${Math.round(bt)}px`);
-  // 沒在動滑鼠／手機 → 自己慢慢晃（看得出前後層的立體感）
-  viewMoved = 0;
-  const loop = (now) => {
-    if ($('sheet-card').hidden) return;
-    if (now - viewMoved > 1200) tiltView(Math.sin(now / 900) * 0.55, Math.sin(now / 1300 + 1) * 0.4);
-    requestAnimationFrame(loop);
-  };
-  requestAnimationFrame(loop);
-}
-let viewMoved = 0;
-function tiltView(x, y, moved = false) {
-  // x、y：−1..1
-  if (moved) viewMoved = performance.now();
-  const tilt = $('v-tilt');
-  tilt.style.transform = `rotateY(${x * 22}deg) rotateX(${-y * 16}deg)`;
-  $('v-holo').style.setProperty('--hx', `${50 + x * 40}%`);
+  // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）
+  viewHolo.set({ t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, shape: e.kind === 'card' ? 'card' : 'round', name });
+  viewHolo.start(() => !$('sheet-card').hidden);
 }
 
 function toast(msg) {
@@ -2361,15 +2372,9 @@ async function boot() {
   $('tab-shop').onclick = () => setMode('shop');
   $('tab-album').onclick = () => setMode('album');
   $('shop-new').onclick = newMachine;
-  // 收集簿的大卡：滑鼠移動／手機傾斜 → 3D 傾斜
-  $('sheet-card').addEventListener('pointermove', (e) => {
-    const r = $('v-tilt').getBoundingClientRect();
-    tiltView(Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1)), Math.max(-1, Math.min(1, -(((e.clientY - r.top) / r.height) * 2 - 1))), true);
-  });
-  addEventListener('deviceorientation', (e) => {
-    if ($('sheet-card').hidden || e.gamma == null) return;
-    tiltView(Math.max(-1, Math.min(1, e.gamma / 25)), Math.max(-1, Math.min(1, -(e.beta - 50) / 25)), true);
-  });
+  // 收集簿的大卡、結果卡：3D 閃卡（滑鼠移動／手機傾斜 → 跟著斜，holo.js）
+  viewHolo = new Holo($('v-tilt'), $('sheet-card'));
+  resHolo = new Holo($('r-tilt'), $('result-card'));
   // 從連結進來的玩家 → 回到那台機器；賣家 → 用目前的表單內容試玩
   $('tab-play').onclick = () => {
     unlock();

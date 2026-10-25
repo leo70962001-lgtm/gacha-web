@@ -1,5 +1,8 @@
 // 轉卡機的卡片：圓角薄片（正面、背面各一張貼圖）＋白色卡邊（toon 描邊由 machine.js 加）
-// 閃卡 shader：uMode 0＝一般、1＝金箔（一道金光掃過）、2＝彩虹（隨角度、時間流動的七彩）
+// 閃卡 shader（使用者 2026-10-25：「卡片把卡片的效果強化 參考寶可夢卡的作法」— 照 pokemon-cards-css 的分層做法）
+//   uMode 0＝一般卡（只有反光）、1＝ホロ（只有圖片窗的背景是虹色雷射＋直條紋，主體不閃）、
+//   2＝フルアート（整張斜格紋理＋虹光）、3＝レインボーレア＋金（整張亮粉、虹色、金框）
+//   每種都疊一層跟著光點走的反光（overlay），光點＝卡片斜的方向
 import * as THREE from 'three';
 
 export const CARD_W = 0.19; // 公尺（剛好塞進出卡口 0.209 寬的細縫）
@@ -47,6 +50,26 @@ uniform sampler2D photo; uniform sampler2D bgPhoto; uniform sampler2D depthMap; 
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vVo;
 // 圖片的深度：0.85＝背景退到卡面後面、−0.5＝主體浮到卡面前面（像 iPhone 空間照片的主體往前跳）
 float hgt(vec2 w) { return 0.85 - 1.35 * texture2D(depthMap, w).r; }
+// 寶可夢卡雷射的六色（sunpillar：hsl 2/53/93/176/228/283°）
+vec3 sun(float x) {
+  x = fract(x) * 6.;
+  vec3 a = vec3(1., .48, .46), b = vec3(1., .93, .38), c = vec3(.66, 1., .38), d = vec3(.52, 1., .97), e = vec3(.48, .58, 1.), f = vec3(.85, .46, 1.);
+  float t = fract(x);
+  t = t * t * (3. - 2. * t);
+  if (x < 1.) return mix(a, b, t);
+  if (x < 2.) return mix(b, c, t);
+  if (x < 3.) return mix(c, d, t);
+  if (x < 4.) return mix(d, e, t);
+  if (x < 5.) return mix(e, f, t);
+  return mix(f, a, t);
+}
+vec3 sunK(float x) { return clamp((sun(x) - 0.5) * 2.2 + 0.5, 0., 1.); } // contrast(2.2)：粉彩六色變鮮豔
+// 雷射箔透過油墨：圖的亮度 × 虹色（照片是不透明的，只用 dodge 的話綠色的背景還是綠色）
+vec3 foilTint(vec3 col, vec3 rb, float k) { float l = dot(col, vec3(.3, .59, .11)); return mix(col, rb * (0.2 + 1.25 * l), clamp(k, 0., 1.)); }
+vec3 dodge(vec3 b, vec3 s) { return min(vec3(1.), b / max(vec3(0.02), 1. - s)); } // mix-blend-mode: color-dodge
+vec3 overlay3(vec3 b, vec3 s) { return mix(2. * b * s, 1. - 2. * (1. - b) * (1. - s), step(0.5, b)); }
+vec3 contrastSat(vec3 c, float k, float sat) { c = (c - 0.5) * k + 0.5; float l = dot(c, vec3(.299, .587, .114)); return clamp(mix(vec3(l), c, sat), 0., 1.); }
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 // 沿著視線往卡片裡面走（視差遮擋）：從最前面（−0.5）走到最後面（0.85），第一次走到「表面底下」的地方就是看到的點
 //   之前只逼近三次，主體邊緣斜著看會有一條背景色的帶子；一步一步走＋最後一段內插就不會
 vec3 march(vec2 z, vec2 d) {
@@ -75,6 +98,8 @@ void main(){
   bool inWin = uLayered > 0.5 && w.x > 0. && w.x < 1. && w.y > 0. && w.y < 1.;
   // 最上層：稀有度章、星星、名字帶（浮在卡面上方，跟著反方向位移）
   vec4 ov = uLayered > 0.5 ? texture2D(overMap, vUv + par * 0.018) : vec4(0.);
+  float sw = 0.; // 主體（白）／背景（黑）
+  float inArt = 0.; // 圖片窗（不是框）
   if (ov.a > 0.5) col = ov.rgb;
   else {
     // 主體跑出框：框的地方，如果主體位移過來、而且是「前面」的東西，就畫在框上面
@@ -88,7 +113,9 @@ void main(){
       // 3D 照片：背景退後、主體浮出
       vec2 p = clamp(hit.xy, 0.002, 0.998);
       // 落在背景 → 用「主體補掉」的背景圖（不然斜的時候背景裡會再看到一次主體的邊）
-      col = mix(texture2D(bgPhoto, p).rgb, texture2D(photo, p).rgb, smoothstep(0.4, 0.7, texture2D(depthMap, p).r));
+      sw = smoothstep(0.4, 0.7, texture2D(depthMap, p).r);
+      inArt = 1.;
+      col = mix(texture2D(bgPhoto, p).rgb, texture2D(photo, p).rgb, sw);
       // 窗框落在圖片上的影子：往卡片斜的方向偏（凹進去的感覺）
       vec2 ws = w + par * 0.035;
       float e = min(min(ws.x, 1. - ws.x), min(ws.y, 1. - ws.y));
@@ -100,25 +127,66 @@ void main(){
     // 浮起來的章、名字帶落在卡面上的影子
     if (uLayered > 0.5) col *= 1.0 - 0.38 * texture2D(overMap, vUv + par * 0.018 + vec2(-0.012, 0.016)).a;
   }
-  // 卡面的光澤（像護貝過的卡）：一道柔光跟著傾斜滑過去
-  float gl = exp(-pow(vUv.x * 0.8 + vUv.y * 0.6 - 0.7 + par.x * 1.1 - par.y * 0.8, 2.) * 60.);
-  col += vec3(1.) * gl * 0.13; // 細一點、淡一點，不要把圖洗白
-  float tilt = (1. - clamp(abs(dot(vN, vV)), 0., 1.)) * 4.;
-  if (uMode > 0.5) {
-    float band = pow(0.5 + 0.5 * sin((vUv.x * 1.3 - vUv.y) * 9. + uTime * 1.8 + tilt * 3.), 5.);
-    if (uMode > 1.5) {
-      vec3 rb = 0.5 + 0.5 * cos(6.2831 * (vUv.x * 0.8 + vUv.y * 1.2 + tilt + uTime * 0.12 + vec3(0., .33, .67)));
-      col = mix(col, col * 0.65 + rb * 0.6, 0.3) + rb * band * 0.45;
-    } else {
-      col += vec3(1., .86, .45) * band * 0.5;
+  // ---- 閃卡（pokemon-cards-css：shine＝虹色×紋理 用 color-dodge 疊上去，glare＝跟著光點的 overlay）----
+  float ovm = step(0.5, ov.a); // 章、名字帶不閃
+  float frame = (1. - inArt) * (1. - ovm);
+  vec2 ptr = 0.5 + vec2(par.x, par.y) * 0.85 + vec2(sin(uTime * 0.4), cos(uTime * 0.33)) * 0.04; // 光點（卡片往哪斜，光就滑到哪）
+  float fc = clamp(length(par) * 1.7, 0., 1.); // 離中間多遠＝多斜（越斜越亮）
+  float spot = 1. - smoothstep(0.0, 0.85, distance(vUv * vec2(0.686, 1.), ptr * vec2(0.686, 1.)));
+  float I = 0.3 + 0.7 * fc;
+  if (uMode > 0.5 && uMode < 1.5) {
+    // ホロ（regular holo）：110° 的六色雷射（400% 大、斜的時候反方向滑）× 直的細掃描線 × 兩組會干涉的直條（3%）
+    float t = dot(vUv, vec2(0.94, -0.34)) * 2.2 - par.x * 2.6 + par.y * 3.5;
+    vec3 rb = sunK(t);
+    float scan = mix(0.5, 0.85, step(0.5, fract(vUv.x * 260.)));
+    float bars = 0.6 + 0.4 * sin((vUv.x + par.x * 0.55 + vUv.y * 0.12) * 209.) * sin((vUv.x - par.x * 0.3 - vUv.y * 0.2) * 150.);
+    vec3 sh = contrastSat(rb * scan * bars, 1.1, 1.25) * (0.45 + 0.55 * spot);
+    float wgt = inArt * (1. - sw);
+    col = foilTint(col, rb, (0.25 + 0.35 * spot) * I * wgt * (0.6 + 0.4 * bars));
+    col = dodge(col, sh * 0.7 * I * wgt) + sh * 0.12 * I * wgt; // 暗的地方 dodge 不太亮 → 再加一點
+  } else if (uMode > 1.5 && uMode < 2.5) {
+    // フルアート（V、テクスチャ）：±45° 交叉的細斜線（菱格）＋ 133° 虹光，整張都有；主體淡一點；再加一層細細的指紋狀紋理
+    float d1 = abs(sin((vUv.x * 0.686 + vUv.y) * 150. + par.x * 9.));
+    float d2 = abs(sin((vUv.x * 0.686 - vUv.y) * 150. - par.y * 9.));
+    float lat = smoothstep(0.22, 0.0, min(d1, d2)); // 交叉的細線（亮）
+    float etch = 0.5 + 0.5 * sin(length((vUv - vec2(0.3, 0.7)) * vec2(0.686, 1.)) * 420. + par.x * 6.);
+    vec3 rb = sunK(dot(vUv, vec2(0.68, 0.73)) * 1.8 + par.x * 2.4 - par.y * 1.8 + uTime * 0.02);
+    vec3 sh = rb * (0.3 + 0.7 * lat) * (0.8 + 0.2 * etch) * (0.4 + 0.6 * spot);
+    float wgt = (inArt * (1. - 0.75 * sw) + frame) * (1. - ovm);
+    col = foilTint(col, rb, (0.22 + 0.3 * spot + 0.25 * lat) * I * wgt);
+    col = dodge(col, sh * 0.7 * I * wgt) + sh * 0.1 * I * wgt;
+  } else if (uMode > 2.5) {
+    // レインボーレア＋ゴールド：-30° 虹色（跟著光點半速滑）soft-light 上色 → 亮粉（每格一顆，斜到對的角度才亮）color-dodge；框變金
+    vec3 rb = sunK(dot(vUv, vec2(0.5, 0.87)) * 1.7 + par.x * 1.2 - par.y * 0.9 + uTime * 0.03);
+    float wgt = 1. - ovm;
+    col = foilTint(col, rb, (0.3 + 0.3 * spot + 0.15 * fc) * wgt * (1. - 0.55 * sw * inArt) * (1. - frame)); // 虹色上色（主體淡一點）
+    col = dodge(col, rb * (0.25 + 0.45 * spot) * I * wgt * (1. - 0.5 * sw * inArt));
+    if (frame > 0.5) {
+      float lum = dot(col, vec3(.3, .59, .11));
+      vec3 gold = mix(vec3(.55, .33, .05), vec3(1., .86, .45), smoothstep(0.15, 0.9, lum + 0.35 * spot));
+      col = mix(col, gold, 0.65);
     }
+    vec2 cell = vUv * vec2(120., 175.);
+    vec2 id = floor(cell);
+    vec2 f = fract(cell) - 0.5;
+    float h1 = hash(id), h2 = hash(id + 7.3), h3 = hash(id + 19.1);
+    float tw = sin(h1 * 40. + par.x * (18. + 30. * h2) + par.y * (18. + 30. * h3) + uTime * 0.6);
+    float g = smoothstep(0.9, 1., tw) * smoothstep(0.42, 0.0, length(f)) * step(0.4, h2) * (1. - 0.65 * sw * inArt);
+    vec3 gc = frame > 0.5 ? vec3(1., .9, .55) : sun(h3 + par.x * 0.5);
+    col = dodge(col, gc * g * (0.5 + 0.5 * spot) * wgt);
+    col += gc * g * 0.55 * wgt;
   }
+  // 反光（glare）：光點附近白、遠的地方暗一點，overlay 疊上去 — 每張卡都有（一般卡只有這個）
+  float gd = distance(vUv * vec2(0.686, 1.), ptr * vec2(0.686, 1.));
+  float gv = mix(1., 0., smoothstep(0.08, 0.95, gd));
+  float ga = mix(0.8, 0.45, smoothstep(0.1, 0.9, gd));
+  col = mix(col, overlay3(col, vec3(gv)), ga * (0.18 + 0.22 * fc));
   if (uSil > 0.001) {
     // 剪影：整張變暗、四周亮一圈稀有度色（SSR 彩虹、SR 金、其他藍）
     float d = min(min(vUv.x, 1. - vUv.x), min(vUv.y, 1. - vUv.y));
     float rim = smoothstep(0.08, 0.0, d);
-    vec3 rc = uMode > 1.5 ? 0.5 + 0.5 * cos(6.2831 * (vUv.y * 1.5 + uTime * 0.5 + vec3(0., .33, .67)))
-      : (uMode > 0.5 ? vec3(1., .82, .3) : vec3(.55, .75, 1.));
+    vec3 rc = uMode > 2.5 ? 0.5 + 0.5 * cos(6.2831 * (vUv.y * 1.5 + uTime * 0.5 + vec3(0., .33, .67)))
+      : (uMode > 1.5 ? vec3(1., .82, .3) : vec3(.55, .75, 1.));
     col = mix(col, vec3(0.05, 0.06, 0.12) + rc * rim * 1.4, uSil);
   }
   col = mix(col, vec3(1.), uWhite);

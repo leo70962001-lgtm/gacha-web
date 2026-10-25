@@ -605,8 +605,8 @@ export class Machine {
   // 卡片：正面＝這次抽到的獎品（app 畫好的 canvas），背面＝shown 等級的卡背（SSR 可能先裝成金卡）
   // front＝drawCardLayers 的三層（圖片窗做 3D 視差）或一張平面 canvas
   _makeCard(front, rarity, shown) {
-    const fm = rarity >= 3 ? 2 : rarity === 2 ? 1 : 0;
-    const bm = shown >= 3 ? 2 : shown === 2 ? 1 : 0;
+    const fm = rarity; // 正面：N 一般、R ホロ、SR フルアート、SSR レインボー＋金（cardkit.js）
+    const bm = shown >= 3 ? 3 : shown === 2 ? 2 : 0;
     let layers = null;
     let face = front;
     if (front?.frame) {
@@ -621,7 +621,7 @@ export class Machine {
     addOutline(g.userData.edge, 0.0024, this.hullCache);
     if (shown >= 2) this.show.addGlints(g, shown === 3 ? 6 : 4, true);
     g.userData.upgrade = () => {
-      g.userData.setBack(this.backTex[3], 2);
+      g.userData.setBack(this.backTex[3], 3);
       this.show.addGlints(g, 3, true);
     };
     return g;
@@ -1360,7 +1360,7 @@ export class Machine {
 
   // 開蛋：依稀有度跑演出表（fx.js 的 TIERS）
   //   N/R：抖一抖就打開；SR/SSR：先變暗、集氣（SSR 可能升格），再爆開
-  async openCapsule() {
+  async openCapsule(prize = null) {
     const c = this.openCap;
     if (!c) return;
     this.openCap = null;
@@ -1404,6 +1404,7 @@ export class Machine {
     const fadeBot = this._fadeable(bot);
     this.show.burst(r, home);
     this.cb.onBurst?.(r);
+    if (prize) this._prizePop(prize, r, home, T.reveal);
     const upL = g.worldToLocal(home.clone().add(up)).sub(g.worldToLocal(home.clone()));
     const rL = g.worldToLocal(home.clone().add(camR)).sub(g.worldToLocal(home.clone()));
     const fly = 1 + r * 0.25; // 越稀有，殼飛得越遠
@@ -1418,6 +1419,40 @@ export class Machine {
     }).then(() => this.fx.remove(g));
     await this.after(this.reduced ? Math.min(T.reveal, 0.6) : T.reveal);
     this.show.persist(r, home);
+  }
+
+  // 開蛋的那一刻獎品從殼裡跳出來（使用者 2026-10-25：「強化轉蛋機把轉蛋的物品效果強化」）：
+  //   正對鏡頭的獎品小卡（drawPrizeCard）從蛋的中心長出來、往上往前飛，越稀有轉越多圈；結果卡蓋上來時淡掉
+  _prizePop(canvas, r, at, hold) {
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false });
+    const w = 0.1 + r * 0.008;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, (w * canvas.height) / canvas.width), mat);
+    m.renderOrder = 20;
+    this.scene.add(m);
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    const toCam = this.camera.position.clone().sub(at).normalize();
+    const from = at.clone();
+    const to = at.clone().addScaledVector(up, 0.05 + r * 0.012).addScaledVector(toCam, 0.1);
+    const spins = [0, 1, 1, 2][r];
+    const dur = this.reduced ? 0.25 : 0.6 + r * 0.12;
+    const place = (k) => {
+      m.position.lerpVectors(from, to, ease.out(k));
+      m.quaternion.copy(this.camera.quaternion);
+      m.rotateY((1 - ease.out(k)) * spins * Math.PI * 2);
+      m.scale.setScalar(0.15 + 0.85 * ease.back(k));
+    };
+    place(0);
+    this.tween(dur, place)
+      .then(() => this.after(Math.max(0.15, hold - dur + 0.15)))
+      .then(() => this.tween(0.3, (k) => (mat.opacity = 1 - k)))
+      .then(() => {
+        m.removeFromParent();
+        m.geometry.dispose();
+        mat.dispose();
+        tex.dispose();
+      });
   }
 
   // 翻卡：跟開蛋同一套演出（變暗、集氣、定格、爆光），最後卡片轉 180° 亮出正面
