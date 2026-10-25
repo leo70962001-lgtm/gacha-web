@@ -3,7 +3,7 @@
 # 跟 build_glb.py 同一套做法：
 #   1. 套用 Maya 群組（縮放 0.01、旋轉 90°）→ 公尺、Z 向上、正面朝 −Y；零件改名
 #   2. 清 Maya 自訂法線 → 30° 銳邊 → Weighted Normal（大平面平的、圓角才平滑）
-#   3. 依位置分材質：機身塑膠、窗框（上蓋色）、投幣板（金屬）、出卡口內部（暗色）、窗後的底板
+#   3. 依位置分材質：機身塑膠、窗框（上蓋色）、投幣板（金屬）、出卡口的細縫（暗色）、窗後的底板
 #   4. Smart UV → Cycles 烘 AO → 匯出 web/assets/card.glb ＋ card.b64.txt ＋ ao_card_*.png
 # 量測（blender/measure_card.py，2026-10-25）：
 #   機身 x ±0.352、y −0.526..0.41、z 0..1.269；上蓋 z 1.269..1.365
@@ -125,8 +125,9 @@ for f, oi in zip(body.data.polygons, old_idx):
     # 窗後的底板（台紙貼在它前面）
     if abs(c.y + 0.422) < 0.002 and -0.29 < c.x < 0.105 and 0.53 < c.z < 1.24:
         name = "M_Board"
-    # 出卡口：凹槽內側＋細縫（正面那圈不算）
-    if -0.12 < c.x < 0.114 and 0.345 < c.z < 0.445 and c.y > -0.524:
+    # 出卡口：只有卡片出來的那條細縫是黑的（使用者 2026-10-25：「只有卡的出口是黑色」）；
+    #   外面的凹槽（側壁、底、細縫上下的後壁 y −0.476）跟機身同色，凹進去的深淺交給 AO
+    if -0.11 < c.x < 0.105 and 0.385 < c.z < 0.401 and c.y > -0.46:
         name = "M_ExitDark"
     f.material_index = order.index(name)
     counts[name] += 1
