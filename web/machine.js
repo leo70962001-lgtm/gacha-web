@@ -506,16 +506,7 @@ export class Machine {
     cardG.add(gltf.scene);
     // 旋鈕：Blender 裡原點放在中心 → 繞自己的 X 軸轉；若匯出時包了一層節點，就轉那層
     const handle = knob.parent && /^Knob/.test(knob.parent.name) && knob.parent !== gltf.scene ? knob.parent : knob;
-    // 旋鈕表面加一條凸起的握把（原本是平的圓柱，轉了看不出來；真的轉卡機旋鈕上也有一條握把）
-    //   旋鈕：x 0.352..0.488（半厚 0.068），半徑 0.121 → 握把橫跨表面、凸出 3 cm
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.2, 0.046), cm.handle);
-    grip.position.set(0.068 + 0.017, 0, 0);
-    grip.castShadow = true;
-    addOutline(grip, 0.004, this.hullCache);
-    const dot = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.004, 20), new THREE.MeshToonMaterial({ gradientMap: this.ramp, color: 0xffd23f }));
-    dot.rotation.z = Math.PI / 2; // 握把上端的黃點（看得出轉到哪）
-    dot.position.set(0.068 + 0.035, 0.07, 0);
-    handle.add(grip, dot);
+    // 旋鈕維持原本模型的樣子（使用者 2026-10-25：「模型不要改變」→ 拿掉後加的握把、黃點）
     const keep = { handle: this.handle, handleBase: this.handleBase, slotHit: this.slotHit, slotRing: this.slotRing, decals: this.decals };
     this.handle = handle;
     this.handleBase = handle.rotation.x;
