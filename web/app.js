@@ -7,6 +7,7 @@ import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
 import { cutout } from './seg.js';
 import { Holo } from './holo.js';
+import { Binder, renderShelf } from './binder.js';
 import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
@@ -2199,101 +2200,50 @@ async function albumSync() {
   store.set('clatter.album', a);
 }
 
-let albumFilter = 'all';
+// 收集簿：分「卡片冊」（轉卡機，像真的卡冊）跟「轉蛋收藏」（轉蛋機，木頭展示櫃）兩個分頁（binder.js）
+let albumTab = store.get('clatter.albumTab') || null;
+let binder = null;
 function renderAlbum() {
   const a = store.get('clatter.album') || {};
   const entries = Object.entries(a).sort((x, y) => (y[1].ts || 0) - (x[1].ts || 0));
-  const filt = $('album-filter');
-  filt.textContent = '';
-  for (const k of ['all', 'capsule', 'card']) {
+  const cards = entries.filter(([, e]) => e.kind === 'card');
+  const caps = entries.filter(([, e]) => e.kind !== 'card');
+  // 第一次打開：有卡片就先看卡片冊
+  if (!albumTab) albumTab = cards.length || !caps.length ? 'card' : 'capsule';
+  const tabs = $('album-tabs');
+  tabs.textContent = '';
+  for (const [k, list] of [['card', cards], ['capsule', caps]]) {
     const b = document.createElement('button');
     b.className = 'chip';
     b.setAttribute('role', 'tab');
-    b.setAttribute('aria-selected', String(albumFilter === k));
-    b.textContent = k === 'all' ? t('album.all') : t('kind.' + k);
+    b.setAttribute('aria-selected', String(albumTab === k));
+    b.textContent = `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${list.length})`;
     b.onclick = () => {
-      albumFilter = k;
+      albumTab = k;
+      store.set('clatter.albumTab', k);
       renderAlbum();
     };
-    filt.append(b);
+    tabs.append(b);
   }
+  const list = albumTab === 'card' ? cards : caps;
   let kinds = 0;
   let pieces = 0;
-  for (const [, e] of entries) {
+  for (const [, e] of list) {
     kinds += Object.keys(e.got).length;
     pieces += Object.values(e.got).reduce((s, n) => s + n, 0);
   }
-  $('album-sum').textContent = t('album.sum', { m: entries.length, k: kinds, n: pieces });
-  const list = $('album-list');
-  list.textContent = '';
-  const shown = entries.filter(([, e]) => albumFilter === 'all' || e.kind === albumFilter);
-  if (!shown.length) {
-    const p = document.createElement('p');
-    p.className = 'album-empty card-box';
-    p.textContent = t('album.empty');
-    list.append(p);
-    return;
+  $('album-sum').textContent = t(albumTab === 'card' ? 'album.sumCard' : 'album.sumCap', { m: list.length, k: kinds, n: pieces });
+  const empty = $('album-empty');
+  empty.hidden = !!list.length;
+  empty.textContent = t(albumTab === 'card' ? 'album.emptyCard' : 'album.emptyCap');
+  $('album-binder').hidden = albumTab !== 'card' || !list.length;
+  $('album-shelf').hidden = albumTab !== 'capsule' || !list.length;
+  const opts = { onCard: openCardView, onPlay: (link) => enterPlay(link) };
+  if (albumTab === 'card' && list.length) {
+    binder = binder || new Binder($('album-binder'), opts);
+    binder.set(list);
   }
-  for (const [pid, e] of shown) {
-    const box = document.createElement('section');
-    box.className = 'alb card-box';
-    const head = document.createElement('div');
-    head.className = 'alb-head';
-    const h = document.createElement('h2');
-    h.textContent = e.name;
-    const kind = document.createElement('span');
-    kind.className = 'kind';
-    kind.textContent = t('kind.' + e.kind);
-    const have = e.order.filter((n) => e.got[n]).length;
-    const prog = document.createElement('div');
-    prog.className = 'prog';
-    prog.title = `${have} / ${e.order.length}`;
-    const bar = document.createElement('i');
-    bar.style.width = `${Math.round((have / Math.max(1, e.order.length)) * 100)}%`;
-    prog.append(bar);
-    const cnt = document.createElement('small');
-    cnt.textContent = `${have} / ${e.order.length}`;
-    head.append(h, kind, prog, cnt);
-    if (e.link) {
-      const again = document.createElement('button');
-      again.className = 'btn sun';
-      again.textContent = t('album.again');
-      again.onclick = () => enterPlay(e.link);
-      head.append(again);
-    }
-    const grid = document.createElement('div');
-    grid.className = 'alb-grid';
-    for (const n of e.order) {
-      const it = e.items[n] || { r: 0 };
-      const got = e.got[n] || 0;
-      const R = RARITY[it.r] || RARITY[0];
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'alb-it' + (e.kind === 'card' ? ' card' : '') + (got ? '' : ' miss');
-      b.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
-      const pic = document.createElement('span');
-      pic.className = 'pic';
-      if (it.t) pic.style.backgroundImage = `url("${it.t}")`;
-      const nm = document.createElement('span');
-      nm.className = 'nm';
-      nm.textContent = got ? n : t('album.miss');
-      b.append(pic, nm);
-      if (got) {
-        const rk = document.createElement('span');
-        rk.className = 'rk';
-        rk.textContent = R.key;
-        const c = document.createElement('span');
-        c.className = 'cnt';
-        c.textContent = '×' + got;
-        b.append(rk, c);
-        b.onclick = () => openCardView(e, n);
-      } else b.disabled = true;
-      grid.append(b);
-    }
-    box.append(head, grid);
-    list.append(box);
-    box.dataset.pid = pid;
-  }
+  if (albumTab === 'capsule' && list.length) renderShelf($('album-shelf'), list, opts);
 }
 
 // 收集簿的大卡：跟著游標（手機是陀螺儀）傾斜的 3D 卡，SR 金光、SSR 彩虹光
@@ -2337,6 +2287,7 @@ async function changeLang(k) {
     if (!$('sheet-lineup').hidden) openLineup();
     if (!$('sheet-collection').hidden) openCollection();
   }
+  if (app.dataset.mode === 'album') renderAlbum();
   await fontsReady();
   machine?.refreshLabels();
   scheduleDecor();
