@@ -133,12 +133,18 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .alb-it.miss .pic { filter: grayscale(1) brightness(0.3); border-color: var(--line); }
 .alb-it.miss .nm { color: var(--muted); }
 .album-empty { padding: 22px; text-align: center; color: var(--muted); }
-/* 收集簿的大卡：跟著游標／手機傾斜的 3D 卡＋閃卡的光 */
+/* 收集簿的大卡：真的 3D 分層（影子在最後、圖片退後、框在卡面、閃光、名字牌浮在最前面），跟著游標／手機傾斜 */
 .view-card { justify-items: center; }
-.tilt { position: relative; width: min(300px, 70vw); aspect-ratio: var(--ar, 0.686); transform-style: preserve-3d; transition: transform .08s; border-radius: 16px; }
-.tilt-in { position: absolute; inset: 0; border-radius: inherit; background: center / cover no-repeat; box-shadow: 0 18px 40px rgba(0,0,0,.35); }
+.tilt-wrap { perspective: 760px; padding: 18px 0 6px; }
+.tilt { position: relative; width: min(290px, 68vw); aspect-ratio: var(--ar, 0.686); transform-style: preserve-3d; transition: transform .12s ease-out; border-radius: 18px; }
+.tilt > * { position: absolute; border-radius: inherit; }
 .tilt.round { --ar: 1; border-radius: 50%; }
-.holo { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; mix-blend-mode: color-dodge; opacity: 0; background: linear-gradient(115deg, transparent 20%, rgba(255,255,255,.7) var(--hx, 45%), transparent 70%); }
+.t-shadow { inset: 6%; background: rgba(10, 14, 30, .45); filter: blur(16px); transform: translateZ(-60px) translateY(18px); }
+.t-photo { inset: 5%; background: #fffaf2 center / cover no-repeat; transform: translateZ(-24px) scale(1.05); } /* 退後一點，但斜到底也不會跑出框外 */
+.t-frame { inset: 0; border: 14px solid var(--rc); box-shadow: 0 0 0 3px #1c2340, inset 0 0 0 3px #1c2340, inset 0 10px 22px rgba(0,0,0,.45); }
+.t-tag { left: 10%; right: 10%; top: auto; bottom: 7%; padding: 6px 10px; text-align: center; background: rgba(28,35,64,.92); color: #fff; font-weight: 900; font-size: 15px; border-radius: 12px; border: 2px solid #fff; transform: translateZ(46px); box-shadow: 0 12px 20px rgba(0,0,0,.4); }
+.tilt.round .t-tag { bottom: 12%; }
+.holo { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; mix-blend-mode: color-dodge; opacity: .35; transform: translateZ(8px); background: linear-gradient(115deg, transparent 20%, rgba(255,255,255,.7) var(--hx, 45%), transparent 70%); }
 .holo.r2 { opacity: .55; background: linear-gradient(115deg, transparent 25%, rgba(255,214,90,.85) var(--hx, 45%), transparent 65%); }
 .holo.r3 { opacity: .7; background: linear-gradient(115deg, #ff5a7a33, #ffe94a88 var(--hx, 45%), #52e08a66, #4cc3ff88, #9b6bff55); }
 .app[data-mode="play"] .panel { display: none; }
@@ -662,7 +668,15 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 <div class="sheet" id="sheet-card" hidden>
   <div class="sheet-card view-card" role="dialog" aria-modal="true" aria-labelledby="v-name">
     <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
-    <div class="tilt" id="v-tilt"><div class="tilt-in" id="v-art"></div><div class="holo" id="v-holo"></div></div>
+    <div class="tilt-wrap">
+      <div class="tilt" id="v-tilt">
+        <div class="t-shadow"></div>
+        <div class="t-photo" id="v-art"></div>
+        <div class="t-frame"></div>
+        <div class="holo" id="v-holo"></div>
+        <div class="t-tag" id="v-tag"></div>
+      </div>
+    </div>
     <h2 id="v-name"></h2>
     <p class="meta-line" id="v-meta"></p>
   </div>

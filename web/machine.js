@@ -609,7 +609,7 @@ export class Machine {
       const { x, y, w, h } = CARD_WIN;
       const depth = cardTex(front.depth);
       depth.colorSpace = THREE.NoColorSpace;
-      layers = { photo: cardTex(front.photo), depth, win: [x / W, 1 - (y + h) / H, (x + w) / W, 1 - y / H] };
+      layers = { photo: cardTex(front.photo), depth, over: cardTex(front.over), win: [x / W, 1 - (y + h) / H, (x + w) / W, 1 - y / H] };
     }
     const g = makeCard(cardTex(face || drawCardBack(null, 0)), this.backTex[shown], fm, bm, this.cardEdge, layers);
     addOutline(g.userData.edge, 0.0024, this.hullCache);
@@ -2180,17 +2180,18 @@ export class Machine {
           c.g.quaternion.copy(c.q).multiply(_q.setFromAxisAngle(_y, Math.sin(this.time * 1.7) * 0.18 * (this.dragCard ? 0.3 : 1) + this.cardTilt));
         }
       }
-      // 翻開的卡片跟著游標微微傾斜（閃卡的光也跟著動）
+      // 翻開的卡片跟著游標（手機：陀螺儀）傾斜，閃卡的光、3D 照片的視差都跟著動；沒在動也會自己慢慢晃，看得出立體
       if (this.kind === 'card') {
-        const px = this.ptr?.x || 0;
-        const py = this.ptr?.y || 0;
+        const sway = this.reduced ? 0 : 0.3;
+        const px = (this.ptr?.x || 0) * 0.85 + Math.sin(this.time * 0.9) * sway;
+        const py = (this.ptr?.y || 0) * 0.85 + Math.sin(this.time * 0.7 + 1.3) * sway * 0.6;
         const tilt = (g, amt) => {
           if (!g.userData.baseQ || g.userData.scaling) return;
           _e.set(-py * amt * 0.7, px * amt, 0);
           g.quaternion.copy(g.userData.baseQ).multiply(_q.setFromEuler(_e));
         };
-        if (this.revealed) tilt(this.revealed.g, 0.35);
-        for (const m of this.gridCards || []) if (m?.userData.card) tilt(m, 0.22);
+        if (this.revealed) tilt(this.revealed.g, 0.5);
+        for (const m of this.gridCards || []) if (m?.userData.card) tilt(m, 0.32);
       }
       if (this.gridPick) {
         for (const c of this.grid || []) {

@@ -2128,18 +2128,28 @@ function openCardView(e, name) {
   tilt.classList.toggle('round', e.kind !== 'card');
   tilt.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
   $('v-art').style.backgroundImage = `url("${it.t}")`;
-  $('v-art').style.border = `6px solid var(--r-${R.key.toLowerCase()})`;
   $('v-holo').className = 'holo r' + it.r;
+  $('v-tag').textContent = name;
   $('v-name').textContent = name;
   $('v-meta').textContent = `${R.key} ${R.label} · ×${e.got[name]} · ${e.name}`;
   tilt.style.transform = '';
   openSheet('sheet-card', $('sheet-card').querySelector('[data-close]'));
+  // 沒在動滑鼠／手機 → 自己慢慢晃（看得出前後層的立體感）
+  viewMoved = 0;
+  const loop = (now) => {
+    if ($('sheet-card').hidden) return;
+    if (now - viewMoved > 1200) tiltView(Math.sin(now / 900) * 0.55, Math.sin(now / 1300 + 1) * 0.4);
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
 }
-function tiltView(x, y) {
+let viewMoved = 0;
+function tiltView(x, y, moved = false) {
   // x、y：−1..1
+  if (moved) viewMoved = performance.now();
   const tilt = $('v-tilt');
-  tilt.style.transform = `perspective(700px) rotateY(${x * 16}deg) rotateX(${-y * 12}deg)`;
-  $('v-holo').style.setProperty('--hx', `${50 + x * 35}%`);
+  tilt.style.transform = `rotateY(${x * 22}deg) rotateX(${-y * 16}deg)`;
+  $('v-holo').style.setProperty('--hx', `${50 + x * 40}%`);
 }
 
 function toast(msg) {
@@ -2208,11 +2218,11 @@ async function boot() {
   // 收集簿的大卡：滑鼠移動／手機傾斜 → 3D 傾斜
   $('sheet-card').addEventListener('pointermove', (e) => {
     const r = $('v-tilt').getBoundingClientRect();
-    tiltView(Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1)), Math.max(-1, Math.min(1, -(((e.clientY - r.top) / r.height) * 2 - 1))));
+    tiltView(Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1)), Math.max(-1, Math.min(1, -(((e.clientY - r.top) / r.height) * 2 - 1))), true);
   });
   addEventListener('deviceorientation', (e) => {
     if ($('sheet-card').hidden || e.gamma == null) return;
-    tiltView(Math.max(-1, Math.min(1, e.gamma / 25)), Math.max(-1, Math.min(1, -(e.beta - 50) / 25)));
+    tiltView(Math.max(-1, Math.min(1, e.gamma / 25)), Math.max(-1, Math.min(1, -(e.beta - 50) / 25)), true);
   });
   // 從連結進來的玩家 → 回到那台機器；賣家 → 用目前的表單內容試玩
   $('tab-play').onclick = () => {

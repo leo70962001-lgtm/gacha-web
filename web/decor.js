@@ -416,6 +416,15 @@ export function drawCardLayers(item, thumb, rarity = item.rarity) {
   roundRect(g, wx, wy, ww, wh, 22);
   g.fill();
   g.globalCompositeOperation = 'source-over';
+  return { frame, photo, over: drawCardOver(item, rarity), depth: estimateDepth(photo) };
+}
+
+// 浮在卡面上的一層（稀有度章、星星、名字帶）：3D 時比卡面更靠近你，底下有影子
+function drawCardOver(item, rarity) {
+  const { w: W, h: H } = CARD_PX;
+  const rar = RARITY[rarity];
+  const over = canvas(W, H);
+  const g = over.getContext('2d');
   // 左上：稀有度章
   g.fillStyle = '#1c2340';
   roundRect(g, 26, 26, 128, 64, 20);
@@ -447,7 +456,7 @@ export function drawCardLayers(item, thumb, rarity = item.rarity) {
   g.fillStyle = '#ffffff';
   fitText(g, item.name, W - 100, 40, bodyFont(), '900');
   g.fillText(item.name, W / 2, H - 66);
-  return { frame, photo, depth: estimateDepth(photo) };
+  return over;
 }
 
 // 平面的全圖卡（台紙、截圖用）＝圖片層＋框層疊起來
@@ -461,6 +470,7 @@ export function drawTradingCard(item, thumb, rarity = item.rarity) {
   g.drawImage(L.photo, CARD_WIN.x, CARD_WIN.y);
   g.restore();
   g.drawImage(L.frame, 0, 0);
+  g.drawImage(L.over, 0, 0);
   return c;
 }
 

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 export const CARD_W = 0.19; // 公尺（剛好塞進出卡口 0.209 寬的細縫）
 export const CARD_H = CARD_W / 0.686; // 卡片 59 × 86 mm 的比例
-export const CARD_D = 0.003;
+export const CARD_D = 0.007; // 厚一點：斜的時候看得到卡邊（使用者 2026-10-25：「把卡牌的立體感加強」）
 
 const live = new Set(); // 畫面上卡片的材質（每格更新 uTime）
 
@@ -43,30 +43,46 @@ void main(){
   gl_Position = projectionMatrix * viewMatrix * wp;
 }`;
 const FS = `uniform sampler2D map; uniform float uMode; uniform float uTime; uniform float uWhite; uniform float uOpacity; uniform float uSil;
-uniform sampler2D photo; uniform sampler2D depthMap; uniform float uLayered; uniform vec4 uWin; uniform float uDepth;
+uniform sampler2D photo; uniform sampler2D depthMap; uniform sampler2D overMap; uniform float uLayered; uniform vec4 uWin; uniform float uDepth;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vVo;
+// 圖片的深度：0.85＝背景退到卡面後面、−0.5＝主體浮到卡面前面（像 iPhone 空間照片的主體往前跳）
+float hgt(vec2 w) { return 0.85 - 1.35 * texture2D(depthMap, w).r; }
 void main(){
   vec4 c = texture2D(map, vUv);
   vec3 col;
-  bool inWin = uLayered > 0.5 && vUv.x > uWin.x && vUv.x < uWin.z && vUv.y > uWin.y && vUv.y < uWin.w;
-  if (inWin && c.a < 0.5) {
-    // 3D 照片（像 iPhone 的空間照片）：圖片在框的後面，主體在前、背景退後；卡片一斜，背景比主體多位移
-    vec2 w = (vUv - uWin.xy) / (uWin.zw - uWin.xy);
-    vec3 V = normalize(vVo);
-    vec2 par = V.xy / max(V.z, 0.3);
-    // h：0.75＝背景退到後面、−0.25＝主體浮出卡面一點（像 iPhone 空間照片的主體往前跳）
-    float h = 0.75 - texture2D(depthMap, w).r;
-    vec2 p = w - par * uDepth * h;
-    h = 0.75 - texture2D(depthMap, p).r;
-    p = w - par * uDepth * h;
-    p = (p - 0.5) / 1.1 + 0.5; // 放大一點，斜著看邊緣也不露底
-    col = texture2D(photo, clamp(p, 0.002, 0.998)).rgb;
-    float e = min(min(w.x, 1. - w.x), min(w.y, 1. - w.y));
-    col *= mix(0.7, 1.0, smoothstep(0.0, 0.05, e)); // 窗的內緣有一圈影子（凹進去的感覺）
-  } else {
-    if (c.a < 0.5) discard;
-    col = c.rgb;
+  vec3 V = normalize(vVo);
+  vec2 par = V.xy / max(V.z, 0.3); // 卡片斜多少（看過來的方向在卡面上的分量）
+  vec2 span = uWin.zw - uWin.xy;
+  vec2 w = (vUv - uWin.xy) / span;
+  bool inWin = uLayered > 0.5 && w.x > 0. && w.x < 1. && w.y > 0. && w.y < 1.;
+  // 最上層：稀有度章、星星、名字帶（浮在卡面上方，跟著反方向位移）
+  vec4 ov = uLayered > 0.5 ? texture2D(overMap, vUv + par * 0.018) : vec4(0.);
+  if (ov.a > 0.5) col = ov.rgb;
+  else {
+    // 主體跑出框：框的地方，如果主體位移過來、而且是「前面」的東西，就畫在框上面
+    vec2 pq = w + par * uDepth * 0.5;
+    bool pop = uLayered > 0.5 && c.a >= 0.5 && pq.x > 0. && pq.x < 1. && pq.y > 0. && pq.y < 1. && texture2D(depthMap, pq).r > 0.66;
+    if ((inWin && c.a < 0.5) || pop) {
+      // 3D 照片：兩次逼近視差（背景退後、主體浮出）
+      vec2 p = w - par * uDepth * hgt(w);
+      p = w - par * uDepth * hgt(p);
+      p = w - par * uDepth * hgt(p);
+      p = (p - 0.5) / 1.16 + 0.5; // 放大一點，斜著看邊緣也不露底
+      col = texture2D(photo, clamp(p, 0.002, 0.998)).rgb;
+      // 窗框落在圖片上的影子：往卡片斜的方向偏（凹進去的感覺）
+      vec2 ws = w + par * 0.035;
+      float e = min(min(ws.x, 1. - ws.x), min(ws.y, 1. - ws.y));
+      if (!pop) col *= mix(0.55, 1.0, smoothstep(0.0, 0.07, e));
+    } else {
+      if (c.a < 0.5) discard;
+      col = c.rgb;
+    }
+    // 浮起來的章、名字帶落在卡面上的影子
+    if (uLayered > 0.5) col *= 1.0 - 0.38 * texture2D(overMap, vUv + par * 0.018 + vec2(-0.012, 0.016)).a;
   }
+  // 卡面的光澤（像護貝過的卡）：一道柔光跟著傾斜滑過去
+  float gl = exp(-pow(vUv.x * 0.8 + vUv.y * 0.6 - 0.7 + par.x * 1.1 - par.y * 0.8, 2.) * 60.);
+  col += vec3(1.) * gl * 0.13; // 細一點、淡一點，不要把圖洗白
   float tilt = (1. - clamp(abs(dot(vN, vV)), 0., 1.)) * 4.;
   if (uMode > 0.5) {
     float band = pow(0.5 + 0.5 * sin((vUv.x * 1.3 - vUv.y) * 9. + uTime * 1.8 + tilt * 3.), 5.);
@@ -94,7 +110,7 @@ function faceMat(tex, mode) {
   const m = new THREE.ShaderMaterial({
     uniforms: {
       map: { value: tex }, uMode: { value: mode }, uTime: { value: 0 }, uWhite: { value: 0 }, uOpacity: { value: 1 }, uSil: { value: 0 },
-      photo: { value: null }, depthMap: { value: null }, uLayered: { value: 0 }, uWin: { value: new THREE.Vector4() }, uDepth: { value: 0.13 },
+      photo: { value: null }, depthMap: { value: null }, overMap: { value: null }, uLayered: { value: 0 }, uWin: { value: new THREE.Vector4() }, uDepth: { value: 0.2 },
     },
     vertexShader: VS,
     fragmentShader: FS,
@@ -120,6 +136,7 @@ export function makeCard(frontTex, backTex, frontMode, backMode, edgeMat, layers
   if (layers) {
     fm.uniforms.photo.value = layers.photo;
     fm.uniforms.depthMap.value = layers.depth;
+    fm.uniforms.overMap.value = layers.over;
     fm.uniforms.uWin.value.set(...layers.win);
     fm.uniforms.uLayered.value = 1;
   }
@@ -171,6 +188,7 @@ export function makeCard(frontTex, backTex, frontMode, backMode, edgeMat, layers
       fm.uniforms.map.value?.dispose();
       fm.uniforms.photo.value?.dispose();
       fm.uniforms.depthMap.value?.dispose();
+      fm.uniforms.overMap.value?.dispose();
       fm.dispose();
       bm.dispose();
     },
