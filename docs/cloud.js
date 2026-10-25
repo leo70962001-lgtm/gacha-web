@@ -192,3 +192,28 @@ export async function uploadMedia(blob, name, kind) {
   }
   return `${CLOUD.url}/storage/v1/object/public/media/${path}`;
 }
+
+// ---------- 好友交換（supabase/06_trade.sql） ----------
+// 好友碼＝錢包 id；每一步都帶錢包鑰匙。錯誤：e.locked（鑰匙不對）、e.gone（交換已經結束）、e.tooMany（送出太多還沒回覆的）
+async function rpc(name, body) {
+  const r = await req('/rest/v1/rpc/' + name, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error({ 42501: 'e.locked', P0002: 'e.gone', 54000: 'e.tooMany' }[err.code] || 'e.network');
+  }
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;
+}
+const cred = (w) => ({ p_id: w.id, p_key: w.key });
+export const tradeMe = (w, name = null) => rpc('trade_me', { ...cred(w), p_name: name });
+export const tradeLookup = (ids) => rpc('trade_lookup', { p_ids: ids });
+export const tradeOffer = (w, to, mode, give, note) => rpc('trade_offer', { ...cred(w), p_to: to, p_mode: mode, p_give: give, p_note: note || null });
+export const tradeList = (w) => rpc('trade_list', cred(w));
+export const tradeAccept = (w, id, back) => rpc('trade_accept', { ...cred(w), p_trade: id, p_back: back || null });
+export const tradeDecline = (w, id) => rpc('trade_decline', { ...cred(w), p_trade: id });
+export const tradeCancel = (w, id) => rpc('trade_cancel', { ...cred(w), p_trade: id });
+export const tradeDone = (w, id) => rpc('trade_done', { ...cred(w), p_trade: id });

@@ -8,6 +8,7 @@ import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveL
 import { cutout } from './seg.js';
 import { Holo } from './holo.js';
 import { Binder, renderShelf } from './binder.js';
+import { Trade } from './trade.js';
 import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
@@ -2206,24 +2207,32 @@ let binder = null;
 function renderAlbum() {
   const a = store.get('clatter.album') || {};
   const entries = Object.entries(a).sort((x, y) => (y[1].ts || 0) - (x[1].ts || 0));
+  for (const [k, e] of entries) e.key = k; // 大卡「拿去交換」要知道是哪一筆
   const cards = entries.filter(([, e]) => e.kind === 'card');
   const caps = entries.filter(([, e]) => e.kind !== 'card');
   // 第一次打開：有卡片就先看卡片冊
   if (!albumTab) albumTab = cards.length || !caps.length ? 'card' : 'capsule';
   const tabs = $('album-tabs');
   tabs.textContent = '';
-  for (const [k, list] of [['card', cards], ['capsule', caps]]) {
+  for (const [k, list] of [['card', cards], ['capsule', caps], ['trade', null]]) {
     const b = document.createElement('button');
     b.className = 'chip';
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(albumTab === k));
-    b.textContent = `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${list.length})`;
+    b.textContent = k === 'trade' ? t('album.trade') + (trade?.list.in.length ? ` (${trade.list.in.length})` : '') : `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${list.length})`;
     b.onclick = () => {
       albumTab = k;
       store.set('clatter.albumTab', k);
       renderAlbum();
     };
     tabs.append(b);
+  }
+  $('album-trade').hidden = albumTab !== 'trade';
+  if (albumTab === 'trade') {
+    $('album-empty').hidden = $('album-binder').hidden = $('album-shelf').hidden = true;
+    $('album-sum').textContent = t('album.sumTrade', { f: trade.friends.length, n: trade.list.in.length });
+    trade.render($('album-trade')).then(() => ($('album-sum').textContent = t('album.sumTrade', { f: trade.friends.length, n: trade.list.in.length })));
+    return;
   }
   const list = albumTab === 'card' ? cards : caps;
   let kinds = 0;
@@ -2256,6 +2265,26 @@ function openCardView(e, name) {
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）
   viewHolo.set({ t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, shape: e.kind === 'card' ? 'card' : 'round', name });
   viewHolo.start(() => !$('sheet-card').hidden);
+  // 好友交換：收集簿裡的獎品可以直接拿去交換
+  const tb = $('v-trade');
+  tb.hidden = !(e.key && e.got[name] > 0 && cloudReady());
+  tb.onclick = () => {
+    closeSheet('sheet-card');
+    trade.sendFlow({ item: { key: e.key, n: name } });
+  };
+}
+let trade = null;
+// 邀請連結 #f.<好友碼> → 加好友、打開收集簿的「好友交換」
+async function openInvite(code) {
+  history.replaceState(null, '', location.pathname + location.search);
+  albumTab = 'trade';
+  setMode('album');
+  try {
+    await trade.addFriend(code);
+  } catch (e) {
+    toast(t(e.message));
+  }
+  renderAlbum();
 }
 
 function toast(msg) {
@@ -2325,6 +2354,16 @@ async function boot() {
   $('shop-new').onclick = newMachine;
   // 收集簿的大卡、結果卡：3D 閃卡（滑鼠移動／手機傾斜 → 跟著斜，holo.js）
   viewHolo = new Holo($('v-tilt'), $('sheet-card'));
+  trade = new Trade({
+    store, toast, loadWallet, openSheet, closeSheet, openCardView, shareBase,
+    cloudOk: cloudReady,
+    albumChanged: () => app.dataset.mode === 'album' && albumTab !== 'trade' && renderAlbum(),
+    badge: (n) => {
+      $('album-badge').hidden = !n;
+      $('album-badge').textContent = n;
+    },
+  });
+  trade.poll();
   resHolo = new Holo($('r-tilt'), $('result-card'));
   // 從連結進來的玩家 → 回到那台機器；賣家 → 用目前的表單內容試玩
   $('tab-play').onclick = () => {
@@ -2420,14 +2459,16 @@ async function boot() {
     return;
   }
   const h = location.hash.slice(1);
-  if (isMachineHash(h)) await enterPlay(h);
+  if (h.startsWith('f.')) openInvite(h.slice(2));
+  else if (isMachineHash(h)) await enterPlay(h);
   else showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
   // 等台紙、貼紙畫好再拿掉載入畫面
   await new Promise((r) => setTimeout(r, 200));
   $('loading').hidden = true;
   addEventListener('hashchange', () => {
     const tok = location.hash.slice(1);
-    if (isMachineHash(tok)) enterPlay(tok);
+    if (tok.startsWith('f.')) openInvite(tok.slice(2));
+    else if (isMachineHash(tok)) enterPlay(tok);
   });
 }
 

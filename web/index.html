@@ -194,6 +194,60 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .bk-nav { display: flex; align-items: center; gap: 14px; }
 .bk-page { min-width: 92px; text-align: center; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 .bk-nav .icon-btn { font-size: 22px; line-height: 1; }
+/* ---- 好友交換（trade.js）：好友碼、收到的、好友、送出的、紀錄 ---- */
+.tab-badge { margin-left: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #ff3d5a; color: #fff; font: 11px/18px var(--font-num); text-align: center; border: 1.5px solid var(--stroke); }
+.trade { display: grid; gap: 14px; }
+.tr-me, .tr-box { padding: 14px; display: grid; gap: 10px; }
+.tr-box h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 19px; }
+.tr-me { grid-template-columns: auto 1fr; align-items: center; background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--surface) 80%, #ffcf33)); }
+@media (max-width: 560px) { .tr-me { grid-template-columns: 1fr; } .tr-me .tr-acts { justify-content: flex-start; } }
+.tr-code small { display: block; font-size: 12px; color: var(--muted); font-weight: 700; }
+.tr-code strong { font-family: var(--font-num); font-size: 26px; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.tr-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.tr-acts .btn, .tr-friend .btn, .tr-add .btn { padding: 6px 12px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
+.tr-name { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tr-name label { font-size: 13px; font-weight: 700; }
+.tr-name input, .tr-add input, .tr-note { flex: 1; min-width: 140px; font: inherit; padding: 8px 10px; border-radius: 10px; border: 2px solid var(--stroke); background: var(--surface); color: var(--ink); }
+.tr-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.tr-none { margin: 0; color: var(--muted); font-size: 14px; }
+.tr-offer { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; padding: 10px; border-radius: 14px; background: var(--surface-2); border: 2px solid var(--stroke); }
+.tr-offer .tr-acts { grid-column: 1 / -1; justify-content: flex-start; }
+.tr-otext { display: grid; gap: 2px; min-width: 0; }
+.tr-otext span { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.tr-otext q, .tr-q { font-size: 13px; background: #fff; border-radius: 10px; padding: 4px 8px; border: 1.5px solid var(--line); justify-self: start; overflow-wrap: anywhere; }
+.tr-friend { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); }
+.tr-fname { flex: 1; min-width: 0; display: grid; }
+.tr-fname b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-fname small { font-family: var(--font-num); font-size: 11px; color: var(--muted); }
+.tr-log { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+.tr-mini { position: relative; width: 56px; aspect-ratio: 1; flex: none; }
+.tr-mini.card { aspect-ratio: .686; }
+.tr-pic { position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--rc); box-shadow: 0 0 0 1.5px var(--stroke); background: #fffaf2 center / cover no-repeat; }
+.tr-mini.card .tr-pic { border-radius: 7px; }
+.tr-mini.r3 .tr-pic { border-color: #e2b13c; box-shadow: 0 0 0 1.5px var(--stroke), 0 0 10px #ffcf33; }
+.tr-rk, .tr-cnt { position: absolute; top: -6px; font: 10px/1.4 var(--font-num); border: 1.5px solid var(--stroke); border-radius: 999px; padding: 0 5px; white-space: nowrap; }
+.tr-rk { left: -6px; color: #fff; background: var(--rc); }
+.tr-cnt { right: -8px; background: var(--surface); }
+.trade-card { width: min(100%, 520px); }
+#tr-body { display: grid; gap: 12px; }
+#tr-body > .btn.big { justify-self: center; }
+.trade-card h2 { padding-right: 40px; }
+.tr-field { display: grid; gap: 6px; }
+.tr-field > small { font-size: 12px; font-weight: 700; color: var(--muted); }
+.tr-field .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.tr-sel { display: flex; align-items: center; gap: 12px; }
+.tr-sel b { flex: 1; overflow-wrap: anywhere; }
+.tr-hint { margin: 0; font-size: 13px; color: var(--muted); }
+.tr-ph { margin: 4px 0 0; font-size: 14px; }
+.tr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 12px 8px; }
+.tr-pick { display: grid; justify-items: center; gap: 4px; padding: 8px 2px 4px; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; border-radius: 12px; }
+.tr-pick:hover, .tr-pick:focus-visible { background: var(--surface-2); }
+.tr-pn { font-size: 11px; font-weight: 700; text-align: center; overflow-wrap: anywhere; line-height: 1.25; }
+.tr-swap { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.tr-swap .tr-mini { width: 84px; }
+.tr-arrow { font-size: 30px; }
+.tr-back { justify-self: start; }
+#v-trade { justify-self: center; }
 /* ---- 轉蛋收藏：展示櫃（Gemini 壁紙＋一層一層的木板），獎品站在打開的扭蛋殼裡 ---- */
 .shelf { display: grid; gap: 18px; }
 .cab { padding: 12px; display: grid; gap: 10px; }
@@ -651,7 +705,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <button id="tab-create" role="tab" aria-selected="true" data-i18n="tab.create">開店設定</button>
       <button id="tab-play" role="tab" aria-selected="false" data-i18n="tab.play">轉轉看</button>
       <button id="tab-shop" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.shop" aria-label="我的商店"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 0 1-5.3 1.9A3 3 0 0 1 12 14a3 3 0 0 1-2.7-1.1A3 3 0 0 1 4 11z"/><path d="M6 14v6h12v-6"/><path d="M10 20v-4h4v4"/></svg><span data-i18n="tab.shop">我的商店</span></button>
-      <button id="tab-album" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.album" aria-label="收集簿"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="15" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h4M12 12h4"/></svg><span data-i18n="tab.album">收集簿</span></button>
+      <button id="tab-album" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.album" aria-label="收集簿"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="15" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h4M12 12h4"/></svg><span data-i18n="tab.album">收集簿</span><b class="tab-badge" id="album-badge" hidden></b></button>
     </nav>
     <label class="lang" data-i18n-aria="lang.label" aria-label="語言">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18"/></svg>
@@ -787,6 +841,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         <p class="album-empty card-box" id="album-empty" hidden></p>
         <div id="album-binder" hidden></div>
         <div id="album-shelf" hidden></div>
+        <div id="album-trade" hidden></div>
       </div>
     </section>
   </main>
@@ -845,6 +900,15 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     </div>
     <h2 id="v-name"></h2>
     <p class="meta-line" id="v-meta"></p>
+    <button class="btn sun" id="v-trade" hidden data-i18n="tr.tradeThis">拿去交換</button>
+  </div>
+</div>
+
+<!-- 好友交換（trade.js 每一步重畫 tr-body） -->
+<div class="sheet" id="sheet-trade" hidden>
+  <div class="sheet-card trade-card" role="dialog" aria-modal="true">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <div id="tr-body"></div>
   </div>
 </div>
 
