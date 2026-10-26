@@ -12,7 +12,7 @@ import { Trade } from './trade.js';
 import { AlbumEdit, recount, ensureBase, titleOf } from './albumedit.js';
 import { copyText } from './copy.js';
 import { mountNowPlaying } from './nowplaying.js';
-import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
+import { setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -1006,6 +1006,7 @@ async function publishLink(auto) {
     const c = draft.cloud;
     showLinkStatus({ url: shareBase() + '#' + (c ? 's.' + c.id : token), short: !!c, failed, upFail, auto, at: Date.now() });
     if (c && !failed) refreshStats();
+    if (c && !failed && draft.listed) listingMeta().then((meta) => setListed(c, true, meta)).catch(() => {});
     if (failed && c) {
       clearTimeout(syncTimer);
       syncTimer = setTimeout(() => requestSync(true), 15000); // 連不上 → 15 秒後再試
@@ -1121,6 +1122,8 @@ function showLinkStatus(s) {
   $('link-out').hidden = false;
   $('new-link').hidden = !s.short;
   $('restock').hidden = !s.short;
+  $('list-wrap').hidden = !(s.short && draft.cloud);
+  $('list-on').checked = !!draft.listed;
   const meta = $('link-meta');
   const imgs = draft.items.filter((it) => it.img).length;
   const long = !s.short && s.url.length > 8000;
@@ -2167,6 +2170,9 @@ function setMode(mode) {
   $('tab-play').setAttribute('aria-selected', String(mode === 'play'));
   $('tab-shop').setAttribute('aria-selected', String(mode === 'shop'));
   $('tab-album').setAttribute('aria-selected', String(mode === 'album'));
+  $('tab-browse').setAttribute('aria-selected', String(mode === 'browse'));
+  $('page-browse').hidden = mode !== 'browse';
+  if (mode === 'browse') renderBrowse();
   $('page-shop').hidden = mode !== 'shop'; // 樣式表有 [hidden]{display:none} → 用屬性切換
   $('page-album').hidden = mode !== 'album';
   if (mode === 'shop') renderShop();
@@ -2310,6 +2316,12 @@ async function renderShop() {
     const tt = document.createElement('div');
     const h = document.createElement('h2');
     h.textContent = d.name || t('defaultMachine');
+    if (d.listed && d.cloud) {
+      const pub = document.createElement('span');
+      pub.className = 'mach-pub';
+      pub.textContent = t('browse.listed');
+      h.append(pub);
+    }
     const sub = document.createElement('p');
     sub.textContent = `${t('kind.' + kind)} · ${t('kinds', { n: d.items.length })} · ${priceText(d.price || { coins: 1, unit: 0, cur: 'NT$' })}` + (uid === shop.cur ? ' · ' + t('shop.editing') : '');
     tt.append(h, sub);
@@ -2679,6 +2691,190 @@ function openCardView(e, name) {
 }
 let trade = null;
 
+// ---------- 逛機台（使用者 2026-10-26：「追加用戶做好的機器的瀏覽頁面」，supabase/07_browse.sql） ----------
+//   店家在開店頁的連結區勾「公開到逛機台」（要先有短連結）→ 送一份小摘要上去；逛機台頁列出大家公開的機台
+//   摘要＝名稱、店名、種類、主題色、價錢、獎品數、機台封面（3D 機台正方形入鏡拍一張）、前 4 個獎品小圖
+function machineShot() {
+  if (!machine?.loaded || app.dataset.mode !== 'create') return null;
+  const c = machine.snapshot(240);
+  const u = c.toDataURL('image/webp', 0.75);
+  return u.startsWith('data:image/webp') ? u : c.toDataURL('image/jpeg', 0.8);
+}
+async function listingMeta() {
+  const th = [];
+  for (let i = 0; i < Math.min(4, draft.items.length); i++) {
+    const t0 = thumbOf(draft, i);
+    if (!t0.bmp && t0.ready) await t0.ready;
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const src = t0.bmp || placeholderThumb(draft.items[i].name, i);
+    const s = Math.max(64 / src.width, 64 / src.height);
+    g.drawImage(src, (64 - src.width * s) / 2, (64 - src.height * s) / 2, src.width * s, src.height * s);
+    th.push(c.toDataURL('image/webp', 0.7));
+  }
+  const meta = { n: draft.name || '', s: draft.shop || '', k: draft.kind === 'card' ? 'card' : 'capsule', th: draft.theme, p: [draft.price.coins, draft.price.unit, draft.price.cur], i: draft.items.length, t: th };
+  const cover = machineShot();
+  if (cover) meta.c = cover;
+  else if (draft.listedCover) meta.c = draft.listedCover; // 現在不在開店頁：用上次的封面
+  return meta;
+}
+async function toggleListed(on) {
+  const c = draft.cloud;
+  if (!c) return;
+  $('list-on').disabled = true;
+  try {
+    const meta = on ? await listingMeta() : null;
+    await setListed(c, on, meta);
+    draft.listed = on;
+    if (meta?.c) draft.listedCover = meta.c;
+    saveDraft();
+    toast(t(on ? 'browse.on' : 'browse.off'));
+  } catch (e) {
+    $('list-on').checked = !!draft.listed;
+    toast(t(e.message));
+  } finally {
+    $('list-on').disabled = false;
+  }
+}
+
+const browse = { sort: 'new', items: [], done: false, loading: false };
+function renderBrowse(load = true) {
+  const sort = $('browse-sort');
+  if (!sort.childElementCount)
+    for (const k of ['new', 'hot']) {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.setAttribute('role', 'tab');
+      b.dataset.k = k;
+      b.onclick = () => {
+        browse.sort = k;
+        loadBrowse(true);
+      };
+      sort.append(b);
+    }
+  for (const b of sort.children) {
+    b.textContent = t('browse.' + b.dataset.k);
+    b.setAttribute('aria-selected', String(b.dataset.k === browse.sort));
+  }
+  $('browse-q').placeholder = t('browse.search');
+  if (load) loadBrowse(true);
+  else drawBrowse();
+}
+async function loadBrowse(reset) {
+  if (browse.loading) return;
+  if (!cloudReady()) {
+    $('browse-empty').hidden = false;
+    $('browse-empty').textContent = t('browse.offline');
+    return;
+  }
+  browse.loading = true;
+  if (reset) {
+    browse.items = [];
+    browse.done = false;
+    for (const b of $('browse-sort').children) b.setAttribute('aria-selected', String(b.dataset.k === browse.sort));
+  }
+  try {
+    const rows = await browseMachines(browse.sort, browse.items.length);
+    browse.items.push(...(Array.isArray(rows) ? rows : []));
+    browse.done = !Array.isArray(rows) || rows.length < 24;
+    drawBrowse();
+  } catch (e) {
+    $('browse-empty').hidden = false;
+    $('browse-empty').textContent = t('browse.offline');
+  } finally {
+    browse.loading = false;
+  }
+}
+// 別人的摘要：字截長度、圖只收 data:image 的 base64
+const okImg = (u) => (typeof u === 'string' && u.length < 60000 && /^data:image\/(webp|png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(u) ? u : null);
+const str = (x, n) => (typeof x === 'string' ? x.slice(0, n) : '');
+function drawBrowse() {
+  const grid = $('browse-grid');
+  grid.textContent = '';
+  const q = $('browse-q').value.trim().toLowerCase();
+  const list = browse.items.filter((r) => r && /^[0-9A-Za-z]{10}$/.test(r.id) && r.meta && (!q || (str(r.meta.n, 40) + ' ' + str(r.meta.s, 40)).toLowerCase().includes(q)));
+  $('browse-empty').hidden = list.length > 0;
+  $('browse-empty').textContent = t(q ? 'browse.noMatch' : 'browse.empty');
+  $('browse-more').hidden = browse.done || !!q;
+  for (const r of list) {
+    const m = r.meta;
+    const kind = m.k === 'card' ? 'card' : 'capsule';
+    const art = document.createElement('article');
+    art.className = 'bcard card-box';
+    const cover = document.createElement('div');
+    cover.className = 'bcard-cover';
+    cover.style.setProperty('--c', (THEMES[m.th] || THEMES.red).body);
+    const c = okImg(m.c);
+    if (c) {
+      const img = document.createElement('img');
+      img.src = c;
+      img.alt = '';
+      img.loading = 'lazy';
+      cover.append(img);
+    }
+    const kd = document.createElement('span');
+    kd.className = 'bcard-kind';
+    kd.textContent = t('kind.' + kind);
+    const p = Array.isArray(m.p) ? m.p : [];
+    const price = { coins: Math.max(1, Math.min(20, p[0] | 0)), unit: Number.isFinite(p[1]) ? p[1] : 0, cur: CURRENCIES.includes(p[2]) ? p[2] : 'NT$' };
+    const pr = document.createElement('span');
+    pr.className = 'bcard-price';
+    pr.textContent = priceText(price);
+    cover.append(kd, pr);
+    const body = document.createElement('div');
+    body.className = 'bcard-body';
+    const h = document.createElement('h3');
+    h.textContent = str(m.n, 40) || t('defaultMachine');
+    body.append(h);
+    if (m.s) {
+      const sh = document.createElement('small');
+      sh.textContent = str(m.s, 40);
+      body.append(sh);
+    }
+    const prizes = document.createElement('div');
+    prizes.className = 'bcard-prizes';
+    for (const u of (Array.isArray(m.t) ? m.t : []).slice(0, 4)) {
+      const sp = document.createElement('span');
+      if (okImg(u)) sp.style.backgroundImage = `url("${okImg(u)}")`;
+      prizes.append(sp);
+    }
+    const meta = document.createElement('div');
+    meta.className = 'bcard-meta';
+    const left = Math.max(0, (r.total | 0) - (r.pulls | 0));
+    for (const txt of [t('browse.kinds', { n: Math.max(0, m.i | 0) }), t('browse.pulls', { n: r.pulls | 0 }), t('browse.left', { n: left })]) {
+      const sp = document.createElement('span');
+      sp.textContent = txt;
+      meta.append(sp);
+    }
+    const go = document.createElement('button');
+    go.className = 'btn primary';
+    go.textContent = t('browse.play');
+    go.onclick = () => {
+      // 跟打開分享連結一樣：網址換成這台（重新整理、切回「轉轉看」都還是這台）
+      history.replaceState(null, '', location.pathname + location.search + '#s.' + r.id);
+      setMode('play');
+      enterPlay('s.' + r.id);
+    };
+    body.append(prizes, meta, go);
+    art.append(cover, body);
+    grid.append(art);
+  }
+}
+
+// 頂列放不下 → 有圖示的分頁（逛機台、我的商店、收集簿）只留圖示；換語言、裝 App 按鈕出現、視窗變寬窄都會重量
+function fitBar() {
+  const bar = document.querySelector('.bar');
+  const fit = () => {
+    bar.classList.remove('tight');
+    if (bar.scrollWidth > bar.clientWidth + 1) bar.classList.add('tight');
+  };
+  const ro = new ResizeObserver(fit);
+  ro.observe(bar);
+  for (const el of bar.children) ro.observe(el);
+  fit();
+}
+
 // 可以安裝的網路 App（PWA，使用者 2026-10-26：「追加成可以下載的網路app」）
 //   發佈的網站（GitHub Pages）跟本機預覽才有 manifest：註冊 sw.js（離線也能開）、出現「下載 App」
 //   Chrome／Edge／Android：用瀏覽器的安裝提示；iPhone／iPad 的 Safari 沒有 → 打開教學；已經裝好（獨立視窗）就不顯示
@@ -2750,6 +2946,7 @@ async function changeLang(k) {
     if (!$('sheet-collection').hidden) openCollection();
   }
   if (app.dataset.mode === 'album') renderAlbum();
+  if (app.dataset.mode === 'browse') renderBrowse(false);
   await fontsReady();
   machine?.refreshLabels();
   scheduleDecor();
@@ -2784,6 +2981,10 @@ async function boot() {
   $('tab-create').onclick = () => setMode('create');
   $('tab-shop').onclick = () => setMode('shop');
   $('tab-album').onclick = () => setMode('album');
+  $('tab-browse').onclick = () => setMode('browse');
+  $('list-on').onchange = () => toggleListed($('list-on').checked);
+  $('browse-q').oninput = () => drawBrowse();
+  $('browse-more').onclick = () => loadBrowse(false);
   $('shop-new').onclick = newMachine;
   // 收集簿的大卡、結果卡：3D 閃卡（滑鼠移動／手機傾斜 → 跟著斜，holo.js）
   viewHolo = new Holo($('v-tilt'), $('sheet-card'));
@@ -2805,6 +3006,7 @@ async function boot() {
   });
   trade.poll();
   setupPwa();
+  fitBar();
   resHolo = new Holo($('r-tilt'), $('result-card'));
   // 從連結進來的玩家 → 回到那台機器；賣家 → 用目前的表單內容試玩
   $('tab-play').onclick = () => {
@@ -2901,6 +3103,7 @@ async function boot() {
   }
   const h = location.hash.slice(1);
   if (h.startsWith('f.')) openInvite(h.slice(2));
+  else if (h === 'browse') setMode('browse');
   else if (isMachineHash(h)) await enterPlay(h);
   else showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
   // 等台紙、貼紙畫好再拿掉載入畫面

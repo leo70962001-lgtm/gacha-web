@@ -81,16 +81,42 @@ button, input, select, textarea { font: inherit; color: inherit; }
 main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); min-height: 0; }
 .app[data-mode="play"] main { grid-template-columns: minmax(0, 1fr); }
 /* 我的商店、收集簿：整頁（機台舞台、開店表單都收起來） */
-.app[data-mode="shop"] main, .app[data-mode="album"] main { grid-template-columns: minmax(0, 1fr); }
-.app[data-mode="shop"] .stage, .app[data-mode="shop"] .panel, .app[data-mode="album"] .stage, .app[data-mode="album"] .panel { display: none; }
-.app[data-mode="shop"] #page-shop, .app[data-mode="album"] #page-album { display: block; }
+.app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main { grid-template-columns: minmax(0, 1fr); }
+.app[data-mode="shop"] .stage, .app[data-mode="shop"] .panel, .app[data-mode="album"] .stage, .app[data-mode="album"] .panel, .app[data-mode="browse"] .stage, .app[data-mode="browse"] .panel { display: none; }
+.app[data-mode="shop"] #page-shop, .app[data-mode="album"] #page-album, .app[data-mode="browse"] #page-browse { display: block; }
 .page { display: none; overflow-y: auto; background: var(--stage); min-height: 0; }
 .page-inner { max-width: 980px; margin: 0 auto; padding: 22px var(--gutter-r) 48px var(--gutter-l); display: grid; gap: 18px; }
 .page-head h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; }
 .page-head .lede { margin: 4px 0 0; }
 .modes .tab-ico { display: inline-flex; align-items: center; gap: 6px; }
 .modes .tab-ico svg { width: 18px; height: 18px; flex: none; }
+/* 頂列放不下（平板寬度、日文的分頁字比較長）→ app.js 的 fitBar() 加 .tight：有圖示的分頁只留圖示（aria-label 有字） */
+.bar.tight .modes .tab-ico span { display: none; }
+.bar.tight .modes .tab-ico { padding-inline: 10px; }
 .card-box { background: var(--surface); border: 2px solid var(--stroke); border-radius: 18px; box-shadow: 3px 3px 0 var(--stroke); }
+/* 逛機台（使用者 2026-10-26：「追加用戶做好的機器的瀏覽頁面」） */
+.browse-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+#browse-sort .chip[aria-selected="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+#browse-q { flex: 1; min-width: 160px; max-width: 320px; font: inherit; padding: 7px 12px; border-radius: 999px; border: 2px solid var(--stroke); background: var(--surface); color: var(--ink); }
+.browse-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.bcard { display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+.bcard-cover { position: relative; aspect-ratio: 1; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--c) 30%, #fff), color-mix(in srgb, var(--c) 55%, #dce8ef)); border-bottom: 2px solid var(--stroke); }
+.bcard-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.bcard-kind { position: absolute; left: 8px; top: 8px; font-size: 11px; font-weight: 900; padding: 2px 9px; border-radius: 999px; background: var(--surface); border: 1.5px solid var(--stroke); }
+.bcard-price { position: absolute; right: 8px; bottom: 8px; font: 13px/1 var(--font-num); padding: 6px 10px; border-radius: 999px; background: var(--accent); color: #fff; border: 2px solid var(--stroke); }
+.bcard-body { padding: 10px 12px 12px; display: grid; gap: 6px; align-content: start; }
+.bcard-body h3 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 18px; line-height: 1.2; overflow-wrap: anywhere; }
+.bcard-body small { color: var(--muted); font-size: 12px; }
+.bcard-prizes { display: flex; gap: 4px; }
+.bcard-prizes span { width: 34px; height: 34px; border-radius: 8px; border: 1.5px solid var(--stroke); background: #fffaf2 center / cover no-repeat; }
+.bcard-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bcard .btn { justify-self: stretch; text-align: center; margin-top: 2px; }
+#browse-more { justify-self: center; }
+.list-toggle { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); border: 2px dashed var(--line); cursor: pointer; }
+.list-toggle input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex: none; }
+.list-toggle span { display: grid; gap: 2px; }
+.list-toggle small { color: var(--muted); font-size: 12px; }
+.mach-pub { font-size: 11px; font-weight: 900; padding: 1px 8px; border-radius: 999px; background: var(--sun); border: 1.5px solid var(--stroke); margin-left: 6px; vertical-align: 2px; }
 /* 我的商店 */
 .shop-sum { display: flex; flex-wrap: wrap; gap: 10px; }
 .shop-sum .stat { padding: 10px 14px; display: grid; gap: 2px; min-width: 130px; }
@@ -767,7 +793,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 
 @media (max-width: 860px) {
   main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(240px, 44%) minmax(0, 1fr); }
-  .app[data-mode="play"] main, .app[data-mode="shop"] main, .app[data-mode="album"] main { grid-template-rows: minmax(0, 1fr); }
+  .app[data-mode="play"] main, .app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main { grid-template-rows: minmax(0, 1fr); }
   .panel { border-left: 0; border-top: 2px solid var(--stroke); }
 }
 @media (max-width: 640px) {
@@ -795,6 +821,14 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   .modes .tab-ico { padding: 5px 8px; }
   .page-head h1 { font-size: 24px; }
   .shop-list { grid-template-columns: minmax(0, 1fr); }
+  /* 逛機台：手機兩欄 */
+  .browse-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .bcard-body { padding: 8px 9px 10px; gap: 5px; }
+  .bcard-body h3 { font-size: 15px; }
+  .bcard-prizes span { width: 28px; height: 28px; border-radius: 6px; }
+  .bcard-meta { font-size: 11px; gap: 2px 8px; }
+  .bcard-kind { font-size: 10px; padding: 1px 7px; }
+  .bcard-price { font-size: 12px; padding: 5px 8px; }
   .chip-col { display: inline-flex; gap: 2px; }
   .hint { padding: 8px 12px; border-radius: 14px; }
   .hint .stepno { font-size: 11px; }
@@ -826,6 +860,10 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   .modes button { padding: 5px 7px; font-size: 13px; }
   .modes .tab-ico { padding: 5px 6px; }
   .lang select { max-width: 58px; }
+  /* 五個分頁：語言只留地球圖示（下拉選單透明蓋在上面，點了一樣打開） */
+  .lang { position: relative; width: 36px; padding: 0; justify-content: center; }
+  .lang svg { display: block; }
+  .lang select { position: absolute; inset: 0; width: 100%; max-width: none; opacity: 0; }
 }
 @media (max-width: 400px) {
   .brand { display: none; }
@@ -841,6 +879,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     <nav class="modes" role="tablist" data-i18n-aria="mode.label" aria-label="模式">
       <button id="tab-create" role="tab" aria-selected="true" data-i18n="tab.create">開店設定</button>
       <button id="tab-play" role="tab" aria-selected="false" data-i18n="tab.play">轉轉看</button>
+      <button id="tab-browse" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.browse" aria-label="逛機台"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg><span data-i18n="tab.browse">逛機台</span></button>
       <button id="tab-shop" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.shop" aria-label="我的商店"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 0 1-5.3 1.9A3 3 0 0 1 12 14a3 3 0 0 1-2.7-1.1A3 3 0 0 1 4 11z"/><path d="M6 14v6h12v-6"/><path d="M10 20v-4h4v4"/></svg><span data-i18n="tab.shop">我的商店</span></button>
       <button id="tab-album" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.album" aria-label="收集簿"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="15" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h4M12 12h4"/></svg><span data-i18n="tab.album">收集簿</span><b class="tab-badge" id="album-badge" hidden></b></button>
     </nav>
@@ -974,6 +1013,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
                 <button class="btn ghost" id="restock" hidden data-i18n="stock.restock">補貨（被轉走的補回來）</button>
               </div>
               <p class="meta-line" id="link-meta"></p>
+              <label class="list-toggle" id="list-wrap" hidden><input type="checkbox" id="list-on"><span><b data-i18n="browse.publish">公開到「逛機台」</b><small data-i18n="browse.publishHint">大家都能在逛機台找到這台、直接來轉（隨時可以取消）</small></span></label>
             </div>
           </li>
         </ol>
@@ -981,6 +1021,22 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       </div>
     </aside>
     <!-- 我的商店：我開的每一台機台 -->
+    <!-- 逛機台：大家公開的機台（supabase/07_browse.sql） -->
+    <section class="page" id="page-browse" hidden aria-labelledby="browse-title">
+      <div class="page-inner">
+        <header class="page-head">
+          <h1 id="browse-title" data-i18n="browse.title">逛機台</h1>
+          <p class="lede" data-i18n="browse.lede">大家做好、公開的轉蛋機和轉卡機，點「去轉」就能玩。</p>
+        </header>
+        <div class="browse-bar">
+          <div class="chips" id="browse-sort" role="tablist"></div>
+          <input id="browse-q" type="search" data-i18n-aria="browse.search" aria-label="搜尋">
+        </div>
+        <p class="album-empty card-box" id="browse-empty" hidden></p>
+        <div class="browse-grid" id="browse-grid"></div>
+        <button class="btn" id="browse-more" hidden data-i18n="browse.more">再多看一些</button>
+      </div>
+    </section>
     <section class="page" id="page-shop" hidden aria-labelledby="shop-title">
       <div class="page-inner">
         <header class="page-head">

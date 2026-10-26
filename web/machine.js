@@ -1951,6 +1951,28 @@ export class Machine {
     this._layoutGrid();
   }
 
+  // 逛機台的封面：暫時換成正方形畫面、上下沒有 UI，整台機器剛好入鏡拍一張，再換回原本的畫面（同一個 frame 裡，看不到閃）
+  snapshot(size = 240) {
+    const r = this.renderer;
+    const insets = this.insets;
+    const pr = r.getPixelRatio();
+    r.setPixelRatio(1);
+    r.setSize(size, size, false);
+    this.camera.aspect = 1;
+    this.camera.updateProjectionMatrix();
+    this.insets = { top: 0, bottom: 0, gridTop: 0 };
+    this._frameCamera();
+    this._fitBg();
+    r.render(this.scene, this.camera);
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    c.getContext('2d').drawImage(r.domElement, 0, 0, size, size);
+    r.setPixelRatio(pr);
+    this.insets = insets;
+    this.resize();
+    return c;
+  }
+
   // 讓整台機器剛好入鏡：直式螢幕要退遠一點
   // 精準取景：把機台外框（8 個角，含預設的側轉角度）投影到畫面上，
   // 找出能塞進「上下 UI 之間那塊空間」的最近距離，再把它移到那塊空間的正中間

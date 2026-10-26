@@ -217,3 +217,9 @@ export const tradeAccept = (w, id, back) => rpc('trade_accept', { ...cred(w), p_
 export const tradeDecline = (w, id) => rpc('trade_decline', { ...cred(w), p_trade: id });
 export const tradeCancel = (w, id) => rpc('trade_cancel', { ...cred(w), p_trade: id });
 export const tradeDone = (w, id) => rpc('trade_done', { ...cred(w), p_trade: id });
+
+// ---------- 逛機台（supabase/07_browse.sql） ----------
+// 店家自己公開（要機台的修改鑰匙）；meta＝列表用的小摘要（名稱、店名、種類、價錢、封面小圖…）
+export const setListed = (cred, on, meta) => rpc('set_listed', { p_id: cred.id, p_key: cred.key, p_listed: on, p_meta: meta || null });
+// 列表：sort＝new（最近更新）／hot（被轉最多次），一次 24 台
+export const browseMachines = (sort, offset = 0) => rpc('browse_machines', { p_sort: sort, p_limit: 24, p_offset: offset });

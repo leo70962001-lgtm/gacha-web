@@ -86,6 +86,12 @@
 - 連結 codec `cb`＝[圖長度, 格式, 文字, 邊框色, 種類 i/p/c, 樣式 id 或顏色, SR 加工, SSR 加工]；舊的 4 欄格式照樣讀得懂
 - 坑：`draftBack()` 在開頁讀草稿時就會跑 → 它用到的 `backIsDefault` 要是 function 宣告（const 還沒初始化會讓整個 App 開不起來）
 
+### SR／SSR 表面加工（2026-10-26）
+
+使用者：「SSR 跟SR 表面加工也追加進去」。開店頁第 2 步「SR／SSR 表面加工」（轉蛋機、轉卡機都有）：SR、SSR 各選一種 — 雷射（ホロ）、紋理、彩虹亮粉、彩虹＋金框、銀箔、不加工（預設 SR 紋理、SSR 彩虹＋金框＝原本的樣子）；上面兩張會晃的 3D 閃卡預覽（用第一個有照片的獎品）。
+- 存 `draft.fin`＝{ sr, ssr }、連結 codec `cf`＝[SR 代碼, SSR 代碼]（都是預設就不寫）；`codec.finOf(fin, 稀有度)` 統一換算（N 不加工、R 雷射）
+- 3D 卡面：`machine.setFrontFinish()` → `frontModes`（雷射 1、紋理 2、金框 3、彩虹 4、銀箔 5、不加工 0）；CSS 閃卡（holo.js）用 `fx-<加工>` class（原本的 `.tilt.r1/r2/r3` 規則改成 `.tilt.fx-holo/fx-texture/fx-gold…`，再加彩虹（沒金框）、銀箔）；結果卡、收集簿大卡、卡冊卡套（`pk-holo fx-…`、銀箔的卡套邊框是銀色）都照店家選的；收集簿記在 `e.fin`，交換時跟著機台資訊送
+
 ## 可以安裝的網路 App（PWA，2026-10-26）
 
 使用者：「追加成可以下載的網路app」。只有發佈的網站（GitHub Pages）跟本機預覽有；claude.ai artifact 在 iframe 裡裝不了。
