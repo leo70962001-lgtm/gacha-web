@@ -63,6 +63,18 @@
 - 收集簿本身還是存在各自的裝置（改 localStorage 就能作弊）；要防作弊得把收集簿也搬上伺服器
 - 測試資料：測試錢包 `2kwVijo30a`（暱稱 Test B）跟交換 #1–#5 留在資料庫
 
+## 逛機台（2026-10-26）
+
+使用者：「追加用戶做好的機器的瀏覽頁面」。上方列第三個分頁「逛機台」（指南針圖示），伺服器 `supabase/07_browse.sql`（2026-10-26 在 SQL Editor 跑過）。
+- **要店家自己公開**：開店頁「做連結」那區，有短連結以後多一個「公開到逛機台」勾選（`#list-on` → `toggleListed()`）；沒勾的機台還是只有拿到連結的人看得到。可以隨時取消
+- **送上去的只有小摘要**（`listingMeta()`，存在 `machines.meta`）：名稱、店名、種類、主題色、價錢、獎品數、前 4 個獎品 64px 小圖、機台封面 240px（`machine.snapshot()`：暫時換成正方形畫面、上下沒 UI，整台入鏡拍一張再換回來）。之後再按「做連結」（或自動同步）會順便更新摘要；不在開店頁時用上次的封面（`draft.listedCover`）
+- **伺服器**：`set_listed(id, key, listed, meta)` 要機台的修改鑰匙、meta ≤ 80KB；`browse_machines(sort, limit ≤ 48, offset)` 只列 `listed` 的，`new`＝最近更新、`hot`＝被轉最多次，順便回傳 pulls、total（stock 加總），卡片上「剩下」＝total − pulls
+- **逛機台頁**：最新／熱門、名稱或店名搜尋（只搜已經載入的）、一次 24 台＋「再多看一些」；卡片＝封面、種類、價錢、名稱、店名、獎品小圖、獎品數／被轉幾次／剩下、「去轉」（網址換成 `#s.<id>`，跟打開分享連結一樣）。別人的摘要先檢查（圖只收 `data:image/(webp|png|jpeg);base64`、字截長度、價錢夾範圍）。打開網址 `#browse` 直接到這頁。手機兩欄
+- **上方列變五個分頁**：放不下時（平板寬度、日文字比較長）`fitBar()` 加 `.tight`，有圖示的分頁只留圖示；≤430px 語言只留地球圖示（下拉選單透明蓋在上面）。三種語言在 375／768／976px 都量過不會超出
+- 卡片的 class 是 `.bcard*`（`.mcard` 已經是 10 連的結果卡）
+- claude.ai artifact 連不到 Supabase → 逛機台顯示「連不上」；要用 GitHub Pages 的網址
+- 測試：`127.0.0.1:8790` 的範例機台（`Y4tqq1npvr`）公開 → `localhost` 看得到 → 去轉 → 測完取消公開了
+
 ## 收集簿：卡片冊＋轉蛋收藏（2026-10-25）
 
 使用者：「把收集簿給優化 分卡片冊跟轉蛋收集品 卡片冊做成像冊子一樣」。收集簿上面兩個分頁（記在 `clatter.albumTab`），程式在 `web/binder.js`。
@@ -203,6 +215,7 @@ Maya 匯入的網格帶自訂法線，蓋掉了 Blender 的銳邊 → 機身 56%
 | `web/decor.js` | 機台上的貼紙與台紙（Canvas：Gemini 背景＋文字） |
 | `web/codec.js` | 設定 ⇄ 連結（二進位打包＋deflate-raw＋base64url） |
 | `web/sfx.js` | WebAudio 合成音效 |
+| `supabase/07_browse.sql` | 逛機台：`machines.listed／meta／listed_at`、`set_listed`、`browse_machines` |
 | `web/i18n.js` | 中／日／英文字串、語言切換（HTML 用 `data-i18n`） |
 
 ## 量測值（three.js 座標：Y 上、+Z 朝正面，公尺）

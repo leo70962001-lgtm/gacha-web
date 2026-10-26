@@ -128,6 +128,27 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .mach-top { display: flex; gap: 12px; align-items: center; }
 .mach-ico { width: 54px; height: 64px; border-radius: 12px; border: 2px solid var(--stroke); display: grid; place-items: center; flex: none; background: var(--c); }
 .mach-ico svg { width: 30px; height: 30px; }
+.mach-ico img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
+/* 開店頁最上面的機台切換：選單換台、＋新機台、複製這台 */
+.mach-switch { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 10px 12px; margin-bottom: 16px; }
+.ms-pick { flex: 1 1 180px; display: grid; gap: 3px; min-width: 0; }
+.ms-pick small { font-size: 12px; font-weight: 700; color: var(--muted); }
+.ms-pick select { font: inherit; font-weight: 700; height: 40px; padding: 0 10px; border: 2px solid var(--stroke); border-radius: 12px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; cursor: pointer; }
+.mach-switch .btn { padding: 7px 14px; font-size: 14px; }
+.mach-switch .btn:not(.ghost) { box-shadow: 2px 2px 0 var(--stroke); }
+/* 逛機台的封面：連結區的一列＋裁切的對話框 */
+.cover-row { display: flex; gap: 12px; align-items: center; margin-top: 8px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); }
+.cover-row img { width: 64px; height: 64px; border-radius: 12px; border: 2px solid var(--stroke); object-fit: cover; background: var(--surface); flex: none; }
+.cover-txt { display: grid; gap: 4px; min-width: 0; }
+.cover-txt small { color: var(--muted); font-size: 12px; }
+.cover-txt .row { gap: 6px; margin-top: 2px; }
+.cover-txt .btn { padding: 5px 12px; font-size: 13px; }
+.cover-txt .btn.sun { box-shadow: 2px 2px 0 var(--stroke); }
+.cover-stage { justify-self: center; width: min(100%, 320px); aspect-ratio: 1; border-radius: 16px; overflow: hidden; border: 3px solid var(--stroke); touch-action: none; cursor: grab; background: var(--surface-2); }
+.cover-stage:active { cursor: grabbing; }
+.cover-stage canvas { width: 100%; height: 100%; display: block; }
+.cover-zoom { display: flex; gap: 10px; align-items: center; font-weight: 700; font-size: 14px; }
+.cover-zoom input { flex: 1; accent-color: var(--accent); }
 .mach-top h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 20px; line-height: 1.2; overflow-wrap: anywhere; }
 .mach-top p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
 .mach-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
@@ -591,6 +612,31 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .bg-tile.color { background-image: conic-gradient(from 90deg, #ff6b6b, #ffd93d, #6bcb77, #4d96ff, #b06bff, #ff6b6b); }
 .bg-tile.upload::before { content: "＋"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; font-weight: 900; color: var(--muted); }
 .bg-tile.upload.has::before { content: none; }
+/* 背景音樂的選項：每首一個顏色（像唱片封面）＋音符 */
+.bgm-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+.bgm-tile { border: 2px solid var(--stroke); border-radius: 12px; padding: 8px 4px 6px; cursor: pointer; display: grid; justify-items: center; gap: 4px; color: #fff; font: inherit; background: var(--g, var(--surface-2)); min-width: 0; }
+.bgm-tile svg { width: 22px; height: 22px; filter: drop-shadow(0 1px 0 rgba(0,0,0,.25)); }
+.bgm-tile span { font-size: 11px; font-weight: 800; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 0 rgba(0,0,0,.3); }
+.bgm-tile[aria-checked="true"] { outline: 3px solid var(--accent); outline-offset: 2px; }
+.bgm-tile[aria-checked="true"] svg { animation: bgmBob 1s ease-in-out infinite; }
+@keyframes bgmBob { 50% { transform: translateY(-3px) rotate(-8deg); } }
+.bgm-shop { --g: linear-gradient(135deg, #ff8a5c, #ffc94d); }
+.bgm-arcade { --g: linear-gradient(135deg, #6b5bff, #ff4fb6); }
+.bgm-sakura { --g: linear-gradient(135deg, #ff9ec7, #ffd1e3); }
+.bgm-night { --g: linear-gradient(135deg, #24305e, #5a6fd6); }
+.bgm-festival { --g: linear-gradient(135deg, #e8423b, #ffb03b); }
+.bgm-dream { --g: linear-gradient(135deg, #a98bff, #7fd8ff); }
+.bgm-none, .bgm-up { color: var(--ink); }
+.bgm-up span { color: var(--ink); text-shadow: none; }
+.bgm-none span { text-shadow: none; }
+/* 音量面板 */
+.snd-pop { position: fixed; z-index: 30; width: min(280px, calc(100vw - 16px)); display: grid; gap: 10px; padding: 14px; background: var(--surface); border: 2px solid var(--stroke); border-radius: 18px; box-shadow: 4px 4px 0 var(--stroke); }
+.snd-row { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+.snd-row input { accent-color: var(--accent); width: 100%; }
+.snd-mute { display: flex; gap: 8px; align-items: center; font-size: 14px; font-weight: 700; cursor: pointer; }
+.snd-mute input { width: 18px; height: 18px; accent-color: var(--accent); }
+#snd-now { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .bgm-tile[aria-checked="true"] svg { animation: none; } }
 .swatch[aria-checked="true"]::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 3px solid var(--ink); }
 .link-box { display: grid; gap: 10px; }
 .link-box textarea { width: 100%; resize: none; border: 2px solid var(--line); border-radius: 12px; padding: 10px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: var(--surface-2); word-break: break-all; }
@@ -944,6 +990,12 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <div class="panel-inner">
         <h1 data-i18n="h1">開一台你的轉蛋機</h1>
         <p class="lede" data-i18n="lede"></p>
+        <!-- 機台切換：可以開好幾台（使用者 2026-10-26：「追加可以做多台的機器」） -->
+        <div class="mach-switch card-box" id="mach-switch">
+          <label class="ms-pick"><small id="mach-count"></small><select id="mach-sel"></select></label>
+          <button type="button" class="btn" id="mach-new" data-i18n="sw.new">＋ 新機台</button>
+          <button type="button" class="btn ghost" id="mach-dup" data-i18n="sw.dup">複製這台</button>
+        </div>
         <button type="button" class="wallet-card" id="wallet-card" hidden>
           <span class="w-coin" aria-hidden="true"></span>
           <span class="w-main"><span class="w-label" data-i18n="wallet.title">我的錢包</span><strong id="w-bal">0</strong><small data-i18n="wallet.unit">枚</small></span>
@@ -976,6 +1028,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
             </div>
             <div class="field"><span id="sw-label" data-i18n="machineColor">機台顏色</span><div class="swatches" id="swatches" role="radiogroup" aria-labelledby="sw-label"></div></div>
             <div class="field"><span id="bg-label" data-i18n="bg.label">背景</span><div class="bgs" id="bgs" role="radiogroup" aria-labelledby="bg-label"></div></div>
+            <div class="field"><span id="bgm-label" data-i18n="bgm.label">背景音樂</span><div class="bgm-tiles" id="bgm-tiles" role="radiogroup" aria-labelledby="bgm-label"></div><p class="hint-text" data-i18n="bgm.hint"></p></div>
             <div class="field" id="front-field" hidden><span data-i18n="ffin.label">SR／SSR 表面加工</span>
               <div class="front-ed">
                 <div class="front-prev" id="front-prev"></div>
@@ -1014,6 +1067,18 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
               </div>
               <p class="meta-line" id="link-meta"></p>
               <label class="list-toggle" id="list-wrap" hidden><input type="checkbox" id="list-on"><span><b data-i18n="browse.publish">公開到「逛機台」</b><small data-i18n="browse.publishHint">大家都能在逛機台找到這台、直接來轉（隨時可以取消）</small></span></label>
+              <!-- 逛機台的封面（使用者 2026-10-26：「公開的機器的圖片可以自己設置」） -->
+              <div class="cover-row" id="cover-wrap" hidden>
+                <img id="cover-img" alt="" width="64" height="64">
+                <div class="cover-txt">
+                  <b data-i18n="cover.label">公開用的封面</b>
+                  <small id="cover-state"></small>
+                  <div class="row">
+                    <button type="button" class="btn sun" id="cover-pick" data-i18n="cover.pick">換成自己的圖片</button>
+                    <button type="button" class="btn ghost" id="cover-3d" hidden data-i18n="cover.use3d">改回 3D 機台</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </li>
         </ol>
@@ -1193,9 +1258,34 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   </div>
 </div>
 
+<!-- 逛機台的封面：自己的圖片裁成正方形（拖曳調位置、滑桿／滾輪調大小） -->
+<div class="sheet" id="sheet-cover" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="cv-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="cv-title" data-i18n="cover.title">設定封面</h2>
+    <p class="hint-text" data-i18n="cover.drag">拖曳調整位置、用滑桿或滾輪調整大小</p>
+    <div class="cover-stage"><canvas id="cv-canvas" width="320" height="320"></canvas></div>
+    <label class="cover-zoom"><span data-i18n="cover.zoom">大小</span><input type="range" id="cv-zoom" min="1" max="4" step="0.01" value="1"></label>
+    <div class="row">
+      <button class="btn primary" id="cv-ok" data-i18n="cover.ok">用這張</button>
+      <button class="btn ghost" data-close data-i18n="cover.cancel">取消</button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="file" accept="image/*,audio/*,video/*" hidden>
 <input type="file" id="file-media" accept="audio/*,video/*" hidden>
 <input type="file" id="file-bg" accept="image/*" hidden>
+<input type="file" id="file-cover" accept="image/*" hidden>
+<input type="file" id="file-bgm" accept="audio/*" hidden>
+
+<!-- 音量（右上角的喇叭）：效果音、背景音樂分開調 -->
+<div class="snd-pop" id="snd-pop" role="dialog" data-i18n-aria="snd.title" aria-label="音量" hidden>
+  <label class="snd-row"><span data-i18n="snd.sfx">效果音</span><input type="range" id="vol-sfx" min="0" max="1" step="0.05"></label>
+  <label class="snd-row"><span data-i18n="snd.bgm">背景音樂</span><input type="range" id="vol-bgm" min="0" max="1" step="0.05"></label>
+  <label class="snd-mute"><input type="checkbox" id="snd-mute"><span data-i18n="snd.mute">全部靜音</span></label>
+  <small id="snd-now"></small>
+</div>
 
 <script type="importmap">
 { "imports": {

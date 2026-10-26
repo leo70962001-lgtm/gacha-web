@@ -29,13 +29,14 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  if (req.headers.has('range')) return; // 音樂、影片的分段請求（206）→ 讓瀏覽器自己拿（快取存不了 206）
   const url = new URL(req.url);
   if (url.origin === location.origin) {
     if (url.pathname.includes('__snap')) return;
     e.respondWith(
       fetch(req)
         .then((res) => {
-          if (res.ok) {
+          if (res.status === 200) {
             const copy = res.clone();
             caches.open(CACHE).then((c) => c.put(req, copy));
           }

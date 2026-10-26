@@ -3,8 +3,8 @@
 //   版本固定的外部檔案（three.js、字型檔、MediaPipe）：有快取就用；字型的 CSS：先用快取、背景更新
 //   Supabase、YouTube 那些不碰（一定要連線）
 //   VERSION、ASSETS 由 tools/build_site.py 換掉（docs/ 的檔案清單＋內容雜湊）；本機預覽是空的，只做執行時快取
-const VERSION = '52e604af1141';
-const ASSETS = ["./", "albumedit.js", "app.js", "assets/ao_body.jpg", "assets/ao_card_body.jpg", "assets/ao_card_knob.jpg", "assets/ao_card_lid.jpg", "assets/ao_handle.jpg", "assets/ao_lid.jpg", "assets/card.b64.txt", "assets/gacha.b64.txt", "assets/icons/apple-touch-icon.png", "assets/icons/favicon-32.png", "assets/icons/icon-192.png", "assets/icons/icon-512.png", "assets/icons/maskable-512.png", "assets/tex/back_candy.webp", "assets/tex/back_cats.webp", "assets/tex/back_dogs.webp", "assets/tex/back_galaxy.webp", "assets/tex/back_night.webp", "assets/tex/back_sakura.webp", "assets/tex/back_shop.webp", "assets/tex/back_stars.webp", "assets/tex/badge.webp", "assets/tex/banner.webp", "assets/tex/bg_cats.webp", "assets/tex/bg_dogs.webp", "assets/tex/bg_galaxy.webp", "assets/tex/bg_night.webp", "assets/tex/bg_sakura.webp", "assets/tex/bg_shop.webp", "assets/tex/bg_stars.webp", "assets/tex/binder.webp", "assets/tex/card.webp", "assets/tex/cardback.webp", "assets/tex/coin.webp", "assets/tex/cside.webp", "assets/tex/shelf_row.webp", "assets/tex/side.webp", "assets/tex/strip.webp", "assets/tex/wall.webp", "binder.js", "cardkit.js", "cloud.js", "codec.js", "copy.js", "decor.js", "fx.js", "holo.js", "i18n.js", "machine.js", "manifest.webmanifest", "media.js", "nowplaying.js", "seg.js", "sfx.js", "trade.js", "index.html"];
+const VERSION = 'c4482e1c8b95';
+const ASSETS = ["./", "albumedit.js", "app.js", "assets/ao_body.jpg", "assets/ao_card_body.jpg", "assets/ao_card_knob.jpg", "assets/ao_card_lid.jpg", "assets/ao_handle.jpg", "assets/ao_lid.jpg", "assets/card.b64.txt", "assets/gacha.b64.txt", "assets/icons/apple-touch-icon.png", "assets/icons/favicon-32.png", "assets/icons/icon-192.png", "assets/icons/icon-512.png", "assets/icons/maskable-512.png", "assets/tex/back_candy.webp", "assets/tex/back_cats.webp", "assets/tex/back_dogs.webp", "assets/tex/back_galaxy.webp", "assets/tex/back_night.webp", "assets/tex/back_sakura.webp", "assets/tex/back_shop.webp", "assets/tex/back_stars.webp", "assets/tex/badge.webp", "assets/tex/banner.webp", "assets/tex/bg_cats.webp", "assets/tex/bg_dogs.webp", "assets/tex/bg_galaxy.webp", "assets/tex/bg_night.webp", "assets/tex/bg_sakura.webp", "assets/tex/bg_shop.webp", "assets/tex/bg_stars.webp", "assets/tex/binder.webp", "assets/tex/card.webp", "assets/tex/cardback.webp", "assets/tex/coin.webp", "assets/tex/cside.webp", "assets/tex/shelf_row.webp", "assets/tex/side.webp", "assets/tex/strip.webp", "assets/tex/wall.webp", "bgm.js", "binder.js", "cardkit.js", "cloud.js", "codec.js", "copy.js", "decor.js", "fx.js", "holo.js", "i18n.js", "machine.js", "manifest.webmanifest", "media.js", "nowplaying.js", "seg.js", "sfx.js", "trade.js", "index.html"];
 const CACHE = 'clatter-' + VERSION;
 const RUNTIME = 'clatter-runtime';
 
@@ -29,13 +29,14 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  if (req.headers.has('range')) return; // 音樂、影片的分段請求（206）→ 讓瀏覽器自己拿（快取存不了 206）
   const url = new URL(req.url);
   if (url.origin === location.origin) {
     if (url.pathname.includes('__snap')) return;
     e.respondWith(
       fetch(req)
         .then((res) => {
-          if (res.ok) {
+          if (res.status === 200) {
             const copy = res.clone();
             caches.open(CACHE).then((c) => c.put(req, copy));
           }

@@ -1,7 +1,8 @@
 // Clatter 轉蛋鋪：開店設定 → 產生連結 → 玩家投幣、轉把手、開扭蛋
 import { Machine, THEMES } from './machine.js';
-import { unlock, setMuted, sfx } from './sfx.js';
-import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES, FRONT_FINISHES, finOf } from './codec.js';
+import { unlock, setMuted, setSfxVolume, sfx } from './sfx.js';
+import { bgm } from './bgm.js';
+import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES, FRONT_FINISHES, BGM_PRESETS, BGM_DEFAULT, finOf } from './codec.js';
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers, drawCardBack } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
@@ -12,6 +13,19 @@ import { Trade } from './trade.js';
 import { AlbumEdit, recount, ensureBase, titleOf } from './albumedit.js';
 import { copyText } from './copy.js';
 import { mountNowPlaying } from './nowplaying.js';
+// 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
+function nowPlaying(box, m, o) {
+  const p = mountNowPlaying(box, m, o);
+  if (!['yt', 'sc', 'sp'].includes(m?.k)) return p;
+  const key = {};
+  bgm.hush(key);
+  const stop = p.stop.bind(p);
+  p.stop = () => {
+    stop();
+    bgm.unhush(key);
+  };
+  return p;
+}
 import { setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
@@ -221,6 +235,7 @@ function loadDraft(uid = shop.cur) {
   d.kind = d.kind === 'card' ? 'card' : 'capsule';
   d.bg = draftBg(d.bg);
   d.back = draftBack(d.back);
+  d.bgm = draftBgm(d.bgm);
   d.fin = d.fin && (FRONT_FINISHES.includes(d.fin.sr) || FRONT_FINISHES.includes(d.fin.ssr)) ? { sr: FRONT_FINISHES.includes(d.fin.sr) ? d.fin.sr : 'texture', ssr: FRONT_FINISHES.includes(d.fin.ssr) ? d.fin.ssr : 'gold' } : null;
   if (!d.price || !CURRENCIES.includes(d.price.cur)) d.price = { coins: 5, unit: 10, cur: 'NT$' };
   // 雲端短連結的 id＋修改鑰匙：有的話之後改設定會自動更新到同一條連結
@@ -249,6 +264,17 @@ function draftBack(b) {
     ssr: FINISHES.includes(b.ssr) ? b.ssr : undefined,
   };
   return backIsDefault(back) ? null : back;
+}
+
+// 背景音樂：{ k: 'preset', id }、{ k: 'none' }、{ k: 'media', media }（上傳的本機檔案或 mp3 網址）；null＝預設曲
+function draftBgm(b) {
+  if (b?.k === 'none') return { k: 'none' };
+  if (b?.k === 'preset' && BGM_PRESETS.includes(b.id)) return b.id === BGM_DEFAULT ? null : { k: 'preset', id: b.id };
+  if (b?.k === 'media') {
+    const m = draftMedia(b.media);
+    if (m && (m.k === 'au' || (m.k === 'file' && m.kind === 'audio'))) return { k: 'media', media: m };
+  }
+  return null;
 }
 
 function draftMedia(m) {
@@ -382,8 +408,133 @@ function renderForm() {
   for (const b of $('swatches').children) b.setAttribute('aria-checked', String(b.dataset.k === draft.theme));
   for (const b of $('kinds').children) b.setAttribute('aria-checked', String(b.dataset.kind === (draft.kind || 'capsule')));
   renderBgs();
+  renderBgm();
   renderBack();
   renderFront();
+  renderSwitch();
+}
+
+// ---------- 背景音樂（使用者 2026-10-26：「可以設定背景音樂」） ----------
+//   店家選：預設曲（Gemini 做的）、不要音樂、上傳自己的曲子；選了馬上播（開店頁、試玩、買家轉都聽得到）
+const NOTE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.6" fill="currentColor"/><circle cx="17.5" cy="16" r="2.6" fill="currentColor"/></svg>';
+function renderBgm() {
+  const box = $('bgm-tiles');
+  if (!box.childElementCount) {
+    const tile = (k, cls, svg = NOTE_SVG) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'bgm-tile ' + cls;
+      b.dataset.k = k;
+      b.setAttribute('role', 'radio');
+      b.innerHTML = svg;
+      b.append(document.createElement('span'));
+      box.append(b);
+      return b;
+    };
+    for (const id of BGM_PRESETS) tile('preset:' + id, 'bgm-' + id).onclick = () => setBgm(id === BGM_DEFAULT ? null : { k: 'preset', id });
+    tile('none', 'bgm-none', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" opacity=".45"/><path d="M4 4l16 16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>').onclick = () => setBgm({ k: 'none' });
+    tile('media', 'bgm-up', '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 19h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>').onclick = () => {
+      $('file-bgm').value = '';
+      $('file-bgm').click();
+    };
+    $('file-bgm').addEventListener('change', async () => {
+      const f = $('file-bgm').files[0];
+      if (!f) return;
+      if (f.size > MAX_FILE) return toast(t('media.tooBig'));
+      if (!f.type.startsWith('audio')) return toast(t('bgm.notAudio'));
+      const old = draft.bgm?.k === 'media' ? draft.bgm.media : null;
+      setBgm({ k: 'media', media: await saveLocal(f) });
+      if (old?.k === 'file') removeLocal(old);
+    });
+  }
+  const b = draft.bgm;
+  const cur = !b ? 'preset:' + BGM_DEFAULT : b.k === 'preset' ? 'preset:' + b.id : b.k;
+  for (const el of box.children) {
+    const k = el.dataset.k;
+    el.setAttribute('aria-checked', String(k === cur));
+    const label = k.startsWith('preset:') ? t('bgm.p.' + k.slice(7)) : k === 'none' ? t('bgm.none') : b?.k === 'media' ? b.media.name || t('bgm.custom') : t('bgm.upload');
+    el.querySelector('span').textContent = label;
+    el.setAttribute('aria-label', label);
+    el.title = label;
+  }
+}
+function setBgm(b) {
+  unlock();
+  draft.bgm = b;
+  renderBgm();
+  draftChanged();
+  playBgm(draft.bgm);
+}
+// 要播哪個檔案：預設曲／自己的檔案（本機的先用、沒有就用雲端的）／mp3 網址
+async function bgmUrl(b) {
+  if (!b || b.k === 'preset') return asset('bgm/' + (BGM_PRESETS.includes(b?.id) ? b.id : BGM_DEFAULT) + '.mp3');
+  const m = b.k === 'media' ? b.media : null;
+  if (m?.k === 'file') return (await localUrl(m).catch(() => null)) || (m.remote && parseMediaUrl(m.remote)?.u) || null;
+  return m?.k === 'au' ? m.u : null;
+}
+let bgmTok = null;
+let bgmName = '';
+function playBgm(b) {
+  const tok = (bgmTok = {});
+  bgmName = !b ? t('bgm.p.' + BGM_DEFAULT) : b.k === 'preset' ? t('bgm.p.' + b.id) : b.k === 'none' ? '' : b.media?.k === 'file' ? b.media.name : mediaLabel(b.media).replace(/^♪ /, '');
+  bgmUrl(b)
+    .then((u) => tok === bgmTok && bgm.play(u))
+    .catch(() => {});
+  if (!$('snd-pop').hidden) renderSoundPop();
+}
+
+// ---------- 音量（右上角的喇叭）：效果音、背景音樂分開調，存在這台裝置 ----------
+const audioPref = Object.assign({ sfx: 0.8, bgm: 0.5, mute: false }, store.get('clatter.audio') || {});
+function applyAudio() {
+  setSfxVolume(audioPref.sfx);
+  setMuted(audioPref.mute);
+  bgm.setVolume(audioPref.bgm);
+  bgm.setMuted(audioPref.mute);
+  $('btn-sound').setAttribute('aria-pressed', String(!audioPref.mute && (audioPref.sfx > 0 || audioPref.bgm > 0)));
+  store.set('clatter.audio', audioPref);
+}
+function renderSoundPop() {
+  $('vol-sfx').value = audioPref.sfx;
+  $('vol-bgm').value = audioPref.bgm;
+  $('snd-mute').checked = audioPref.mute;
+  $('snd-now').textContent = bgmName ? t('snd.now', { name: bgmName }) : t('snd.none');
+}
+function toggleSoundPop(open = $('snd-pop').hidden) {
+  const pop = $('snd-pop');
+  pop.hidden = !open;
+  $('btn-sound').setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  unlock();
+  renderSoundPop();
+  const r = $('btn-sound').getBoundingClientRect();
+  pop.style.top = Math.round(r.bottom + 8) + 'px';
+  pop.style.right = Math.max(8, Math.round(innerWidth - r.right)) + 'px';
+}
+function bindSound() {
+  $('btn-sound').setAttribute('aria-haspopup', 'dialog');
+  $('btn-sound').onclick = () => toggleSoundPop();
+  $('vol-sfx').addEventListener('input', () => {
+    audioPref.sfx = +$('vol-sfx').value;
+    audioPref.mute = false;
+    applyAudio();
+    renderSoundPop();
+  });
+  $('vol-sfx').addEventListener('change', () => sfx.tap()); // 放開滑桿 → 聽一下現在多大聲
+  $('vol-bgm').addEventListener('input', () => {
+    audioPref.bgm = +$('vol-bgm').value;
+    audioPref.mute = false;
+    applyAudio();
+    renderSoundPop();
+  });
+  $('snd-mute').addEventListener('change', () => {
+    audioPref.mute = $('snd-mute').checked;
+    applyAudio();
+  });
+  // 點外面、按 Esc → 關
+  addEventListener('pointerdown', (e) => !$('snd-pop').hidden && !e.target.closest('#snd-pop, #btn-sound') && toggleSoundPop(false));
+  addEventListener('keydown', (e) => e.key === 'Escape' && !$('snd-pop').hidden && (toggleSoundPop(false), $('btn-sound').focus()));
+  addEventListener('resize', () => !$('snd-pop').hidden && toggleSoundPop(true));
+  applyAudio();
 }
 
 // ---------- SR／SSR 表面加工（使用者 2026-10-26：「SSR 跟SR 表面加工也追加進去」） ----------
@@ -793,6 +944,7 @@ function draftChanged(redrawItems = false) {
   draft.sample = false;
   linkToken = null;
   saveDraft();
+  relabelSwitch();
   if (draft.cloud && cloudReady()) scheduleSync();
   else {
     $('link-out').hidden = true;
@@ -917,6 +1069,7 @@ function bindForm() {
   $('restock').onclick = restock;
   $('new-link').onclick = () => {
     // 舊連結停在目前的內容；之後的修改只會更新新連結
+    if (draft.listed && draft.cloud && cloudReady()) setListed(draft.cloud, false).catch(() => {}); // 公開搬到新連結
     delete draft.cloud;
     saveDraft();
     requestSync(false).then(() => draft.cloud && toast(t('t.newLink')));
@@ -984,6 +1137,18 @@ async function publishLink(auto) {
           upFail++;
         }
       }
+      const bm = draft.bgm?.k === 'media' ? draft.bgm.media : null;
+      if (bm?.k === 'file' && !bm.remote) {
+        btn.textContent = t('link.uploading', { name: bm.name });
+        try {
+          const u = await localUrl(bm);
+          if (!u) throw new Error('missing');
+          bm.remote = await uploadMedia(await (await fetch(u)).blob(), bm.name, 'audio');
+          saveDraft();
+        } catch (e) {
+          upFail++;
+        }
+      }
       btn.textContent = t('link.making');
     }
     ensureUids(draft);
@@ -1006,7 +1171,7 @@ async function publishLink(auto) {
     const c = draft.cloud;
     showLinkStatus({ url: shareBase() + '#' + (c ? 's.' + c.id : token), short: !!c, failed, upFail, auto, at: Date.now() });
     if (c && !failed) refreshStats();
-    if (c && !failed && draft.listed) listingMeta().then((meta) => setListed(c, true, meta)).catch(() => {});
+    if (c && !failed) pushListing();
     if (failed && c) {
       clearTimeout(syncTimer);
       syncTimer = setTimeout(() => requestSync(true), 15000); // 連不上 → 15 秒後再試
@@ -1124,6 +1289,7 @@ function showLinkStatus(s) {
   $('restock').hidden = !s.short;
   $('list-wrap').hidden = !(s.short && draft.cloud);
   $('list-on').checked = !!draft.listed;
+  renderCover();
   const meta = $('link-meta');
   const imgs = draft.items.filter((it) => it.img).length;
   const long = !s.short && s.url.length > 8000;
@@ -1181,6 +1347,7 @@ async function showMachine(cfg, capsules, total = capsules) {
   if (curKind === 'card') backArt(cfg.back).then((art) => shown === cfg && machine.setCardBack(art));
   machine.setFrontFinish(cfg.fin);
   machine.setPile(capsules, total);
+  playBgm(cfg.bgm);
   scheduleDecor();
 }
 
@@ -1587,7 +1754,7 @@ function showResult(idx, first, view = false) {
   const hasMedia = !!it.media;
   $('r-prize').hidden = $('r-name').hidden = hasMedia;
   const mediaHolo = hasMedia ? npHolo({ ...hd, tag: false }) : null;
-  resultPlayer = mountNowPlaying($('r-media'), it.media, { art: hd.t, artNode: mediaHolo?.node, title: it.name, artist: play.cfg.name, rarity: it.rarity, delay: fresh ? 600 : 0 });
+  resultPlayer = nowPlaying($('r-media'), it.media, { art: hd.t, artNode: mediaHolo?.node, title: it.name, artist: play.cfg.name, rarity: it.rarity, delay: fresh ? 600 : 0 });
   resultIdx = idx;
   $('r-again').hidden = $('r-col').hidden = !!view;
   $('r-close').hidden = !view;
@@ -2012,7 +2179,7 @@ function openMediaSheet(i) {
   mediaPreview?.stop();
   const art = thumbOf(draft, i).url;
   const artNode = it.media ? npHolo({ t: art, r: it.rarity, shape: draft.kind === 'card' ? 'card' : 'square', name: it.name, tag: false }).node : null;
-  mediaPreview = mountNowPlaying($('m-preview'), it.media, { art, artNode, title: it.name, artist: draft.name || '', rarity: it.rarity });
+  mediaPreview = nowPlaying($('m-preview'), it.media, { art, artNode, title: it.name, artist: draft.name || '', rarity: it.rarity });
   if ($('sheet-media').hidden) openSheet('sheet-media', $('m-url'));
 }
 
@@ -2063,6 +2230,7 @@ function bindMediaSheet() {
 let lastFocus = null;
 function openSheet(id, focusEl) {
   lastFocus = document.activeElement;
+  if ($(id).hidden) sfx.open();
   $(id).hidden = false;
   (focusEl || $(id).querySelector('button'))?.focus();
 }
@@ -2189,13 +2357,15 @@ function setMode(mode) {
 
 // ---------- 我的商店 ----------
 // 換到另一台：先把這台還沒送出去的修改送完、存好，再載入那台
+async function flushSync() {
+  if (!syncTimer) return;
+  clearTimeout(syncTimer);
+  syncTimer = 0;
+  if (draft.cloud && cloudReady()) await requestSync(true).catch(() => {});
+}
 async function switchMachine(uid) {
   if (uid === shop.cur) return;
-  if (syncTimer) {
-    clearTimeout(syncTimer);
-    syncTimer = 0;
-    if (draft.cloud && cloudReady()) await requestSync(true).catch(() => {});
-  }
+  await flushSync();
   saveDraft();
   shop.cur = uid;
   store.set('clatter.shop', shop);
@@ -2218,11 +2388,7 @@ function afterSwitch() {
 }
 
 async function newMachine() {
-  if (syncTimer) {
-    clearTimeout(syncTimer);
-    syncTimer = 0;
-    if (draft.cloud && cloudReady()) await requestSync(true).catch(() => {});
-  }
+  await flushSync();
   saveDraft();
   const uid = 'm' + newUid();
   shop.list.push(uid);
@@ -2235,8 +2401,46 @@ async function newMachine() {
   toast(t('shop.made'));
 }
 
+// 複製一台（使用者 2026-10-26：「追加可以做多台的機器」）：獎品、外觀、價錢都一樣，但還沒有連結（做連結會是另一條）
+async function dupMachine(uid) {
+  await flushSync();
+  saveDraft();
+  const src = store.get(draftKey(uid));
+  if (!src) return;
+  const copy = { ...src, sample: false, name: t('shop.copyName', { name: src.name || t('defaultMachine') }).slice(0, LIMITS.title) };
+  delete copy.cloud;
+  delete copy.listed;
+  delete copy.listedCover;
+  const nu = 'm' + newUid();
+  store.set(draftKey(nu), copy);
+  if (!localStorage.getItem(draftKey(nu))) return toast(t('shop.dupFail')); // 這台裝置的空間滿了
+  shop.list.splice(shop.list.indexOf(uid) + 1, 0, nu);
+  shop.cur = nu;
+  store.set('clatter.shop', shop);
+  draft = loadDraft();
+  afterSwitch();
+  if (app.dataset.mode === 'shop') renderShop();
+  toast(t('shop.duped'));
+}
+
+// 開店頁最上面的機台切換：每台一個選項（名稱＋種類）
+const switchLabel = (i, d) => `${i + 1}. ${d?.name || t('defaultMachine')} · ${t('kind.' + (d?.kind === 'card' ? 'card' : 'capsule'))}`;
+function renderSwitch() {
+  const sel = $('mach-sel');
+  sel.textContent = '';
+  shop.list.forEach((uid, i) => sel.append(new Option(switchLabel(i, uid === shop.cur ? draft : store.get(draftKey(uid))), uid, false, uid === shop.cur)));
+  $('mach-count').textContent = t('sw.label', { n: shop.list.length });
+}
+function relabelSwitch() {
+  const o = [...$('mach-sel').options].find((x) => x.value === shop.cur);
+  if (o) o.textContent = switchLabel(shop.list.indexOf(shop.cur), draft);
+}
+
 // 從我的商店拿掉（只刪這台裝置上的草稿；發出去的連結還在）
 async function removeMachine(uid) {
+  // 鑰匙會跟著草稿刪掉 → 公開中的先取消公開，免得留下改不了也收不回來的公開機台
+  const d0 = uid === shop.cur ? draft : store.get(draftKey(uid));
+  if (d0?.listed && d0.cloud && cloudReady()) await setListed(d0.cloud, false).catch(() => {});
   shop.list = shop.list.filter((u) => u !== uid);
   store.del(draftKey(uid));
   if (!shop.list.length) {
@@ -2312,7 +2516,13 @@ async function renderShop() {
     const ico = document.createElement('div');
     ico.className = 'mach-ico';
     ico.style.setProperty('--c', (THEMES[d.theme] || THEMES.red).body);
-    ico.innerHTML = KIND_ICON[kind];
+    const cov = d.cover || d.listedCover;
+    if (cov) {
+      const im = document.createElement('img');
+      im.src = cov;
+      im.alt = '';
+      ico.append(im);
+    } else ico.innerHTML = KIND_ICON[kind];
     const tt = document.createElement('div');
     const h = document.createElement('h2');
     h.textContent = d.name || t('defaultMachine');
@@ -2379,6 +2589,7 @@ async function renderShop() {
         const url = shareBase() + '#s.' + id;
         toast((await copyText(url)) ? t('t.copied') : url);
       });
+    btn(t('shop.dup'), '', () => dupMachine(uid));
     const del = btn(t('shop.del'), 'ghost', () => {
       // 按兩下才刪（第一下變成「確定拿掉？」）
       if (shopDelArm !== uid) {
@@ -2676,7 +2887,7 @@ function openCardView(e, name) {
   const md = it.md && mediaFromLink(it.md);
   $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
   const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name };
-  cardPlayer = md ? mountNowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
+  cardPlayer = md ? nowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
   if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）
   viewHolo.set(hdv);
@@ -2714,10 +2925,144 @@ async function listingMeta() {
     th.push(c.toDataURL('image/webp', 0.7));
   }
   const meta = { n: draft.name || '', s: draft.shop || '', k: draft.kind === 'card' ? 'card' : 'capsule', th: draft.theme, p: [draft.price.coins, draft.price.unit, draft.price.cur], i: draft.items.length, t: th };
-  const cover = machineShot();
+  if (!draft.cover) {
+    const shot = machineShot();
+    if (shot) draft.listedCover = shot; // 不在開店頁拍不到 → 用上次的
+  }
+  const cover = draft.cover || draft.listedCover;
   if (cover) meta.c = cover;
-  else if (draft.listedCover) meta.c = draft.listedCover; // 現在不在開店頁：用上次的封面
   return meta;
+}
+// 公開中 → 摘要（含封面）馬上更新
+function pushListing() {
+  const c = draft.cloud;
+  if (!c || !draft.listed || !cloudReady()) return;
+  listingMeta()
+    .then((meta) => {
+      saveDraft();
+      return setListed(c, true, meta);
+    })
+    .catch(() => {});
+}
+
+// ---------- 逛機台的封面（使用者 2026-10-26：「公開的機器的圖片可以自己設置」） ----------
+//   draft.cover＝店家自己的圖（320 px 正方形，裁切對話框做的）；沒有就用 3D 機台拍的（draft.listedCover，每次同步重拍）
+function renderCover() {
+  const show = !$('list-wrap').hidden;
+  $('cover-wrap').hidden = !show;
+  if (!show) return;
+  if (!draft.cover && !draft.listedCover) {
+    const shot = machineShot();
+    if (shot) {
+      draft.listedCover = shot;
+      saveDraft();
+    }
+  }
+  const u = draft.cover || draft.listedCover;
+  if (u) $('cover-img').src = u;
+  else $('cover-img').removeAttribute('src');
+  $('cover-state').textContent = t(draft.cover ? 'cover.custom' : 'cover.auto');
+  $('cover-3d').hidden = !draft.cover;
+}
+const cv = { bmp: null, zoom: 1, x: 0, y: 0 }; // 裁切：圖的左上角在畫布上的位置（畫布 320×320）
+const cvScale = () => Math.max(320 / cv.bmp.width, 320 / cv.bmp.height) * cv.zoom;
+function drawCover() {
+  const s = cvScale();
+  const w = cv.bmp.width * s;
+  const h = cv.bmp.height * s;
+  cv.x = Math.min(0, Math.max(320 - w, cv.x)); // 不留空白
+  cv.y = Math.min(0, Math.max(320 - h, cv.y));
+  const g = $('cv-canvas').getContext('2d');
+  g.clearRect(0, 0, 320, 320);
+  g.drawImage(cv.bmp, cv.x, cv.y, w, h);
+}
+// 放大縮小時畫面正中間那一點不動
+function zoomCover(z) {
+  const s0 = cvScale();
+  const cx = (160 - cv.x) / s0;
+  const cy = (160 - cv.y) / s0;
+  cv.zoom = Math.min(4, Math.max(1, z));
+  const s1 = cvScale();
+  cv.x = 160 - cx * s1;
+  cv.y = 160 - cy * s1;
+  $('cv-zoom').value = cv.zoom;
+  drawCover();
+}
+function bindCover() {
+  $('cover-pick').onclick = () => {
+    $('file-cover').value = '';
+    $('file-cover').click();
+  };
+  $('file-cover').addEventListener('change', async () => {
+    const f = $('file-cover').files[0];
+    if (!f) return;
+    try {
+      cv.bmp = await createImageBitmap(f);
+    } catch (e) {
+      return toast(t('t.badImage'));
+    }
+    cv.zoom = 1;
+    const s = cvScale();
+    cv.x = (320 - cv.bmp.width * s) / 2;
+    cv.y = (320 - cv.bmp.height * s) / 2;
+    $('cv-zoom').value = 1;
+    drawCover();
+    openSheet('sheet-cover', $('cv-ok'));
+  });
+  $('cover-3d').onclick = () => {
+    draft.cover = null;
+    draft.listedCover = machineShot() || draft.listedCover;
+    saveDraft();
+    renderCover();
+    pushListing();
+    toast(t('cover.saved'));
+  };
+  const cvs = $('cv-canvas');
+  let drag = null;
+  cvs.addEventListener('pointerdown', (e) => {
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    cvs.setPointerCapture(e.pointerId);
+  });
+  cvs.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id || !cv.bmp) return;
+    const k = 320 / cvs.clientWidth;
+    cv.x += (e.clientX - drag.x) * k;
+    cv.y += (e.clientY - drag.y) * k;
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    drawCover();
+  });
+  const end = () => (drag = null);
+  cvs.addEventListener('pointerup', end);
+  cvs.addEventListener('pointercancel', end);
+  cvs.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      if (cv.bmp) zoomCover(cv.zoom * Math.exp(-e.deltaY / 500));
+    },
+    { passive: false },
+  );
+  $('cv-zoom').addEventListener('input', () => cv.bmp && zoomCover(+$('cv-zoom').value));
+  // 存成 webp（壓到 55 KB 以下：逛機台只收 60 KB 以內的圖）；不支援 webp 的瀏覽器用 jpeg
+  $('cv-ok').onclick = () => {
+    const c = $('cv-canvas');
+    let u = '';
+    out: for (const type of ['image/webp', 'image/jpeg'])
+      for (const q of [0.85, 0.75, 0.62, 0.5, 0.4]) {
+        const v = c.toDataURL(type, q);
+        if (!v.startsWith('data:' + type)) continue out;
+        u = v;
+        if (v.length < 55000) break out;
+      }
+    if (!u || u.length >= 60000) return toast(t('t.badImage'));
+    draft.cover = u;
+    saveDraft();
+    renderCover();
+    pushListing();
+    closeSheet('sheet-cover');
+    toast(t('cover.saved'));
+  };
 }
 async function toggleListed(on) {
   const c = draft.cloud;
@@ -2727,7 +3072,6 @@ async function toggleListed(on) {
     const meta = on ? await listingMeta() : null;
     await setListed(c, on, meta);
     draft.listed = on;
-    if (meta?.c) draft.listedCover = meta.c;
     saveDraft();
     toast(t(on ? 'browse.on' : 'browse.off'));
   } catch (e) {
@@ -2986,6 +3330,10 @@ async function boot() {
   $('browse-q').oninput = () => drawBrowse();
   $('browse-more').onclick = () => loadBrowse(false);
   $('shop-new').onclick = newMachine;
+  $('mach-sel').onchange = () => switchMachine($('mach-sel').value);
+  $('mach-new').onclick = newMachine;
+  $('mach-dup').onclick = () => dupMachine(shop.cur);
+  bindCover();
   // 收集簿的大卡、結果卡：3D 閃卡（滑鼠移動／手機傾斜 → 跟著斜，holo.js）
   viewHolo = new Holo($('v-tilt'), $('sheet-card'));
   albumEdit = new AlbumEdit({ store, toast, openSheet, closeSheet, changed: () => renderAlbum() });
@@ -3014,12 +3362,19 @@ async function boot() {
     const h = location.hash.slice(1);
     enterPlay(isMachineHash(h) ? h : 'draft');
   };
-  $('btn-sound').onclick = () => {
-    const on = $('btn-sound').getAttribute('aria-pressed') !== 'true';
-    $('btn-sound').setAttribute('aria-pressed', String(on));
-    setMuted(!on);
-    if (on) unlock();
-  };
+  bindSound();
+  // 按鈕、分頁、勾選的小聲音（sfx.js 裡很小聲）
+  document.addEventListener(
+    'click',
+    (e) => {
+      const el = e.target.closest?.('button, input[type="checkbox"]');
+      if (!el || el.disabled || el.id === 'btn-sound') return;
+      if (el.matches('input[type="checkbox"]')) sfx.toggle(el.checked);
+      else if (el.closest('.modes')) sfx.tab();
+      else sfx.tap();
+    },
+    true,
+  );
   $('h-btn').onclick = hintAction;
   $('h-ten').onclick = () => {
     unlock();

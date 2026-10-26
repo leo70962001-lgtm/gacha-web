@@ -18,6 +18,9 @@ const FIN_CODE = { gold: 'g', silver: 's', rainbow: 'r', holo: 'h', none: 'n' };
 //   holo ホロ、texture 紋理（フルアート）、rainbow 彩虹亮粉、gold 彩虹＋金框、silver 銀箔、none 不加工；預設 SR 紋理、SSR 金框
 export const FRONT_FINISHES = ['holo', 'texture', 'rainbow', 'gold', 'silver', 'none'];
 const FRONT_CODE = { holo: 'h', texture: 't', rainbow: 'r', gold: 'g', silver: 's', none: 'n' };
+// 背景音樂（使用者 2026-10-26：「可以設定背景音樂」）：預設曲 assets/bgm/<id>.mp3（Gemini「音楽を作成」做的）；沒設定＝shop
+export const BGM_PRESETS = ['shop', 'arcade', 'sakura', 'night', 'festival', 'dream'];
+export const BGM_DEFAULT = 'shop';
 export function finOf(fin, r) {
   if (r === 2) return FRONT_FINISHES.includes(fin?.sr) ? fin.sr : 'texture';
   if (r === 3) return FRONT_FINISHES.includes(fin?.ssr) ? fin.ssr : 'gold';
@@ -77,6 +80,14 @@ export async function encodeConfig(cfg) {
       img ? 'i' : back.k === 'preset' ? 'p' : back.k === 'color' ? 'c' : '', back.k === 'preset' ? back.id : back.k === 'color' ? back.c : '',
       FIN_CODE[back.sr] || '', FIN_CODE[back.ssr] || '',
     ];
+  }
+  // 背景音樂：['n'] 不要音樂、['p', 預設曲]、['a', 音樂網址]（上傳到雲端的檔案或 mp3 網址）；預設曲 shop 就不寫
+  const bm = cfg.bgm;
+  if (bm?.k === 'none') json.bm = ['n'];
+  else if (bm?.k === 'preset' && bm.id !== BGM_DEFAULT && BGM_PRESETS.includes(bm.id)) json.bm = ['p', bm.id];
+  else if (bm?.k === 'media') {
+    const l = mediaToLink(bm.media); // 本機的檔案還沒上傳 → 不寫（買家聽到預設曲）
+    if (l?.[0] === 'au') json.bm = ['a', l[1]];
   }
   const jb = te.encode(JSON.stringify(json));
   const size = 4 + jb.length + imgs.reduce((a, b) => a + b.length, 0);
@@ -154,6 +165,14 @@ export async function decodeConfig(token) {
     } else if (cb[4] === 'p' && BACK_PRESETS.includes(cb[5])) Object.assign(back, { k: 'preset', id: cb[5] });
     else if (cb[4] === 'c' && /^#[0-9a-f]{6}$/i.test(cb[5])) Object.assign(back, { k: 'color', c: cb[5] });
   }
+  let bgm = { k: 'preset', id: BGM_DEFAULT };
+  const bm = Array.isArray(j.bm) ? j.bm : [];
+  if (bm[0] === 'n') bgm = { k: 'none' };
+  else if (bm[0] === 'p' && BGM_PRESETS.includes(bm[1])) bgm = { k: 'preset', id: bm[1] };
+  else if (bm[0] === 'a') {
+    const m = mediaFromLink(['au', bm[1]]);
+    if (m) bgm = { k: 'media', media: m };
+  }
   const p = Array.isArray(j.p) ? j.p : [];
   return {
     name: str(j.n, LIMITS.title) || 'Gacha',
@@ -168,6 +187,7 @@ export async function decodeConfig(token) {
     bg,
     kind: j.k === 'c' ? 'card' : 'capsule',
     back,
+    bgm,
     fin: Array.isArray(j.cf) ? { sr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[0]), ssr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[1]) } : null,
   };
 }

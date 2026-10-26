@@ -69,7 +69,8 @@ ver = h.hexdigest()[:12]
 sw_path = os.path.join(OUT, 'sw.js')
 with open(sw_path, encoding='utf-8') as fh:
     sw = fh.read()
-assets = ['./'] + sorted(f for f in files if f != 'index.html') + ['index.html']
+# 背景音樂（assets/bgm，一首 1–2 MB）不在安裝時先下載：播過才進快取
+assets = ['./'] + sorted(f for f in files if f != 'index.html' and not f.startswith('assets/bgm/')) + ['index.html']
 sw = sw.replace("const VERSION = 'dev';", f"const VERSION = '{ver}';").replace('const ASSETS = [];', 'const ASSETS = ' + json.dumps(assets, ensure_ascii=False) + ';')
 with open(sw_path, 'w', encoding='utf-8') as fh:
     fh.write(sw)
