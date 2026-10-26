@@ -54,6 +54,12 @@ export async function encodeConfig(cfg) {
     json.b = ['i', bg.img.bytes.length, bg.img.mime === 'image/webp' ? 'w' : 'j'];
   }
   if (cfg.kind === 'card') json.k = 'c'; // 機台種類：沒寫＝轉蛋機
+  // 卡背：[圖片長度, 格式, 文字, 邊框色]（圖片接在背景圖後面）
+  const back = cfg.back;
+  if (cfg.kind === 'card' && back && (back.img || back.text || back.color)) {
+    if (back.img) imgs.push(back.img.bytes);
+    json.cb = [back.img ? back.img.bytes.length : 0, back.img?.mime === 'image/webp' ? 'w' : 'j', back.text || '', back.color || ''];
+  }
   const jb = te.encode(JSON.stringify(json));
   const size = 4 + jb.length + imgs.reduce((a, b) => a + b.length, 0);
   const buf = new Uint8Array(size);
@@ -118,6 +124,16 @@ export async function decodeConfig(token) {
     bg = { k: 'img', img: { bytes: buf.slice(off, off + b[1]), mime: b[2] === 'w' ? 'image/webp' : 'image/jpeg' } };
     off += b[1];
   }
+  let back = null;
+  const cb = Array.isArray(j.cb) ? j.cb : null;
+  if (cb) {
+    back = { text: str(cb[2], 16), color: /^#[0-9a-f]{6}$/i.test(cb[3]) ? cb[3] : '' };
+    if (Number.isInteger(cb[0]) && cb[0] > 0 && cb[0] < 120000 && off + cb[0] <= buf.length) {
+      back.img = { bytes: buf.slice(off, off + cb[0]), mime: cb[1] === 'w' ? 'image/webp' : 'image/jpeg' };
+      off += cb[0];
+    }
+    if (!back.img && !back.text && !back.color) back = null;
+  }
   const p = Array.isArray(j.p) ? j.p : [];
   return {
     name: str(j.n, LIMITS.title) || 'Gacha',
@@ -131,6 +147,7 @@ export async function decodeConfig(token) {
     items,
     bg,
     kind: j.k === 'c' ? 'card' : 'capsule',
+    back,
   };
 }
 

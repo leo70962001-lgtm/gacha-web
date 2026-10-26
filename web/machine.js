@@ -627,6 +627,14 @@ export class Machine {
     return g;
   }
 
+  // 店家自訂的卡背（decor.drawCardBack 的 back）→ 重做 4 個稀有度的卡背貼圖（已經發出去的卡不變）
+  setCardBack(back) {
+    const key = back ? `${back.key || ''}|${back.text || ''}|${back.color || ''}` : '';
+    if (key === this.backKey || !this.art) return;
+    this.backKey = key;
+    this.backTex = [0, 0, 2, 3].map((tier) => cardTex(drawCardBack(this.art.cardback, tier, back)));
+  }
+
   _dropObj(g) {
     g.removeFromParent();
     g.userData.dispose?.();

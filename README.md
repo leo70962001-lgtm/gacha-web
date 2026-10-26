@@ -70,6 +70,15 @@
 - **卡片冊**（`Binder`）：像真的集換式卡冊 — 闔著只看得到封面（點了翻開）→ 封面內側是目錄（每台轉卡機：進度、翻到那頁、再去轉）→ 內頁一頁 9 格透明卡套（3×3，卡套有開口跟斜斜的反光），每台轉卡機從新的一頁開始、第一頁有索引標籤；還沒收到的格子畫虛線＋No.＋？；收到的卡依稀有度有小小的閃（R ホロ、SR 斜格、SSR 亮粉＋金框）。寬的畫面（≥ 700 px）兩頁攤開、中間三個鐵環；手機一次一頁、鐵環在左邊。翻頁＝那張紙繞著書背轉 180°（Web Animations），箭頭、左右滑、鍵盤 ←→ 都能翻。頁寬由 JS 依容器寬算（`--pw`）；容器要 `min-width: 0`，不然會被書撐寬
 - **轉蛋收藏**（`renderShelf`）：每台轉蛋機一個展示櫃（壁紙＋一列一塊木板），獎品站在打開的扭蛋殼裡（上蓋往左後掀開）；有去背的獎品是站在殼裡的公仔（用 `st` 把頭頂以上的空白切掉），沒有的是圓徽章；還沒轉到的是關著的灰扭蛋＋？；SR/SSR 後面有光；點了都打開 3D 大卡
 
+## 可以安裝的網路 App（PWA，2026-10-26）
+
+使用者：「追加成可以下載的網路app」。只有發佈的網站（GitHub Pages）跟本機預覽有；claude.ai artifact 在 iframe 裡裝不了。
+- **圖示**（Gemini 先畫）：`D:\ai\gemini\gacha\app_icon.png`（奶油色底的紅色轉蛋機）→ `py -I tools/make_icons.py D:/ai/gemini/gacha/app_icon.png web/assets/icons` → icon-192／512、maskable-512（縮 88%、補底色，圓形裁切也在安全區內）、apple-touch-icon（180）、favicon-32（裁近一點）
+- **`web/manifest.webmanifest`**：名稱 Clatter 轉蛋鋪、獨立視窗、主題色 #e23b34、start_url／scope 都是 `./`（Pages 的 /gacha-web/）。外殼（`tools/build_site.py`、`tools/serve.py` 的 SHELL_HEAD）加了 manifest、theme-color、apple-touch-icon、apple-mobile-web-app-*
+- **`web/sw.js`**：自己的檔案先拿網路上最新的、斷線用快取；jsDelivr（three.js、MediaPipe）、字型檔、Google Storage（MediaPipe 模型）有快取就用；字型 CSS 先用快取背景更新（`<link>` 載的是 opaque 也收）；Supabase、YouTube 不碰。`build_site.py` 把 docs/ 的檔案清單（51 個）填進 `ASSETS`、內容雜湊當 `VERSION`（內容一變舊快取就清掉）
+- **下載 App 按鈕**（上方列，窄的畫面只有圖示）：Chrome／Edge／Android 有安裝提示（`beforeinstallprompt`）才出現，按了跳安裝；iPhone／iPad 的 Safari 沒有安裝提示 → 一直顯示，按了打開「分享 → 加入主畫面 → 新增」的教學；已經裝好（獨立視窗）就不顯示
+- 測過：本機關掉伺服器重新整理，整個 App（含 3D 機台）從快取開得起來；Pages 上 sw 啟用、範圍 /gacha-web/、51 個檔案都進快取
+
 ## 正在播放卡（2026-10-26）
 
 使用者：「有音樂或動畫的設計改成這樣的設計」（附 Apple Music 的「正在播放」截圖）。`web/nowplaying.js` 的 `mountNowPlaying(box, media, { art, title, artist, rarity, delay, autoplay })`：

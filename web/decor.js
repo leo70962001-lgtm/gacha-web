@@ -614,17 +614,29 @@ export function estimateDepth(photo) {
 }
 
 // 卡背：Gemini 的卡背圖（沒有字）＋描邊圓角；tier 2＝金箔、3＝彩虹（SR、SSR 從卡背就看得出來）
-export function drawCardBack(art, tier = 0) {
+// 卡背：預設＝Gemini 畫的卡背圖；店家可以換自己的圖、加一行字、改邊框顏色（使用者 2026-10-26：「增加卡面的背面也可以編輯」）
+//   back＝{ img（已解碼的圖）、text、color }；SR 金、SSR 彩虹（翻開前的稀有度暗示）照樣疊上去
+export function drawCardBack(art, tier = 0, back = null) {
   const { w: W, h: H } = CARD_PX;
   const c = canvas(W, H);
   const g = c.getContext('2d');
-  g.fillStyle = '#1c2340';
+  const edge = /^#[0-9a-f]{6}$/i.test(back?.color || '') ? back.color : '#1c2340';
+  g.fillStyle = edge;
   roundRect(g, 0, 0, W, H, 34);
   g.fill();
+  if (edge !== '#1c2340') {
+    // 自己選的邊框色：外圈還是描一道深色線（跟其他東西一樣的 toon 描邊）
+    g.lineWidth = 6;
+    g.strokeStyle = '#1c2340';
+    roundRect(g, 3, 3, W - 6, H - 6, 32);
+    g.stroke();
+  }
+  const inset = edge !== '#1c2340' ? 22 : 10;
   g.save();
-  roundRect(g, 10, 10, W - 20, H - 20, 26);
+  roundRect(g, inset, inset, W - inset * 2, H - inset * 2, 26);
   g.clip();
-  if (art) drawCover(g, art, 10, 10, W - 20, H - 20);
+  if (back?.img) drawCover(g, back.img, inset, inset, W - inset * 2, H - inset * 2);
+  else if (art) drawCover(g, art, 10, 10, W - 20, H - 20);
   else {
     // 備用：藍色放射＋星星
     const grd = g.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, H * 0.7);
@@ -651,6 +663,22 @@ export function drawCardBack(art, tier = 0) {
     g.globalCompositeOperation = 'source-over';
   }
   g.restore();
+  if (back?.text) {
+    // 一行字（店名之類）：下方的深色帶子
+    const txt = String(back.text).slice(0, 16);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    fitText(g, txt, W - 120, 44, bodyFont(), '900');
+    const tw = Math.min(W - 80, g.measureText(txt).width + 60);
+    g.fillStyle = 'rgba(28, 35, 64, 0.88)';
+    roundRect(g, (W - tw) / 2, H - 132, tw, 70, 35);
+    g.fill();
+    g.lineWidth = 4;
+    g.strokeStyle = '#ffffff';
+    g.stroke();
+    g.fillStyle = tier >= 2 ? (tier === 3 ? '#fff6c8' : '#ffe08a') : '#ffffff';
+    g.fillText(txt, W / 2, H - 96);
+  }
   return c;
 }
 

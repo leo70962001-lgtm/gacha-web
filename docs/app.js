@@ -2,7 +2,7 @@
 import { Machine, THEMES } from './machine.js';
 import { unlock, setMuted, sfx } from './sfx.js';
 import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS } from './codec.js';
-import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers } from './decor.js';
+import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers, drawCardBack } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
 import { cutout } from './seg.js';
@@ -220,6 +220,7 @@ function loadDraft(uid = shop.cur) {
   if (!THEME_KEYS.includes(d.theme)) d.theme = 'red';
   d.kind = d.kind === 'card' ? 'card' : 'capsule';
   d.bg = draftBg(d.bg);
+  d.back = draftBack(d.back);
   if (!d.price || !CURRENCIES.includes(d.price.cur)) d.price = { coins: 5, unit: 10, cur: 'NT$' };
   // 雲端短連結的 id＋修改鑰匙：有的話之後改設定會自動更新到同一條連結
   if (!(d.cloud && /^[0-9A-Za-z]{10}$/.test(d.cloud.id) && /^[A-Za-z0-9_-]{20,64}$/.test(d.cloud.key))) delete d.cloud;
@@ -230,6 +231,17 @@ function draftBg(b) {
   if (b?.k === 'color' && /^#[0-9a-f]{6}$/i.test(b.c)) return { k: 'color', c: b.c };
   if (b?.k === 'img' && b.img?.b64) return { k: 'img', img: { bytes: Uint8Array.from(atob(b.img.b64), (ch) => ch.charCodeAt(0)), mime: b.img.mime } };
   return { k: 'preset', id: 'plain' };
+}
+
+// 卡背（轉卡機）：{ img, text, color }，什麼都沒有＝用預設的卡背
+function draftBack(b) {
+  if (!b) return null;
+  const back = {
+    text: String(b.text || '').slice(0, 16),
+    color: /^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : '',
+    img: b.img?.b64 ? { bytes: Uint8Array.from(atob(b.img.b64), (ch) => ch.charCodeAt(0)), mime: b.img.mime } : null,
+  };
+  return back.img || back.text || back.color ? back : null;
 }
 
 function draftMedia(m) {
@@ -244,9 +256,11 @@ function draftMedia(m) {
 
 function saveDraft() {
   const bg = draft.bg?.k === 'img' ? { k: 'img', img: { b64: btoa(String.fromCharCode(...draft.bg.img.bytes)), mime: draft.bg.img.mime } } : draft.bg;
+  const back = draft.back ? { ...draft.back, img: draft.back.img ? { b64: btoa(String.fromCharCode(...draft.back.img.bytes)), mime: draft.back.img.mime } : null } : null;
   store.set(draftKey(), {
     ...draft,
     bg,
+    back,
     items: draft.items.map((it) => ({
       ...it,
       img: it.img ? { b64: btoa(String.fromCharCode(...it.img.bytes)), mime: it.img.mime } : null,
@@ -361,6 +375,7 @@ function renderForm() {
   for (const b of $('swatches').children) b.setAttribute('aria-checked', String(b.dataset.k === draft.theme));
   for (const b of $('kinds').children) b.setAttribute('aria-checked', String(b.dataset.kind === (draft.kind || 'capsule')));
   renderBgs();
+  renderBack();
 }
 
 // ---------- 背景（壁紙） ----------
@@ -423,6 +438,111 @@ function renderBgs() {
       b.style.backgroundImage = bg.k === 'img' ? `url("${URL.createObjectURL(new Blob([bg.img.bytes], { type: bg.img.mime }))}")` : 'none';
     }
   }
+}
+
+// ---------- 卡背（轉卡機，使用者 2026-10-26：「增加卡面的背面也可以編輯」） ----------
+//   預設（Gemini 的卡背）／自己的圖；一行字（店名之類）；邊框顏色。右邊預覽一般、SR（金）、SSR（彩虹）三張
+let backBmp = null; // { bytes, bmp }：解碼過的卡背圖（預覽、機台都用）
+async function backArt(back) {
+  if (!back) return null;
+  let img = null;
+  if (back.img) {
+    if (backBmp?.bytes !== back.img.bytes) backBmp = { bytes: back.img.bytes, bmp: await createImageBitmap(new Blob([back.img.bytes], { type: back.img.mime })).catch(() => null) };
+    img = backBmp.bmp;
+  }
+  return { img, text: back.text, color: back.color, key: back.img ? back.img.bytes.length + ':' + back.img.bytes[30] : '' };
+}
+let backRender = 0;
+async function renderBack() {
+  const field = $('back-field');
+  field.hidden = draft.kind !== 'card';
+  if (field.hidden) return;
+  const back = draft.back || {};
+  const tiles = $('back-tiles');
+  if (!tiles.childElementCount) {
+    const tile = (k) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'bg-tile back-tile ' + k;
+      b.dataset.k = k;
+      b.setAttribute('role', 'radio');
+      b.append(document.createElement('span'));
+      tiles.append(b);
+      return b;
+    };
+    tile('default').onclick = () => setBack({ img: null });
+    tile('upload').onclick = () => {
+      $('file-back').value = '';
+      $('file-back').click();
+    };
+    $('file-back').addEventListener('change', async () => {
+      const f = $('file-back').files[0];
+      if (!f) return;
+      try {
+        setBack({ img: await shrinkBack(f) });
+      } catch (e) {
+        toast(t('t.badImage'));
+      }
+    });
+    $('back-text').addEventListener('input', () => setBack({ text: $('back-text').value.slice(0, 16) }, true));
+    $('back-color').addEventListener('input', () => setBack({ color: $('back-color').value }, true));
+    $('back-reset').onclick = () => {
+      draft.back = null;
+      renderBack();
+      draftChanged();
+    };
+  }
+  for (const b of tiles.children) {
+    const on = b.dataset.k === (back.img ? 'upload' : 'default');
+    b.setAttribute('aria-checked', String(on));
+    const label = t(b.dataset.k === 'default' ? 'back.default' : back.img ? 'back.custom' : 'back.upload');
+    b.querySelector('span').textContent = label;
+    b.setAttribute('aria-label', label);
+    if (b.dataset.k === 'upload') {
+      b.classList.toggle('has', !!back.img);
+      b.style.backgroundImage = back.img ? `url("${URL.createObjectURL(new Blob([back.img.bytes], { type: back.img.mime }))}")` : 'none';
+    } else b.style.backgroundImage = `url("${asset('tex/cardback.webp')}")`;
+  }
+  if (document.activeElement !== $('back-text')) $('back-text').value = back.text || '';
+  $('back-text').placeholder = t('back.textPh');
+  if (document.activeElement !== $('back-color')) $('back-color').value = back.color || '#1c2340';
+  $('back-reset').hidden = !draft.back;
+  // 預覽：一般、SR（金）、SSR（彩虹）
+  const my = ++backRender;
+  const art = await backArt(draft.back);
+  if (my !== backRender) return;
+  const prev = $('back-prev');
+  prev.textContent = '';
+  for (const tier of [0, 2, 3]) {
+    const c = drawCardBack(machine?.art?.cardback || null, tier, art);
+    c.className = 'back-card';
+    c.setAttribute('aria-hidden', 'true');
+    prev.append(c);
+  }
+}
+function setBack(patch, typing = false) {
+  draft.back = { ...(draft.back || {}), ...patch };
+  if (!draft.back.img && !draft.back.text && (!draft.back.color || draft.back.color === '#1c2340')) draft.back = null;
+  if (typing) {
+    clearTimeout(setBack.t);
+    setBack.t = setTimeout(renderBack, 120);
+  } else renderBack();
+  draftChanged();
+}
+// 自己的卡背圖：裁成卡片比例 300×437、webp（放進連結）
+async function shrinkBack(file) {
+  const bmp = await createImageBitmap(file);
+  const W = 300;
+  const H = 437;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  const s = Math.max(W / bmp.width, H / bmp.height);
+  g.drawImage(bmp, (W - bmp.width * s) / 2, (H - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
+  let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.72));
+  if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.75));
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
 }
 
 function setBg(bg) {
@@ -516,6 +636,7 @@ function bindForm() {
       if (draft.kind === b.dataset.kind) return;
       draft.kind = b.dataset.kind;
       for (const x of $('kinds').children) x.setAttribute('aria-checked', String(x === b));
+      renderBack(); // 轉卡機才有卡背
       draftChanged();
     };
   }
@@ -877,9 +998,11 @@ async function showMachine(cfg, capsules, total = capsules) {
       toast(t('loadFail'));
     }
     if (shown !== cfg) return; // 載入途中又換了機台
+    if (curKind === 'card' && app.dataset.mode === 'create') renderBack(); // 預設卡背圖載好了 → 預覽重畫
   }
   machine.setTheme(cfg.theme);
   applyBg(cfg.bg);
+  if (curKind === 'card') backArt(cfg.back).then((art) => shown === cfg && machine.setCardBack(art));
   machine.setPile(capsules, total);
   scheduleDecor();
 }

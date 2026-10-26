@@ -510,6 +510,20 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .kind-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--stroke); }
 .swatch { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--stroke); cursor: pointer; padding: 0; background: var(--c); position: relative; }
 .bgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 8px; }
+/* 卡背（轉卡機） */
+.back-ed { display: grid; gap: 12px; min-width: 0; } /* 上面預覽、下面選項（設定欄很窄，左右放不下） */
+.back-prev { display: flex; gap: 8px; justify-content: center; }
+.back-card { width: 62px; height: auto; display: block; filter: drop-shadow(1px 2px 0 rgba(28, 35, 64, .35)); }
+.back-prev .back-card:first-child { width: 92px; }
+.back-prev { align-items: flex-end; }
+.back-opts { display: grid; gap: 8px; min-width: 0; }
+.back-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.back-tile { aspect-ratio: 1.4; background-size: cover; background-position: center; }
+.back-row { display: grid; gap: 3px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.back-row input:not([type="color"]) { font: inherit; font-size: 14px; color: var(--ink); padding: 7px 10px; border-radius: 10px; border: 2px solid var(--stroke); background: var(--surface); }
+.back-colorrow { grid-template-columns: 1fr auto; align-items: center; }
+.back-colorrow input { width: 44px; height: 30px; padding: 0; border: 2px solid var(--stroke); border-radius: 8px; background: none; cursor: pointer; }
+#back-reset { justify-self: start; padding: 5px 12px; font-size: 12px; }
 .bg-tile { aspect-ratio: 16 / 10; border-radius: 10px; border: 2px solid var(--stroke); padding: 0; overflow: hidden; cursor: pointer; background: var(--surface-2) center / cover no-repeat; position: relative; display: grid; align-items: end; justify-items: start; }
 .bg-tile span { font-size: 10px; font-weight: 700; background: rgba(28, 35, 64, 0.8); color: #fff; padding: 1px 6px; border-radius: 0 8px 0 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; position: relative; z-index: 1; }
 .bg-tile[aria-checked="true"] { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -890,6 +904,19 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
             </div>
             <div class="field"><span id="sw-label" data-i18n="machineColor">機台顏色</span><div class="swatches" id="swatches" role="radiogroup" aria-labelledby="sw-label"></div></div>
             <div class="field"><span id="bg-label" data-i18n="bg.label">背景</span><div class="bgs" id="bgs" role="radiogroup" aria-labelledby="bg-label"></div></div>
+            <div class="field" id="back-field" hidden><span id="back-label" data-i18n="back.label">卡背</span>
+              <div class="back-ed">
+                <div class="back-prev" id="back-prev"></div>
+                <div class="back-opts">
+                  <div class="back-tiles" id="back-tiles" role="radiogroup" aria-labelledby="back-label"></div>
+                  <label class="back-row"><span data-i18n="back.text">卡背文字（選填）</span><input id="back-text" maxlength="16"></label>
+                  <label class="back-row back-colorrow"><span data-i18n="back.color">邊框顏色</span><input id="back-color" type="color" value="#1c2340"></label>
+                  <button type="button" class="btn ghost" id="back-reset" hidden data-i18n="back.reset">還原預設卡背</button>
+                </div>
+              </div>
+              <p class="hint" data-i18n="back.hint">SR、SSR 的卡在翻開前，卡背會變成金色、彩虹色（上面的預覽）。</p>
+              <input type="file" id="file-back" accept="image/*" hidden>
+            </div>
           </li>
           <li class="step">
             <header><span class="num">3</span><h2 data-i18n="step3">產生連結</h2></header>
