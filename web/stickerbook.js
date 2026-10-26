@@ -1,8 +1,11 @@
 // シール帳（收集簿的一個分頁，使用者 2026-10-26：「增加貼子的功能 跟貼子簿」）
 //   一頁一張台紙（點點、方眼、格紋…可以換），貼紙隨便貼：拖曳移動、右下角的圓鈕轉＋縮放、「はがす」撕下來放回下面
+//   貼好的也能用手指慢慢撕下來（使用者 2026-10-27：「這個也可以撕下來」）：從貼紙的邊緣拉＝撕（peel.js 的 PeelLayer，跟台紙一樣的折線）、
+//   從中間拉＝移動；撕超過一半就整張下來放回下面那排，不到一半彈回去
 //   下面一排＝還沒貼的貼紙（數字＝還剩幾張）：拖到頁面上就貼上去；點一下 → 貼到這頁／貼到轉蛋機／放進轉蛋／丟掉
 //   資料在 sticker.js（loadBook／saveBook）；位置 x、y、大小 s 都是頁面寬高的比例，換螢幕大小也一樣
 import { loadBook, saveBook, stickerUrl, available, trashOne, PAPERS } from './sticker.js';
+import { PeelLayer } from './peel.js';
 
 const MAX_PAGES = 30;
 const el = (tag, cls, text) => {
@@ -157,10 +160,8 @@ export class StickerBook {
       tile.title = p.title || '';
       tile.setAttribute('aria-label', t(sealed ? 'stk.packTile' : 'stk.sheetTile', { n: left }));
       const im = el('img');
-      if (sealed) {
-        this.foilUrl = this.foilUrl || this.o.foil?.().toDataURL('image/png');
-        im.src = this.foilUrl || '';
-      } else im.src = this.urls[p.items.find((x) => !x.saved)?.id] || '';
+      if (sealed) im.src = this.o.foilUrl || '';
+      else im.src = this.urls[p.items.find((x) => !x.saved)?.id] || '';
       im.alt = '';
       im.draggable = false;
       tile.append(im, el('b', 'sb-n', '×' + left), el('span', 'sb-pk-tag', t(sealed ? 'stk.packTag' : 'stk.sheetTag')));
@@ -247,14 +248,39 @@ export class StickerBook {
     this.o.changed?.();
   }
 
-  _peel() {
+  // 「はがす」：從右上角自己慢慢撕下來（跟手指撕一樣的折線）
+  async _peel() {
+    const i = this.sel;
+    const st = this.$page.querySelector(`.sb-st[data-i="${i}"]`);
+    const im = st?.querySelector('img');
+    const it = loadBook().pages[this.page].items[i];
+    if (st && im?.complete && it) {
+      const L = this._layerFor(st, it, im);
+      const h = Math.max(im.naturalWidth, im.naturalHeight) / 2;
+      const A = { x: h * 0.62, y: -h * 0.62 };
+      this.o.sfx?.peelTick?.();
+      await L.animate(A, A, L.far(A, { x: A.x - 1, y: A.y + 1 }), 0.55, true);
+      L.end();
+    }
+    this._remove(i);
+  }
+  _remove(i) {
     const b = loadBook();
-    b.pages[this.page].items.splice(this.sel, 1);
+    b.pages[this.page].items.splice(i, 1);
     saveBook(b);
     this.sel = -1;
     this.o.sfx?.peel?.();
     this.render();
     this.o.changed?.();
+  }
+  // 撕的那一層：蓋在頁面上，貼紙本身先藏起來
+  _layerFor(st, it, im) {
+    this.layer = this.layer || new PeelLayer(this.$page);
+    const pr = this.$page.getBoundingClientRect();
+    this.layer.begin(im, it.x * pr.width, it.y * pr.height, it.s * pr.width, (it.r * Math.PI) / 180);
+    st.style.visibility = 'hidden';
+    this.$tools.hidden = true;
+    return this.layer;
   }
 
   _front() {
@@ -286,12 +312,27 @@ export class StickerBook {
       const it = b.pages[this.page].items[i];
       if (!it) return;
       e.preventDefault();
-      page.setPointerCapture(e.pointerId);
+      try {
+        page.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* 不是真的指標（測試） */
+      }
       const pr = page.getBoundingClientRect();
       if (handle) {
         const cx = pr.left + it.x * pr.width;
         const cy = pr.top + it.y * pr.height;
         drag = { kind: 'rot', i, b, it, st, cx, cy, a0: Math.atan2(e.clientY - cy, e.clientX - cx), d0: Math.hypot(e.clientX - cx, e.clientY - cy), r0: it.r, s0: it.s, moved: true };
+        return;
+      }
+      // 按在邊緣（貼紙方框外圈）→ 動了就是撕；按在中間 → 移動
+      const cx = pr.left + it.x * pr.width;
+      const cy = pr.top + it.y * pr.height;
+      const size = it.s * pr.width;
+      const rad = (-it.r * Math.PI) / 180;
+      const lx = ((e.clientX - cx) * Math.cos(rad) - (e.clientY - cy) * Math.sin(rad)) / size;
+      const ly = ((e.clientX - cx) * Math.sin(rad) + (e.clientY - cy) * Math.cos(rad)) / size;
+      if (Math.max(Math.abs(lx), Math.abs(ly)) > 0.28) {
+        drag = { kind: 'edge', i, b, it, st, pr, x0: e.clientX, y0: e.clientY, moved: false };
         return;
       }
       drag = { kind: 'move', i, b, it, st, pr, ox: e.clientX - (pr.left + it.x * pr.width), oy: e.clientY - (pr.top + it.y * pr.height), x0: e.clientX, y0: e.clientY, moved: false };
@@ -305,6 +346,29 @@ export class StickerBook {
     page.addEventListener('pointermove', (e) => {
       if (!drag) return;
       const { it } = drag;
+      if (drag.kind === 'edge') {
+        // 從邊緣拉動了 → 開始撕
+        if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) return;
+        const im = drag.st.querySelector('img');
+        if (!im?.complete) return;
+        const L = this._layerFor(drag.st, it, im);
+        drag.kind = 'peel';
+        drag.moved = true;
+        drag.L = L;
+        drag.A = L.local(drag.x0 - drag.pr.left, drag.y0 - drag.pr.top);
+        drag.P = drag.A;
+      }
+      if (drag.kind === 'peel') {
+        if (drag.anim) return;
+        drag.P = drag.L.local(e.clientX - drag.pr.left, e.clientY - drag.pr.top);
+        drag.L.draw(drag.A, drag.P);
+        const p = drag.L.progress(drag.A, drag.P);
+        if (Math.abs(p - (drag.tick || 0)) > 0.08) {
+          drag.tick = p;
+          this.o.sfx?.peelTick?.();
+        }
+        return;
+      }
       if (drag.kind === 'rot') {
         const a = Math.atan2(e.clientY - drag.cy, e.clientX - drag.cx);
         const d = Math.hypot(e.clientX - drag.cx, e.clientY - drag.cy);
@@ -318,10 +382,33 @@ export class StickerBook {
       }
       this._place(drag.st, it);
     });
-    const up = () => {
+    const up = async () => {
       if (!drag) return;
       const d = drag;
       drag = null;
+      if (d.kind === 'edge') {
+        // 只是點一下邊緣 → 選它
+        if (this.sel !== d.i) {
+          this.sel = d.i;
+          this.render();
+        }
+        return;
+      }
+      if (d.kind === 'peel') {
+        const p = d.L.progress(d.A, d.P);
+        if (p > 0.5) {
+          // 超過一半 → 自己撕完，放回下面那排
+          await d.L.animate(d.A, d.P, d.L.far(d.A, d.P), 0.3, true);
+          d.L.end();
+          this._remove(d.i);
+        } else {
+          await d.L.animate(d.A, d.P, d.A, 0.2);
+          d.L.end();
+          d.st.style.visibility = '';
+          this.$tools.hidden = false;
+        }
+        return;
+      }
       if (!d.moved) return;
       saveBook(d.b);
       if (d.kind === 'move') this.o.sfx?.stick?.();

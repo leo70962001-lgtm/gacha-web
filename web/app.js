@@ -9,7 +9,7 @@ import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveL
 import { cutout } from './seg.js';
 import { Holo } from './holo.js';
 import { bakeSticker, hasAlpha, loadBook, saveBook, stickerBlob, stickerUrl, createPack, addToPack, markPackOpened, claimPackItem, STICKER_FINS, STICKER_SHAPES, PRESETS, presetFile } from './sticker.js';
-import { openPeel, drawFoilPack, FOIL } from './peel.js';
+import { openPeel, drawFoilPack, FOIL, FOIL_DRAWN } from './peel.js';
 import { StickerBook } from './stickerbook.js';
 import { Binder, renderShelf } from './binder.js';
 import { Trade } from './trade.js';
@@ -2836,7 +2836,7 @@ async function albumSync() {
 //   シール帳：收集簿的分頁（stickerbook.js）；貼到機台（machine.setStickers）；放進轉蛋（獎品的 sticker）；轉到貼紙獎品 → 進シール帳
 let sb = null;
 function stickerBook() {
-  sb = sb || new StickerBook($('album-stickers'), { t, toast, sfx, foil, onPack: (id) => openPack(id), onMake: () => openStickerMaker(), onMachine: (x) => stickToMachine(x), onGacha: (x) => stickerToGacha(x), changed: () => app.dataset.mode === 'album' && albumTab === 'sticker' && renderAlbumTabsOnly() });
+  sb = sb || new StickerBook($('album-stickers'), { t, toast, sfx, foilUrl: asset(FOIL.file), onPack: (id) => openPack(id), onMake: () => openStickerMaker(), onMachine: (x) => stickToMachine(x), onGacha: (x) => stickerToGacha(x), changed: () => app.dataset.mode === 'album' && albumTab === 'sticker' && renderAlbumTabsOnly() });
   return sb;
 }
 // 分頁上的張數跟著變（不重畫整本）
@@ -2882,9 +2882,18 @@ async function usePreset(i) {
   mk.srcs.push({ src: bmp, mask: null, preset: i, name: t('stk.n.' + PRESETS[i]), alpha: true });
   renderMaker();
 }
-// 鋁箔包的圖（程式畫，FOIL 有封口、標籤的位置）
-let foilImg = null;
-const foil = () => (foilImg = foilImg || drawFoilPack());
+// 鋁箔包的圖：Gemini 畫的（assets/tex/foil_pack.webp；FOIL 有撕口、標籤的位置）；載不到就用程式畫的
+let foilP = null;
+function foilArt() {
+  foilP =
+    foilP ||
+    fetch(asset(FOIL.file))
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('foil ' + r.status))))
+      .then((b) => createImageBitmap(b))
+      .then((img) => ({ img, ...FOIL }))
+      .catch(() => ({ img: drawFoilPack(), ...FOIL_DRAWN }));
+  return foilP;
+}
 // 打開一包／一張台紙：還沒撕下來的貼紙放上去，撕一張存一張
 async function openPack(packId, onDone) {
   const b = loadBook();
@@ -2899,11 +2908,12 @@ async function openPack(packId, onDone) {
   }
   if (!items.length) return;
   const saved = [];
+  const art = p.kind === 'foil' && !p.open ? await foilArt() : null;
   openPeel(items, {
     t,
     sfx,
     title: p.title || t('peel.sheetTitle'),
-    pack: p.kind === 'foil' && !p.open ? { img: foil(), seal: FOIL.seal, labelAt: FOIL.labelAt, label: t('peel.packLabel', { n: items.length }) } : null,
+    pack: art ? { img: art.img, seal: art.seal, labelAt: art.labelAt, label: t('peel.packLabel', { n: items.length }) } : null,
     onOpened: () => markPackOpened(p.id),
     onSave: async (k) => {
       const st = await claimPackItem(p.id, items[k].at);

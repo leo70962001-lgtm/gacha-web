@@ -729,6 +729,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .peel-hint { margin: 0; font-weight: 800; font-size: 14px; text-align: center; background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 6px 14px; border-radius: 999px; max-width: 100%; }
 .peel-bottom .row { justify-content: center; gap: 8px; }
 @keyframes peelIn { from { opacity: 0; } }
+.peel-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
 /* シール帳：還沒撕的鋁箔包／台紙 */
 .sb-pack .sb-pk-tag { position: absolute; left: 50%; top: -6px; transform: translateX(-50%); font-size: 10px; font-weight: 900; color: #fff; background: var(--accent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
 .sb-pack img { object-fit: contain; }

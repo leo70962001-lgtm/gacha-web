@@ -42,16 +42,178 @@ function halfPlane(g, M, n, side, L) {
   g.closePath();
 }
 
-// 鋁箔包（Gemini 今天的生圖次數用完了 → 先用程式畫；之後可以換成 Gemini 畫的圖，seal／labelAt 照著量）
+// ---------- 撕一張貼紙（台紙、シール帳的頁面共用） ----------
+// s＝{ img, back（白色背面）, x, y（中心，CSS px）, k（圖 px → CSS px）, rot（弧度） }；A、P 是貼紙自己的座標（圖的像素，原點在中心）
+export function toLocal(s, px, py) {
+  const dx = px - s.x;
+  const dy = py - s.y;
+  const c = Math.cos(-s.rot);
+  const sn = Math.sin(-s.rot);
+  return { x: (dx * c - dy * sn) / s.k, y: (dx * sn + dy * c) / s.k };
+}
+const toScreen = (s) => [s.k * Math.cos(s.rot), s.k * Math.sin(s.rot), -s.k * Math.sin(s.rot), s.k * Math.cos(s.rot), s.x, s.y];
+// 折線：A＝按下的點、P＝手指現在的點 → 兩點的垂直平分線
+function fold(A, P) {
+  const dx = P.x - A.x;
+  const dy = P.y - A.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 0.5) return null;
+  return { M: { x: (A.x + P.x) / 2, y: (A.y + P.y) / 2 }, n: { x: dx / d, y: dy / d }, d };
+}
+// 撕了多少（0–1）：折線在貼紙範圍裡走到哪
+export function peelProgress(s, A, P) {
+  const f = fold(A, P);
+  if (!f) return 0;
+  const w = s.img.width / 2;
+  const h = s.img.height / 2;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const [cx, cy] of [[-w, -h], [w, -h], [w, h], [-w, h]]) {
+    const v = (cx - A.x) * f.n.x + (cy - A.y) * f.n.y;
+    lo = Math.min(lo, v);
+    hi = Math.max(hi, v);
+  }
+  return clamp((f.d / 2 - lo) / Math.max(1, hi - lo), 0, 1);
+}
+function paintSticker(g, dpr, s) {
+  const w = s.img.width;
+  const h = s.img.height;
+  g.save();
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.transform(...toScreen(s));
+  g.shadowColor = 'rgba(0,0,0,.18)';
+  g.shadowBlur = 3 / s.k;
+  g.shadowOffsetY = 1.5 / s.k;
+  g.drawImage(s.img, -w / 2, -h / 2);
+  g.restore();
+}
+// 平的那半照畫；A 那一邊對折線鏡射畫成白色背面（折線附近暗、尖端亮），底下有影子
+function paintPeel(g, fg, flap, dpr, s, A, P) {
+  const f = fold(A, P);
+  if (!f) return paintSticker(g, dpr, s);
+  const w = s.img.width;
+  const h = s.img.height;
+  const L = (w + h) * 4;
+  const base = toScreen(s);
+  g.save();
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.transform(...base);
+  halfPlane(g, f.M, f.n, 1, L);
+  g.clip();
+  g.shadowColor = 'rgba(0,0,0,.18)';
+  g.shadowBlur = 3 / s.k;
+  g.shadowOffsetY = 1.5 / s.k;
+  g.drawImage(s.img, -w / 2, -h / 2);
+  g.restore();
+  fg.setTransform(1, 0, 0, 1, 0, 0);
+  fg.clearRect(0, 0, flap.width, flap.height);
+  fg.save();
+  fg.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fg.transform(...base);
+  const { n, M } = f;
+  const mn = M.x * n.x + M.y * n.y;
+  fg.transform(1 - 2 * n.x * n.x, -2 * n.x * n.y, -2 * n.x * n.y, 1 - 2 * n.y * n.y, 2 * mn * n.x, 2 * mn * n.y);
+  halfPlane(fg, M, n, -1, L);
+  fg.clip();
+  fg.drawImage(s.back, -w / 2, -h / 2);
+  fg.globalCompositeOperation = 'source-atop';
+  const span = Math.max(20, f.d * 0.6);
+  const gr = fg.createLinearGradient(M.x, M.y, M.x - n.x * span, M.y - n.y * span);
+  gr.addColorStop(0, 'rgba(90,100,120,.38)');
+  gr.addColorStop(0.18, 'rgba(255,255,255,.0)');
+  gr.addColorStop(0.55, 'rgba(255,255,255,.55)');
+  gr.addColorStop(1, 'rgba(200,205,215,.25)');
+  fg.fillStyle = gr;
+  fg.fillRect(-L, -L, L * 2, L * 2);
+  fg.restore();
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  const sx = n.x * Math.cos(s.rot) - n.y * Math.sin(s.rot);
+  const sy = n.x * Math.sin(s.rot) + n.y * Math.cos(s.rot);
+  g.shadowColor = 'rgba(0,0,0,.28)';
+  g.shadowBlur = 12 * dpr;
+  g.shadowOffsetX = sx * 5 * dpr;
+  g.shadowOffsetY = (sy * 5 + 3) * dpr;
+  g.drawImage(flap, 0, 0);
+  g.restore();
+}
+
+// シール帳的頁面上撕：在 host（頁面）上蓋一張透明 canvas，只畫正在撕的那張
+//   begin(img, 中心 x y, 寬, 角度) → move(手指)／animate(到哪) → end()
+export class PeelLayer {
+  constructor(host) {
+    this.host = host;
+    this.cv = document.createElement('canvas');
+    this.cv.className = 'peel-layer';
+    this.g = this.cv.getContext('2d');
+    this.flap = document.createElement('canvas');
+    this.fg = this.flap.getContext('2d');
+  }
+  begin(img, x, y, size, rot) {
+    const r = this.host.getBoundingClientRect();
+    this.dpr = Math.min(2, devicePixelRatio || 1);
+    this.cv.width = this.flap.width = Math.round(r.width * this.dpr);
+    this.cv.height = this.flap.height = Math.round(r.height * this.dpr);
+    this.host.append(this.cv);
+    // <img> 的 width 是畫面上的大小 → 先畫成原圖大小的 canvas（撕的座標用圖的像素）
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth || img.width;
+    c.height = img.naturalHeight || img.height;
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    this.s = { img: c, back: silhouette(c, '#fbfaf7'), x, y, k: size / Math.max(c.width, c.height), rot };
+  }
+  local(px, py) {
+    return toLocal(this.s, px, py);
+  }
+  progress(A, P) {
+    return peelProgress(this.s, A, P);
+  }
+  draw(A, P, alpha = 1) {
+    const g = this.g;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, this.cv.width, this.cv.height);
+    g.globalAlpha = alpha;
+    paintPeel(g, this.fg, this.flap, this.dpr, this.s, A, P);
+    g.globalAlpha = 1;
+  }
+  // P 從 from 動到 to（dur 秒），fade＝最後淡出
+  animate(A, from, to, dur, fade = false) {
+    return new Promise((res) => {
+      const t0 = performance.now();
+      const step = (now) => {
+        const k = Math.min(1, (now - t0) / (dur * 1000));
+        const e = ease(k);
+        this.draw(A, { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e }, fade ? 1 - Math.max(0, k - 0.6) / 0.4 : 1);
+        if (k < 1) requestAnimationFrame(step);
+        else res();
+      };
+      requestAnimationFrame(step);
+    });
+  }
+  // 撕完／放棄：從右上角到左下角那種「自己撕下來」的終點
+  far(A, P) {
+    const f = fold(A, P) || { n: { x: -0.7, y: 0.7 } };
+    const d = Math.max(this.s.img.width, this.s.img.height) * 2.2;
+    return { x: A.x + f.n.x * d, y: A.y + f.n.y * d };
+  }
+  end() {
+    this.cv.remove();
+  }
+}
+
+// 鋁箔包的圖：Gemini 畫的（使用者 2026-10-27：「Gemini 額度恢復後，用 Gemini 重畫鋁箔貼紙包換上去」）
+//   tools/cut_pack.py 去背＋量：seal＝左邊 V 形切口的高度（從這裡橫著撕開）、labelAt＝白色圓標籤（圓心、半徑／寬）
+export const FOIL = { file: 'tex/foil_pack.webp', seal: 0.245, labelAt: { x: 0.4975, y: 0.4962, r: 0.2242 } };
+// 載不到圖的時候用程式畫的（drawFoilPack）
 //   枕頭型的袋子：銀色鋁箔＋粉彩虹光、皺褶反光、上下鋸齒封口（直條壓紋）、左上 V 形切口、中間白色圓標籤
-export const FOIL = { seal: 0.11, labelAt: { x: 0.5, y: 0.5, r: 0.22 } };
+export const FOIL_DRAWN = { seal: 0.11, labelAt: { x: 0.5, y: 0.5, r: 0.22 } };
 export function drawFoilPack(W = 600, H = 820, seed = 5) {
   const c = document.createElement('canvas');
   c.width = W;
   c.height = H;
   const g = c.getContext('2d');
   const rand = rng(seed);
-  const sealH = H * FOIL.seal;
+  const sealH = H * FOIL_DRAWN.seal;
   const bulge = W * 0.025;
   // 袋子外形：上下封口是直的，中間兩側微微鼓起；上下邊是鋸齒
   const outline = () => {
@@ -138,7 +300,7 @@ export function drawFoilPack(W = 600, H = 820, seed = 5) {
   g.fill();
   g.globalCompositeOperation = 'source-over';
   // 中間的圓標籤
-  const L = FOIL.labelAt;
+  const L = FOIL_DRAWN.labelAt;
   g.save();
   g.shadowColor = 'rgba(60,70,90,.25)';
   g.shadowBlur = 10;
@@ -275,101 +437,10 @@ export function openPeel(items, o) {
     }
     g.restore();
   }
-  const local = (s, px, py) => {
-    // 畫面座標 → 貼紙自己的座標（圖的像素，原點在中心）
-    const dx = px - s.x;
-    const dy = py - s.y;
-    const c = Math.cos(-s.rot);
-    const sn = Math.sin(-s.rot);
-    return { x: (dx * c - dy * sn) / s.k, y: (dx * sn + dy * c) / s.k };
-  };
-  const toScreen = (s) => [s.k * Math.cos(s.rot), s.k * Math.sin(s.rot), -s.k * Math.sin(s.rot), s.k * Math.cos(s.rot), s.x, s.y];
-  function drawSticker(s) {
-    const w = s.img.width;
-    const h = s.img.height;
-    g.save();
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.transform(...toScreen(s));
-    g.shadowColor = 'rgba(0,0,0,.18)';
-    g.shadowBlur = 3 / s.k;
-    g.shadowOffsetY = 1.5 / s.k;
-    g.drawImage(s.img, -w / 2, -h / 2);
-    g.restore();
-  }
-  // 折線：A＝按下的點、P＝現在（都是貼紙座標）
-  function fold(A, P) {
-    const dx = P.x - A.x;
-    const dy = P.y - A.y;
-    const d = Math.hypot(dx, dy);
-    if (d < 0.5) return null;
-    return { M: { x: (A.x + P.x) / 2, y: (A.y + P.y) / 2 }, n: { x: dx / d, y: dy / d }, d };
-  }
-  // 撕了多少：折線在貼紙範圍裡走到哪
-  function progress(s, A, P) {
-    const f = fold(A, P);
-    if (!f) return 0;
-    const w = s.img.width / 2;
-    const h = s.img.height / 2;
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (const [cx, cy] of [[-w, -h], [w, -h], [w, h], [-w, h]]) {
-      const v = (cx - A.x) * f.n.x + (cy - A.y) * f.n.y;
-      lo = Math.min(lo, v);
-      hi = Math.max(hi, v);
-    }
-    return clamp((f.d / 2 - lo) / Math.max(1, hi - lo), 0, 1);
-  }
-  function drawPeeling(s, A, P) {
-    const f = fold(A, P);
-    if (!f) return drawSticker(s);
-    const w = s.img.width;
-    const h = s.img.height;
-    const L = (w + h) * 4;
-    const base = toScreen(s);
-    // 平的那半（P 那一邊）
-    g.save();
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.transform(...base);
-    halfPlane(g, f.M, f.n, 1, L);
-    g.clip();
-    g.shadowColor = 'rgba(0,0,0,.18)';
-    g.shadowBlur = 3 / s.k;
-    g.shadowOffsetY = 1.5 / s.k;
-    g.drawImage(s.img, -w / 2, -h / 2);
-    g.restore();
-    // 折起來那片：A 那一邊對折線鏡射 → 畫背面（白），靠折線暗一點、尖端亮一點
-    fg.setTransform(1, 0, 0, 1, 0, 0);
-    fg.clearRect(0, 0, flap.width, flap.height);
-    fg.save();
-    fg.setTransform(dpr, 0, 0, dpr, 0, 0);
-    fg.transform(...base);
-    const { n, M } = f;
-    const mn = M.x * n.x + M.y * n.y;
-    fg.transform(1 - 2 * n.x * n.x, -2 * n.x * n.y, -2 * n.x * n.y, 1 - 2 * n.y * n.y, 2 * mn * n.x, 2 * mn * n.y);
-    halfPlane(fg, M, n, -1, L);
-    fg.clip();
-    fg.drawImage(s.back, -w / 2, -h / 2);
-    fg.globalCompositeOperation = 'source-atop';
-    const span = Math.max(20, f.d * 0.6);
-    const gr = fg.createLinearGradient(M.x, M.y, M.x - n.x * span, M.y - n.y * span);
-    gr.addColorStop(0, 'rgba(90,100,120,.38)');
-    gr.addColorStop(0.18, 'rgba(255,255,255,.0)');
-    gr.addColorStop(0.55, 'rgba(255,255,255,.55)');
-    gr.addColorStop(1, 'rgba(200,205,215,.25)');
-    fg.fillStyle = gr;
-    fg.fillRect(-L, -L, L * 2, L * 2);
-    fg.restore();
-    g.save();
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    const sx = n.x * Math.cos(s.rot) - n.y * Math.sin(s.rot);
-    const sy = n.x * Math.sin(s.rot) + n.y * Math.cos(s.rot);
-    g.shadowColor = 'rgba(0,0,0,.28)';
-    g.shadowBlur = 12 * dpr;
-    g.shadowOffsetX = sx * 5 * dpr;
-    g.shadowOffsetY = (sy * 5 + 3) * dpr;
-    g.drawImage(flap, 0, 0);
-    g.restore();
-  }
+  const local = toLocal;
+  const drawSticker = (s) => paintSticker(g, dpr, s);
+  const progress = peelProgress;
+  const drawPeeling = (s, A, P) => paintPeel(g, fg, flap, dpr, s, A, P);
   function drawGhosts() {
     for (const s of S) {
       const w = s.img.width;
@@ -425,17 +496,19 @@ export function openPeel(items, o) {
       g.restore();
     }
     // 標籤：第一張貼紙＋「シール ×N」
-    const lc = o.pack.labelAt || { x: 0.5, y: 0.52, r: 0.2 };
+    const lc = o.pack.labelAt || { x: 0.5, y: 0.5, r: 0.2 };
+    const R = w * lc.r; // 圓標籤的半徑（px）
+    const cx = x + w * lc.x;
+    const cy = y + h * lc.y;
     const s0 = S[0];
     if (s0) {
-      const r = w * lc.r;
-      const k = (r * 1.5) / Math.max(s0.img.width, s0.img.height);
-      g.drawImage(s0.img, x + w * lc.x - (s0.img.width * k) / 2, y + h * lc.y - (s0.img.height * k) / 2 - r * 0.12, s0.img.width * k, s0.img.height * k);
+      const k = (R * 1.25) / Math.max(s0.img.width, s0.img.height);
+      g.drawImage(s0.img, cx - (s0.img.width * k) / 2, cy - R * 0.14 - (s0.img.height * k) / 2, s0.img.width * k, s0.img.height * k);
     }
     g.fillStyle = '#3a3f66';
-    g.font = `900 ${Math.round(w * 0.075)}px ${getComputedStyle(document.body).fontFamily}`;
+    g.font = `900 ${Math.round(R * 0.24)}px ${getComputedStyle(document.body).fontFamily}`;
     g.textAlign = 'center';
-    g.fillText(o.pack.label || '', x + w * lc.x, y + h * (lc.y + lc.r * 0.95));
+    g.fillText(o.pack.label || '', cx, cy + R * 0.74);
     // 提示：沿著封口的箭頭（還沒開始撕的時候一閃一閃）
     if (st.tear < 0.05) {
       const a = 0.35 + 0.35 * Math.sin(tt * 4);
