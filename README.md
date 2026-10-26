@@ -63,6 +63,27 @@
 - 收集簿本身還是存在各自的裝置（改 localStorage 就能作弊）；要防作弊得把收集簿也搬上伺服器
 - 測試資料：測試錢包 `2kwVijo30a`（暱稱 Test B）跟交換 #1–#5 留在資料庫
 
+## 多台機台、公開封面（2026-10-26）
+
+使用者：「追加可以做多台的機器 還有公開的機器的圖片可以自己設置」。
+- **多台機台本來就有**（我的商店：`clatter.shop`＝{ cur, list }，每台草稿 `clatter.draft.<uid>`），但頂列縮成圖示後不好找 → 開店頁最上面加**機台切換列**：下拉選單換台（`switchMachine`）、「＋ 新機台」（`newMachine`）、「複製這台」（`dupMachine`）。選項＝「編號. 名稱 · 種類」，任何修改都會更新（`relabelSwitch()` 在 `draftChanged` 裡）
+- **複製**：同樣的獎品、外觀、價錢、封面，名稱加「（複製）」，**沒有連結**（`cloud`、`listed`、`listedCover` 拿掉 → 做連結會是另一條）。存不下（localStorage 滿了）就不複製。我的商店每台也有「複製」
+- **公開封面**（`draft.cover`）：連結區的「公開到逛機台」下面一列：封面縮圖＋「換成自己的圖片」→ 裁切對話框（`sheet-cover`：拖曳調位置、滑桿／滾輪調大小，320×320，webp 壓到 55 KB 以下）；「改回 3D 機台」。沒有自己的圖就用 3D 機台拍的（`listedCover`，每次同步重拍）。公開中改封面 → `pushListing()` 馬上更新摘要。我的商店的機台圖示也換成封面
+- 收尾：從我的商店拿掉公開中的機台 → 先取消公開（鑰匙會跟著刪掉）；「改用新連結」→ 舊連結取消公開、新連結做好後自動公開
+
+## 效果音、背景音樂（2026-10-26）
+
+使用者：「優化音效 跟可以設定背景音樂」。
+- **效果音**（`web/sfx.js`，還是全部 WebAudio 即時合成）：每個聲音 → 效果音音量 → 壓縮器 → 喇叭，另外送一點進程式產生的房間殘響；音高、左右每次差一點；開獎、升格、定格改成 FM 鐘聲（鐵琴）；硬幣（多泛音＋滾動＋掉進錢箱）、把手棘輪、扭蛋碰撞（空心塑膠共振）、開蛋（扣子＋啵＋亮晶晶）重做；新增按鈕（`tap`）、分頁（`tab`）、勾選（`toggle`）、對話框（`open`）的小聲音（全域 click 監聽，很小聲）
+- **背景音樂**（`web/bgm.js`）：店家在開店頁「BGM」選：6 首預設曲（玩具店 shop、電玩 arcade、櫻花 sakura、夜晚 night、祭典 festival、夢幻 dream）、不要音樂、上傳自己的曲子（存在 IndexedDB，做連結時跟獎品影音一樣上傳 Supabase）。選了馬上播；買家轉這台時聽到同一首
+  - 曲子：Gemini「音楽を作成」（2026-10-26，一首約 2 分鐘，下載「音声のみ」mp3）→ `D:\ai\gemini\gacha\bgm\` → `py -I tools/make_bgm.py D:/ai/gemini/gacha/bgm`（loudnorm −19 LUFS、96 kbps，一首約 1.4 MB）→ `web/assets/bgm/<id>.mp3`
+  - 連結：`bm`＝['n'] 不要、['p', id] 預設曲、['a', 網址] 上傳的曲子；沒寫＝shop（舊連結也有音樂）。本機還沒上傳的檔案不寫進連結（買家聽到 shop）
+  - 播放：兩個 `<audio>` 交叉淡入（換曲、快結束前從頭淡入 → 無縫循環；10 秒以下的短曲直接 loop）；音量走 WebAudio GainNode（iPhone 改不了 `<audio>.volume`）；開獎（`reveal`、集氣、心跳）時壓到 28%（`setDuck`）；獎品的 `<audio>／<video>` 開始播 → 先停（document 的 play 事件），YouTube／SoundCloud／Spotify 是 iframe → `nowPlaying()` 包一層停；切到背景分頁也停
+  - 第一次點畫面才會出聲（瀏覽器規定），`unlock()` 之後 `onUnlock` 通知 bgm.js 開始
+- **音量面板**：右上角喇叭 → 效果音、BGM 兩條滑桿＋全部靜音＋正在播哪首；存在 `clatter.audio`
+- **PWA**：`sw.js` 不碰 Range（206）請求；`build_site.py` 不把 `assets/bgm/` 放進安裝時的預先下載（播過才進快取）
+- 測過（`bgm.state()`）：選曲切換、開獎壓低再回來、hush／unhush、快結束時從頭淡入、上傳的曲子（本機 blob、雲端網址都經 WebAudio）、連結來回解碼、手機版面
+
 ## 逛機台（2026-10-26）
 
 使用者：「追加用戶做好的機器的瀏覽頁面」。上方列第三個分頁「逛機台」（指南針圖示），伺服器 `supabase/07_browse.sql`（2026-10-26 在 SQL Editor 跑過）。
@@ -214,6 +235,8 @@ Maya 匯入的網格帶自訂法線，蓋掉了 Blender 的銳邊 → 機身 56%
 | `web/machine.js` | three.js 場景：toon 材質＋描邊、窗內扭蛋物理、投幣、把手、出蛋、開蛋特效 |
 | `web/decor.js` | 機台上的貼紙與台紙（Canvas：Gemini 背景＋文字） |
 | `web/codec.js` | 設定 ⇄ 連結（二進位打包＋deflate-raw＋base64url） |
+| `web/bgm.js` | 背景音樂：交叉淡入循環、壓低、暫停、音量 |
+| `tools/make_bgm.py` | Gemini 的 mp3 → `web/assets/bgm/`（音量一致、96 kbps） |
 | `web/sfx.js` | WebAudio 合成音效 |
 | `supabase/07_browse.sql` | 逛機台：`machines.listed／meta／listed_at`、`set_listed`、`browse_machines` |
 | `web/i18n.js` | 中／日／英文字串、語言切換（HTML 用 `data-i18n`） |

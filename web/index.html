@@ -144,6 +144,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .cover-txt .row { gap: 6px; margin-top: 2px; }
 .cover-txt .btn { padding: 5px 12px; font-size: 13px; }
 .cover-txt .btn.sun { box-shadow: 2px 2px 0 var(--stroke); }
+#cv-title { padding-right: 40px; } /* 長的標題（獎品名）不要壓到 ✕ */
 .cover-stage { justify-self: center; width: min(100%, 320px); aspect-ratio: 1; border-radius: 16px; overflow: hidden; border: 3px solid var(--stroke); touch-action: none; cursor: grab; background: var(--surface-2); }
 .cover-stage:active { cursor: grabbing; }
 .cover-stage canvas { width: 100%; height: 100%; display: block; }
@@ -1258,11 +1259,11 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   </div>
 </div>
 
-<!-- 逛機台的封面：自己的圖片裁成正方形（拖曳調位置、滑桿／滾輪調大小） -->
+<!-- 裁切對話框：逛機台的封面、獎品照片共用（拖曳調位置、滑桿／滾輪調大小；比例跟著輸出，app.js 的 openCrop） -->
 <div class="sheet" id="sheet-cover" hidden>
   <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="cv-title">
     <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
-    <h2 id="cv-title" data-i18n="cover.title">設定封面</h2>
+    <h2 id="cv-title">設定封面</h2>
     <p class="hint-text" data-i18n="cover.drag">拖曳調整位置、用滑桿或滾輪調整大小</p>
     <div class="cover-stage"><canvas id="cv-canvas" width="320" height="320"></canvas></div>
     <label class="cover-zoom"><span data-i18n="cover.zoom">大小</span><input type="range" id="cv-zoom" min="1" max="4" step="0.01" value="1"></label>

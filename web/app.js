@@ -179,19 +179,21 @@ function thumbOf(cfg, i) {
 }
 const placeholderCache = new Map();
 
-// 上傳的照片：裁成正方形 96 px、轉 webp（一張約 1.5 KB，連結裡放得下）
-// 獎品照片：轉蛋機 128 px 正方形；轉卡機以圖為主 → 直的 240 × 350（卡片比例），卡面整張都是這張圖
+// 獎品照片：轉蛋機 128 px 正方形；轉卡機以圖為主 → 直的 240 × 350（卡片比例），卡面整張都是這張圖；轉 webp（連結裡放得下）
+//   上傳的照片會先開裁切對話框（openCrop）；影片截圖、YouTube 縮圖直接取中間（shrinkImage）
+const prizeSize = () => (draft?.kind === 'card' ? [240, 350] : [128, 128]);
 async function shrinkImage(file) {
   const bmp = await createImageBitmap(file);
-  const card = draft?.kind === 'card';
-  const SW = card ? 240 : 128;
-  const SH = card ? 350 : 128;
+  const [SW, SH] = prizeSize();
   const c = document.createElement('canvas');
   c.width = SW;
   c.height = SH;
   const g = c.getContext('2d');
   const s = Math.max(SW / bmp.width, SH / bmp.height);
   g.drawImage(bmp, (SW - bmp.width * s) / 2, (SH - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
+  return encodeImg(c);
+}
+async function encodeImg(c) {
   let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.78));
   if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
@@ -1020,9 +1022,17 @@ function bindForm() {
     const f = $('file').files[0];
     if (!f || fileFor < 0) return;
     if (/^(audio|video)\//.test(f.type)) return attachFile(fileFor, f);
+    const it = draft.items[fileFor];
+    let bmp;
     try {
-      const it = draft.items[fileFor];
-      it.img = await shrinkImage(f);
+      bmp = await createImageBitmap(f);
+    } catch (e) {
+      return toast(t('t.badImage'));
+    }
+    const c = await openCrop({ bmp, out: prizeSize(), title: t('crop.title', { name: it.name }) });
+    if (!c || !draft.items.includes(it)) return; // 取消了
+    try {
+      it.img = await encodeImg(c);
       it.mask = null;
       it.noMask = false;
       draftChanged(true);
@@ -2235,6 +2245,7 @@ function openSheet(id, focusEl) {
   (focusEl || $(id).querySelector('button'))?.focus();
 }
 function closeSheet(id) {
+  if (id === 'sheet-cover') cv.done?.(null);
   if (id === 'sheet-media') mediaPreview?.stop();
   if (id === 'sheet-card') {
     cardPlayer?.stop();
@@ -2964,29 +2975,82 @@ function renderCover() {
   $('cover-state').textContent = t(draft.cover ? 'cover.custom' : 'cover.auto');
   $('cover-3d').hidden = !draft.cover;
 }
-const cv = { bmp: null, zoom: 1, x: 0, y: 0 }; // 裁切：圖的左上角在畫布上的位置（畫布 320×320）
-const cvScale = () => Math.max(320 / cv.bmp.width, 320 / cv.bmp.height) * cv.zoom;
-function drawCover() {
+// ---------- 裁切對話框（逛機台封面、獎品照片共用） ----------
+//   使用者 2026-10-26：「增加上傳扭蛋圖片時的裁剪功能」→ 獎品照片上傳時先裁（轉蛋機正方形、轉卡機直的卡片比例）
+//   openCrop({ bmp, out: [寬, 高], title }) → 裁好的 canvas（輸出大小）；取消＝null
+//   預覽畫布：比例跟輸出一樣、長邊 480 px；cv.x／y＝圖的左上角在預覽畫布上的位置
+const cv = { bmp: null, zoom: 1, x: 0, y: 0, W: 480, H: 480, out: [320, 320], done: null };
+const cvScale = () => Math.max(cv.W / cv.bmp.width, cv.H / cv.bmp.height) * cv.zoom;
+function drawCrop() {
   const s = cvScale();
   const w = cv.bmp.width * s;
   const h = cv.bmp.height * s;
-  cv.x = Math.min(0, Math.max(320 - w, cv.x)); // 不留空白
-  cv.y = Math.min(0, Math.max(320 - h, cv.y));
+  cv.x = Math.min(0, Math.max(cv.W - w, cv.x)); // 不留空白
+  cv.y = Math.min(0, Math.max(cv.H - h, cv.y));
   const g = $('cv-canvas').getContext('2d');
-  g.clearRect(0, 0, 320, 320);
+  g.clearRect(0, 0, cv.W, cv.H);
   g.drawImage(cv.bmp, cv.x, cv.y, w, h);
 }
 // 放大縮小時畫面正中間那一點不動
-function zoomCover(z) {
+function zoomCrop(z) {
   const s0 = cvScale();
-  const cx = (160 - cv.x) / s0;
-  const cy = (160 - cv.y) / s0;
+  const cx = (cv.W / 2 - cv.x) / s0;
+  const cy = (cv.H / 2 - cv.y) / s0;
   cv.zoom = Math.min(4, Math.max(1, z));
   const s1 = cvScale();
-  cv.x = 160 - cx * s1;
-  cv.y = 160 - cy * s1;
+  cv.x = cv.W / 2 - cx * s1;
+  cv.y = cv.H / 2 - cy * s1;
   $('cv-zoom').value = cv.zoom;
-  drawCover();
+  drawCrop();
+}
+function openCrop({ bmp, out, title }) {
+  cv.done?.(null); // 上一個還開著 → 當作取消
+  const k = 480 / Math.max(out[0], out[1]);
+  Object.assign(cv, { bmp, out, zoom: 1, W: Math.round(out[0] * k), H: Math.round(out[1] * k) });
+  const c = $('cv-canvas');
+  c.width = cv.W;
+  c.height = cv.H;
+  // 舞台：正方形最寬 320 px；直的卡片高度最多 380 px
+  c.parentElement.style.aspectRatio = `${cv.W} / ${cv.H}`;
+  c.parentElement.style.width = `min(100%, ${Math.round(Math.min(320, (380 * cv.W) / cv.H))}px)`;
+  const s = cvScale();
+  cv.x = (cv.W - bmp.width * s) / 2;
+  cv.y = (cv.H - bmp.height * s) / 2;
+  $('cv-zoom').value = 1;
+  $('cv-title').textContent = title;
+  drawCrop();
+  openSheet('sheet-cover', $('cv-ok'));
+  return new Promise((res) => {
+    cv.done = (r) => {
+      cv.done = null;
+      res(r);
+    };
+  });
+}
+// 同樣的取景畫到輸出大小（從原圖直接縮，不經過預覽畫布）
+function cropCanvas() {
+  const [ow, oh] = cv.out;
+  const k = ow / cv.W;
+  const c = document.createElement('canvas');
+  c.width = ow;
+  c.height = oh;
+  const g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  const s = cvScale() * k;
+  g.drawImage(cv.bmp, cv.x * k, cv.y * k, cv.bmp.width * s, cv.bmp.height * s);
+  return c;
+}
+// 逛機台的封面：webp 壓到 55 KB 以下（逛機台只收 60 KB 以內的圖）；不支援 webp 的瀏覽器用 jpeg
+function coverUrl(c) {
+  let u = '';
+  out: for (const type of ['image/webp', 'image/jpeg'])
+    for (const q of [0.85, 0.75, 0.62, 0.5, 0.4]) {
+      const v = c.toDataURL(type, q);
+      if (!v.startsWith('data:' + type)) continue out;
+      u = v;
+      if (v.length < 55000) break out;
+    }
+  return u && u.length < 60000 ? u : null;
 }
 function bindCover() {
   $('cover-pick').onclick = () => {
@@ -2996,18 +3060,21 @@ function bindCover() {
   $('file-cover').addEventListener('change', async () => {
     const f = $('file-cover').files[0];
     if (!f) return;
+    let bmp;
     try {
-      cv.bmp = await createImageBitmap(f);
+      bmp = await createImageBitmap(f);
     } catch (e) {
       return toast(t('t.badImage'));
     }
-    cv.zoom = 1;
-    const s = cvScale();
-    cv.x = (320 - cv.bmp.width * s) / 2;
-    cv.y = (320 - cv.bmp.height * s) / 2;
-    $('cv-zoom').value = 1;
-    drawCover();
-    openSheet('sheet-cover', $('cv-ok'));
+    const c = await openCrop({ bmp, out: [320, 320], title: t('cover.title') });
+    if (!c) return;
+    const u = coverUrl(c);
+    if (!u) return toast(t('t.badImage'));
+    draft.cover = u;
+    saveDraft();
+    renderCover();
+    pushListing();
+    toast(t('cover.saved'));
   });
   $('cover-3d').onclick = () => {
     draft.cover = null;
@@ -3025,12 +3092,12 @@ function bindCover() {
   });
   cvs.addEventListener('pointermove', (e) => {
     if (!drag || e.pointerId !== drag.id || !cv.bmp) return;
-    const k = 320 / cvs.clientWidth;
+    const k = cv.W / cvs.clientWidth;
     cv.x += (e.clientX - drag.x) * k;
     cv.y += (e.clientY - drag.y) * k;
     drag.x = e.clientX;
     drag.y = e.clientY;
-    drawCover();
+    drawCrop();
   });
   const end = () => (drag = null);
   cvs.addEventListener('pointerup', end);
@@ -3039,29 +3106,14 @@ function bindCover() {
     'wheel',
     (e) => {
       e.preventDefault();
-      if (cv.bmp) zoomCover(cv.zoom * Math.exp(-e.deltaY / 500));
+      if (cv.bmp) zoomCrop(cv.zoom * Math.exp(-e.deltaY / 500));
     },
     { passive: false },
   );
-  $('cv-zoom').addEventListener('input', () => cv.bmp && zoomCover(+$('cv-zoom').value));
-  // 存成 webp（壓到 55 KB 以下：逛機台只收 60 KB 以內的圖）；不支援 webp 的瀏覽器用 jpeg
+  $('cv-zoom').addEventListener('input', () => cv.bmp && zoomCrop(+$('cv-zoom').value));
   $('cv-ok').onclick = () => {
-    const c = $('cv-canvas');
-    let u = '';
-    out: for (const type of ['image/webp', 'image/jpeg'])
-      for (const q of [0.85, 0.75, 0.62, 0.5, 0.4]) {
-        const v = c.toDataURL(type, q);
-        if (!v.startsWith('data:' + type)) continue out;
-        u = v;
-        if (v.length < 55000) break out;
-      }
-    if (!u || u.length >= 60000) return toast(t('t.badImage'));
-    draft.cover = u;
-    saveDraft();
-    renderCover();
-    pushListing();
+    cv.done?.(cropCanvas());
     closeSheet('sheet-cover');
-    toast(t('cover.saved'));
   };
 }
 async function toggleListed(on) {
