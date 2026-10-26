@@ -14,6 +14,15 @@ export const BG_PRESETS = ['plain', 'shop', 'night', 'sakura', 'stars', 'cats', 
 export const BACK_PRESETS = ['shop', 'night', 'sakura', 'stars', 'cats', 'dogs', 'galaxy', 'candy']; // 卡背樣式（Gemini 畫的，assets/tex/back_<id>.webp）
 export const FINISHES = ['gold', 'silver', 'rainbow', 'holo', 'none']; // SR／SSR 卡背的加工
 const FIN_CODE = { gold: 'g', silver: 's', rainbow: 'r', holo: 'h', none: 'n' };
+// SR／SSR 卡面（表面）的加工（使用者 2026-10-26：「SSR 跟SR 表面加工也追加進去」）
+//   holo ホロ、texture 紋理（フルアート）、rainbow 彩虹亮粉、gold 彩虹＋金框、silver 銀箔、none 不加工；預設 SR 紋理、SSR 金框
+export const FRONT_FINISHES = ['holo', 'texture', 'rainbow', 'gold', 'silver', 'none'];
+const FRONT_CODE = { holo: 'h', texture: 't', rainbow: 'r', gold: 'g', silver: 's', none: 'n' };
+export function finOf(fin, r) {
+  if (r === 2) return FRONT_FINISHES.includes(fin?.sr) ? fin.sr : 'texture';
+  if (r === 3) return FRONT_FINISHES.includes(fin?.ssr) ? fin.ssr : 'gold';
+  return r === 1 ? 'holo' : 'none';
+}
 
 export async function encodeConfig(cfg) {
   const imgs = [];
@@ -57,6 +66,7 @@ export async function encodeConfig(cfg) {
     json.b = ['i', bg.img.bytes.length, bg.img.mime === 'image/webp' ? 'w' : 'j'];
   }
   if (cfg.kind === 'card') json.k = 'c'; // 機台種類：沒寫＝轉蛋機
+  if (cfg.fin && (finOf(cfg.fin, 2) !== 'texture' || finOf(cfg.fin, 3) !== 'gold')) json.cf = [FRONT_CODE[finOf(cfg.fin, 2)], FRONT_CODE[finOf(cfg.fin, 3)]]; // 表面加工
   // 卡背：[圖片長度, 格式, 文字, 邊框色, 種類（i 圖／p 樣式／c 顏色）, 樣式 id 或顏色, SR 加工, SSR 加工]（圖片接在背景圖後面）
   const back = cfg.back;
   if (cfg.kind === 'card' && back) {
@@ -158,6 +168,7 @@ export async function decodeConfig(token) {
     bg,
     kind: j.k === 'c' ? 'card' : 'capsule',
     back,
+    fin: Array.isArray(j.cf) ? { sr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[0]), ssr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[1]) } : null,
   };
 }
 

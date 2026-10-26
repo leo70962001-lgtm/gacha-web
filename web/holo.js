@@ -70,7 +70,9 @@ export class Holo {
     const el = this.el;
     this.d = d;
     const R = ['n', 'r', 'sr', 'ssr'][d.r] || 'n';
-    el.className = `tilt r${d.r} ${d.shape === 'card' ? '' : d.shape}`;
+    // 閃法：d.fin（店家選的表面加工）沒給就照稀有度（R ホロ、SR 紋理、SSR 金框）
+    const fx = d.fin || ['none', 'holo', 'texture', 'gold'][d.r] || 'none';
+    el.className = `tilt r${d.r} fx-${fx} ${d.shape === 'card' ? '' : d.shape}`;
     el.classList.toggle('pop', !!d.s);
     el.classList.toggle('no-tag', d.tag === false);
     el.style.setProperty('--rc', `var(--r-${R})`);

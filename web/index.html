@@ -168,13 +168,15 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .pk.got { padding: 0; border: 0; background: none; cursor: pointer; isolation: isolate; transition: transform .15s; }
 .pk.got:hover { transform: translateY(-3px) rotate(-1deg); }
 .pk-card { position: absolute; inset: 0; border-radius: 7px; background: #fffaf2 center / cover no-repeat; border: 4px solid var(--rc); box-shadow: 0 0 0 1.5px var(--stroke), 2px 3px 0 rgba(0,0,0,.18); overflow: hidden; }
-.pk.r3 .pk-card { border-color: #e2b13c; border-image: linear-gradient(135deg, #8a5a0a, #ffe28a 30%, #c8901c 50%, #fff3c0 70%, #a8740e) 1; border-radius: 0; }
+.pk.fx-gold .pk-card { border-color: #e2b13c; border-image: linear-gradient(135deg, #8a5a0a, #ffe28a 30%, #c8901c 50%, #fff3c0 70%, #a8740e) 1; border-radius: 0; }
 .pk-name { position: absolute; left: 5%; right: 5%; bottom: 5%; padding: 2px 4px; border-radius: 5px; background: rgba(28,35,64,.86); color: #fff; font-size: 10px; font-weight: 900; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pk-holo { position: absolute; inset: 0; mix-blend-mode: color-dodge; opacity: 0; pointer-events: none; }
 /* 卡套裡的閃：慢慢來回晃（使用者 2026-10-26：「特效的跑的速度太快」— 原本 3–5 秒就整條虹光跑過去） */
-.pk.r1 .pk-holo { opacity: .35; background: var(--rb110) 0 0 / 300% 300%; animation: pkHolo1 9s ease-in-out infinite alternate; }
-.pk.r2 .pk-holo { opacity: .45; background: var(--lat), var(--rb133); background-size: auto, 300% 300%; animation: pkHolo 8s ease-in-out infinite alternate; }
-.pk.r3 .pk-holo { opacity: .75; background: var(--glitter), var(--rb-30); background-size: 120px 120px, 300% 300%; background-blend-mode: soft-light; animation: pkHolo 7s ease-in-out infinite alternate; }
+.pk-holo.fx-holo { opacity: .35; background: var(--rb110) 0 0 / 300% 300%; animation: pkHolo1 9s ease-in-out infinite alternate; }
+.pk-holo.fx-texture { opacity: .45; background: var(--lat), var(--rb133); background-size: auto, 300% 300%; animation: pkHolo 8s ease-in-out infinite alternate; }
+.pk-holo:is(.fx-gold, .fx-rainbow) { opacity: .75; background: var(--glitter), var(--rb-30); background-size: 120px 120px, 300% 300%; background-blend-mode: soft-light; animation: pkHolo 7s ease-in-out infinite alternate; }
+.pk-holo.fx-silver { opacity: .7; background: var(--glitter), linear-gradient(115deg, #3c4250, #e8ecf4 40%, #6b7280 60%, #f4f6fa); background-size: 120px 120px, 300% 300%; background-blend-mode: screen; animation: pkHolo 7s ease-in-out infinite alternate; }
+.pk.fx-silver .pk-card { border-color: #c9ced8; border-image: linear-gradient(135deg, #5b6170, #f2f4f8 30%, #9aa1ae 50%, #ffffff 70%, #6b7280) 1; border-radius: 0; filter: saturate(.35); }
 @keyframes pkHolo { to { background-position: 0 0, 100% 60%; } }
 @keyframes pkHolo1 { to { background-position: 100% 60%; } }
 .bk-grid > :nth-child(3n+2) .pk-holo { animation-delay: -2.5s; } /* 每張錯開，不要整頁一起動 */
@@ -402,20 +404,26 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .tilt.round .t-tag { bottom: 12%; }
 .tilt.no-tag .t-tag { display: none; }
 /* R：ホロ — 110° 六色雷射（200% 大，斜的時候反方向滑）× 直的細掃描線，color-dodge；只在圖片背景（主體在前面那層，不閃） */
-.tilt.r1 .t-tint { display: block; background: var(--rb110); background-size: 200% 200%; background-position: var(--pos-a); mix-blend-mode: color; opacity: calc(.2 + var(--fc) * .35); }
-.tilt.r1 .t-shine, .tilt.r1 .t-fshine { display: block; background-image: var(--rb110), repeating-linear-gradient(90deg, #222 0 1px, #888 1px 2px); background-size: 200% 200%, auto; background-position: var(--pos-a), 0 0; background-blend-mode: overlay; filter: brightness(1.1) contrast(1.1) saturate(1.2); mix-blend-mode: color-dodge; opacity: calc(.3 + var(--fc) * .65); -webkit-mask: var(--spot); mask: var(--spot); }
-.tilt.r1 .t-fshine { opacity: calc(.15 + var(--fc) * .45); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; } /* 框也淡淡的閃（像リバースホロ），有去背時背景被主體擋住也看得出是 R */
+.tilt.fx-holo .t-tint { display: block; background: var(--rb110); background-size: 200% 200%; background-position: var(--pos-a); mix-blend-mode: color; opacity: calc(.2 + var(--fc) * .35); }
+.tilt.fx-holo .t-shine, .tilt.fx-holo .t-fshine { display: block; background-image: var(--rb110), repeating-linear-gradient(90deg, #222 0 1px, #888 1px 2px); background-size: 200% 200%, auto; background-position: var(--pos-a), 0 0; background-blend-mode: overlay; filter: brightness(1.1) contrast(1.1) saturate(1.2); mix-blend-mode: color-dodge; opacity: calc(.3 + var(--fc) * .65); -webkit-mask: var(--spot); mask: var(--spot); }
+.tilt.fx-holo .t-fshine { opacity: calc(.15 + var(--fc) * .45); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; } /* 框也淡淡的閃（像リバースホロ），有去背時背景被主體擋住也看得出是 R */
 /* SR：フルアート — ±45° 交叉細線（菱格紋理）疊在 133° 虹光上，背景＋框都閃，主體淡淡的 */
-.tilt.r2 .t-tint { display: block; background: var(--rb133); background-size: 300% 300%; background-position: var(--pos-a); mix-blend-mode: color; opacity: calc(.18 + var(--fc) * .3); }
-.tilt.r2 .t-shine, .tilt.r2 .t-fshine, .tilt.r2 .t-sshine { display: block; background-image: var(--lat), var(--rb133); background-size: auto, 300% 300%; background-position: calc(var(--bx) * .6) calc(var(--by) * .6), var(--pos-a); background-blend-mode: overlay; filter: brightness(.75) contrast(1.5) saturate(1.1); mix-blend-mode: color-dodge; opacity: calc(.35 + var(--fc) * .6); }
-.tilt.r2 .t-shine { -webkit-mask: var(--spot); mask: var(--spot); }
-.tilt.r2 .t-sshine { background-image: var(--lat); background-size: auto; filter: brightness(.6); opacity: calc(.1 + var(--fc) * .2); } /* 主體只有淡淡的紋理反光，不上色 */
+.tilt.fx-texture .t-tint { display: block; background: var(--rb133); background-size: 300% 300%; background-position: var(--pos-a); mix-blend-mode: color; opacity: calc(.18 + var(--fc) * .3); }
+.tilt.fx-texture .t-shine, .tilt.fx-texture .t-fshine, .tilt.fx-texture .t-sshine { display: block; background-image: var(--lat), var(--rb133); background-size: auto, 300% 300%; background-position: calc(var(--bx) * .6) calc(var(--by) * .6), var(--pos-a); background-blend-mode: overlay; filter: brightness(.75) contrast(1.5) saturate(1.1); mix-blend-mode: color-dodge; opacity: calc(.35 + var(--fc) * .6); }
+.tilt.fx-texture .t-shine { -webkit-mask: var(--spot); mask: var(--spot); }
+.tilt.fx-texture .t-sshine { background-image: var(--lat); background-size: auto; filter: brightness(.6); opacity: calc(.1 + var(--fc) * .2); } /* 主體只有淡淡的紋理反光，不上色 */
 /* SSR：レインボーレア＋ゴールド — 整張虹色上色、亮粉（跟著光點反方向飄）color-dodge、金框也有亮粉 */
-.tilt.r3 .t-tint, .tilt.r3 .t-stint { display: block; background: var(--rb-30); background-size: 300% 300%; background-position: calc(25% + var(--mx) / 2) calc(25% + var(--my) / 2); mix-blend-mode: color; opacity: calc(.38 + var(--fc) * .25); }
-.tilt.r3 .t-stint { opacity: calc(.08 + var(--fc) * .1); }
-.tilt.r3 .t-shine, .tilt.r3 .t-sshine { display: block; background-image: var(--glitter), var(--rb-30); background-size: 150px 150px, 300% 300%; background-position: calc(var(--bx) * -1.4) calc(var(--by) * -1.4), var(--mx) var(--my); background-blend-mode: soft-light; filter: brightness(calc(.75 + var(--fc) * .5)) contrast(1.8); mix-blend-mode: color-dodge; opacity: .9; }
-.tilt.r3 .t-sshine { background-image: var(--glitter); background-size: 150px 150px; background-blend-mode: normal; filter: brightness(calc(.8 + var(--fc) * .6)) contrast(1.6); opacity: .85; } /* 主體只上亮粉，不重新上色 */
-.tilt.r3 .t-fshine { display: block; background-image: var(--glitter), linear-gradient(135deg, #8a5a0a, #ffe28a 28%, #c8901c 48%, #fff3c0 66%, #a8740e 85%, #ffe28a); background-size: 120px 120px, 220% 220%; background-position: calc(var(--bx) * 1.5) calc(var(--by) * 1.5), var(--pos-a); background-blend-mode: color-dodge; }
+.tilt:is(.fx-gold, .fx-rainbow, .fx-silver) .t-tint, .tilt:is(.fx-gold, .fx-rainbow, .fx-silver) .t-stint { display: block; background: var(--rb-30); background-size: 300% 300%; background-position: calc(25% + var(--mx) / 2) calc(25% + var(--my) / 2); mix-blend-mode: color; opacity: calc(.38 + var(--fc) * .25); }
+.tilt:is(.fx-gold, .fx-rainbow, .fx-silver) .t-stint { opacity: calc(.08 + var(--fc) * .1); }
+.tilt:is(.fx-gold, .fx-rainbow, .fx-silver) .t-shine, .tilt:is(.fx-gold, .fx-rainbow, .fx-silver) .t-sshine { display: block; background-image: var(--glitter), var(--rb-30); background-size: 150px 150px, 300% 300%; background-position: calc(var(--bx) * -1.4) calc(var(--by) * -1.4), var(--mx) var(--my); background-blend-mode: soft-light; filter: brightness(calc(.75 + var(--fc) * .5)) contrast(1.8); mix-blend-mode: color-dodge; opacity: .9; }
+.tilt:is(.fx-gold, .fx-rainbow, .fx-silver) .t-sshine { background-image: var(--glitter); background-size: 150px 150px; background-blend-mode: normal; filter: brightness(calc(.8 + var(--fc) * .6)) contrast(1.6); opacity: .85; } /* 主體只上亮粉，不重新上色 */
+.tilt:is(.fx-gold, .fx-rainbow, .fx-silver) .t-fshine { display: block; background-image: var(--glitter), linear-gradient(135deg, #8a5a0a, #ffe28a 28%, #c8901c 48%, #fff3c0 66%, #a8740e 85%, #ffe28a); background-size: 120px 120px, 220% 220%; background-position: calc(var(--bx) * 1.5) calc(var(--by) * 1.5), var(--pos-a); background-blend-mode: color-dodge; }
+/* 彩虹（沒有金框）：框改成跟背景一樣的虹色亮粉；銀箔：背景去色、亮粉白色、框銀色（使用者 2026-10-26：「SSR 跟SR 表面加工也追加進去」） */
+.tilt.fx-rainbow .t-fshine { background-image: var(--glitter), var(--rb-30); background-size: 120px 120px, 300% 300%; background-position: calc(var(--bx) * 1.5) calc(var(--by) * 1.5), var(--mx) var(--my); background-blend-mode: soft-light; mix-blend-mode: color-dodge; }
+.tilt.fx-silver .t-tint { background: #8a8f99; mix-blend-mode: saturation; opacity: .9; }
+.tilt.fx-silver .t-stint { display: none; }
+.tilt.fx-silver .t-shine, .tilt.fx-silver .t-sshine { background-image: var(--glitter), linear-gradient(115deg, #3c4250, #e8ecf4 40%, #6b7280 60%, #f4f6fa); background-blend-mode: screen; filter: brightness(calc(.8 + var(--fc) * .5)) contrast(1.4) saturate(0); }
+.tilt.fx-silver .t-fshine { background-image: var(--glitter), linear-gradient(135deg, #5b6170, #f2f4f8 28%, #9aa1ae 48%, #ffffff 66%, #6b7280 85%, #e5e8ee); background-blend-mode: screen; }
 /* 有去背（使用者 2026-10-25：「主體跟背景分開」）：框內多一圈底紙、照片窗變小、背景退更後面還柔焦；
    主體放大一點、從窗的下緣往上長 → 頭、耳朵會衝出窗蓋到框上（iPhone 景深桌布那種前後分開） */
 .tilt.pop .t-frame { --mat: color-mix(in srgb, var(--rc) 28%, #fffaf2); box-shadow: 0 0 0 3px #1c2340, inset 0 0 0 3px #1c2340, inset 0 var(--bt, 0px) 0 22px var(--mat), inset 0 0 0 22px var(--mat), inset 0 var(--bt, 0px) 0 25px #1c2340, inset 0 0 0 25px #1c2340; } /* --bt：上面那條底紙加寬多少（JS 依主體頭頂算） */
@@ -510,6 +518,21 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .kind-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--stroke); }
 .swatch { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--stroke); cursor: pointer; padding: 0; background: var(--c); position: relative; }
 .bgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 8px; }
+/* SR／SSR 表面加工：兩張小的 3D 閃卡預覽 */
+.front-ed { display: grid; gap: 10px; }
+.front-prev { display: flex; justify-content: center; gap: 18px; }
+.front-prev figure { margin: 0; display: grid; justify-items: center; gap: 2px; }
+.front-prev figcaption { font: 10px/1 var(--font-num); color: var(--muted); }
+.front-prev .tilt-wrap { padding: 4px 0; perspective: 500px; }
+.front-prev .tilt { width: 96px; border-radius: 10px; }
+.front-prev .tilt.square { width: 120px; border-radius: 14px; }
+.front-prev .t-frame { border-width: 6px; }
+.fin-chip.ffin-holo::before, .fin-chip.ffin-texture::before, .fin-chip.ffin-rainbow::before, .fin-chip.ffin-gold::before, .fin-chip.ffin-silver::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1px solid rgba(28, 35, 64, .5); }
+.fin-chip.ffin-holo::before { background: repeating-linear-gradient(110deg, #d68bff 0 2px, #7fd0ff 2px 4px, #a8ff8a 4px 6px, #ffe36b 6px 8px); }
+.fin-chip.ffin-texture::before { background: repeating-linear-gradient(45deg, #fff 0 2px, #b8a6ff 2px 3px), linear-gradient(135deg, #ff9ad5, #9ee7ff); background-blend-mode: multiply; }
+.fin-chip.ffin-rainbow::before { background: conic-gradient(#ff5a7a, #ffe94a, #52e08a, #4cc3ff, #9b6bff, #ff5a7a); }
+.fin-chip.ffin-gold::before { background: conic-gradient(#ff5a7a, #ffe94a, #52e08a, #4cc3ff, #9b6bff, #ff5a7a); box-shadow: 0 0 0 2px #e2b13c; }
+.fin-chip.ffin-silver::before { background: linear-gradient(135deg, #6b7280, #ffffff, #9ca3af); }
 /* 卡背（轉卡機） */
 .back-ed { display: grid; gap: 12px; min-width: 0; } /* 上面預覽、下面選項（設定欄很窄，左右放不下） */
 .back-prev { display: flex; gap: 8px; justify-content: center; }
@@ -914,6 +937,15 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
             </div>
             <div class="field"><span id="sw-label" data-i18n="machineColor">機台顏色</span><div class="swatches" id="swatches" role="radiogroup" aria-labelledby="sw-label"></div></div>
             <div class="field"><span id="bg-label" data-i18n="bg.label">背景</span><div class="bgs" id="bgs" role="radiogroup" aria-labelledby="bg-label"></div></div>
+            <div class="field" id="front-field" hidden><span data-i18n="ffin.label">SR／SSR 表面加工</span>
+              <div class="front-ed">
+                <div class="front-prev" id="front-prev"></div>
+                <div class="back-opts">
+                  <div class="back-row"><span id="fsr-label" data-i18n="ffin.sr">SR 的表面</span><div class="chips fin-chips" id="front-sr" role="radiogroup" aria-labelledby="fsr-label"></div></div>
+                  <div class="back-row"><span id="fssr-label" data-i18n="ffin.ssr">SSR 的表面</span><div class="chips fin-chips" id="front-ssr" role="radiogroup" aria-labelledby="fssr-label"></div></div>
+                </div>
+              </div>
+            </div>
             <div class="field" id="back-field" hidden><span id="back-label" data-i18n="back.label">卡背</span>
               <div class="back-ed">
                 <div class="back-prev" id="back-prev"></div>

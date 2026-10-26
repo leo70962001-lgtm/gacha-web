@@ -605,7 +605,7 @@ export class Machine {
   // 卡片：正面＝這次抽到的獎品（app 畫好的 canvas），背面＝shown 等級的卡背（SSR 可能先裝成金卡）
   // front＝drawCardLayers 的三層（圖片窗做 3D 視差）或一張平面 canvas
   _makeCard(front, rarity, shown) {
-    const fm = rarity; // 正面：N 一般、R ホロ、SR フルアート、SSR レインボー＋金（cardkit.js）
+    const fm = this.frontModes?.[rarity] ?? rarity; // 正面：N 一般、R ホロ、SR／SSR 照店家選的表面加工（cardkit.js）
     const bm = this.backModes?.[shown] ?? (shown >= 3 ? 3 : shown === 2 ? 2 : 0);
     let layers = null;
     let face = front;
@@ -625,6 +625,12 @@ export class Machine {
       this.show.addGlints(g, 3, true);
     };
     return g;
+  }
+
+  // 店家選的 SR／SSR 表面加工 → 3D 卡面的閃光（cardkit uMode）
+  setFrontFinish(fin) {
+    const MODE = { holo: 1, texture: 2, gold: 3, rainbow: 4, silver: 5, none: 0 };
+    this.frontModes = [0, 1, MODE[fin?.sr] ?? 2, MODE[fin?.ssr] ?? 3];
   }
 
   // 店家自訂的卡背（decor.drawCardBack 的 back）→ 重做 4 個稀有度的卡背貼圖（已經發出去的卡不變）

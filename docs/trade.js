@@ -53,7 +53,7 @@ function snapshot(key, e, name, me) {
   const rr = {};
   for (const n of order) rr[n] = rar(e.items[n]?.r);
   return {
-    m: { key: toTradeKey(key, me), link: globalLink(e.link), name: e.name, kind: e.kind === 'card' ? 'card' : 'capsule', order, rar: rr },
+    m: { key: toTradeKey(key, me), link: globalLink(e.link), name: e.name, kind: e.kind === 'card' ? 'card' : 'capsule', order, rar: rr, fin: e.fin || null },
     n: name, r: rar(it.r), t: it.t || null, s: it.s || null, b: it.b || null, st: Number.isFinite(it.st) ? it.st : null,
     md: it.md || null,
   };
@@ -72,7 +72,7 @@ export function clean(x) {
   rr[n] = rar(x.r ?? rr[n]);
   const key = typeof m.key === 'string' && /^[A-Za-z0-9._-]{1,80}$/.test(m.key) ? m.key : 'x.' + str(m.name, 20).replace(/[^A-Za-z0-9]/g, '') + order.length;
   return {
-    m: { key, link: globalLink(m.link), name: str(m.name, 40) || '?', kind: m.kind === 'card' ? 'card' : 'capsule', order, rar: rr },
+    m: { key, link: globalLink(m.link), name: str(m.name, 40) || '?', kind: m.kind === 'card' ? 'card' : 'capsule', order, rar: rr, fin: m.fin && typeof m.fin === 'object' ? { sr: str(m.fin.sr, 10), ssr: str(m.fin.ssr, 10) } : null },
     n, r: rr[n], t: okImg(x.t), s: okImg(x.s), b: okImg(x.b), st: Number.isFinite(x.st) ? Math.min(1, Math.max(0, x.st)) : null,
     md: Array.isArray(x.md) && mediaFromLink(x.md) ? [x.md[0], x.md[1]] : null, // 影音連結重新解析過才收
   };
@@ -132,6 +132,7 @@ export class Trade {
     const key = fromTradeKey(x.m.key, this.w.id);
     const e = a[key] || { name: x.m.name, kind: x.m.kind, link: x.m.link, items: {}, got: {}, order: [] };
     if (!e.link && x.m.link) e.link = x.m.link;
+    if (!e.fin && x.m.fin) e.fin = x.m.fin;
     e.order = [...e.order, ...x.m.order.filter((o) => !e.order.includes(o))];
     for (const o of x.m.order) if (!e.items[o]) e.items[o] = { r: x.m.rar[o] ?? 0 };
     const old = e.items[x.n] || {};

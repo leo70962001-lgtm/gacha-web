@@ -1,7 +1,7 @@
 // Clatter 轉蛋鋪：開店設定 → 產生連結 → 玩家投幣、轉把手、開扭蛋
 import { Machine, THEMES } from './machine.js';
 import { unlock, setMuted, sfx } from './sfx.js';
-import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES } from './codec.js';
+import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES, FRONT_FINISHES, finOf } from './codec.js';
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers, drawCardBack } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
@@ -221,6 +221,7 @@ function loadDraft(uid = shop.cur) {
   d.kind = d.kind === 'card' ? 'card' : 'capsule';
   d.bg = draftBg(d.bg);
   d.back = draftBack(d.back);
+  d.fin = d.fin && (FRONT_FINISHES.includes(d.fin.sr) || FRONT_FINISHES.includes(d.fin.ssr)) ? { sr: FRONT_FINISHES.includes(d.fin.sr) ? d.fin.sr : 'texture', ssr: FRONT_FINISHES.includes(d.fin.ssr) ? d.fin.ssr : 'gold' } : null;
   if (!d.price || !CURRENCIES.includes(d.price.cur)) d.price = { coins: 5, unit: 10, cur: 'NT$' };
   // 雲端短連結的 id＋修改鑰匙：有的話之後改設定會自動更新到同一條連結
   if (!(d.cloud && /^[0-9A-Za-z]{10}$/.test(d.cloud.id) && /^[A-Za-z0-9_-]{20,64}$/.test(d.cloud.key))) delete d.cloud;
@@ -382,6 +383,63 @@ function renderForm() {
   for (const b of $('kinds').children) b.setAttribute('aria-checked', String(b.dataset.kind === (draft.kind || 'capsule')));
   renderBgs();
   renderBack();
+  renderFront();
+}
+
+// ---------- SR／SSR 表面加工（使用者 2026-10-26：「SSR 跟SR 表面加工也追加進去」） ----------
+//   兩列選項＋預覽兩張會晃的 3D 閃卡（用第一個有照片的獎品）；draft.fin＝{ sr, ssr }，都是預設＝null
+let frontHolos = null;
+function renderFront() {
+  const field = $('front-field');
+  const fin = draft.fin || {};
+  for (const [box, key] of [[$('front-sr'), 'sr'], [$('front-ssr'), 'ssr']]) {
+    if (!box.childElementCount)
+      for (const f of FRONT_FINISHES) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chip fin-chip ffin-' + f;
+        b.dataset.f = f;
+        b.setAttribute('role', 'radio');
+        b.onclick = () => {
+          draft.fin = { sr: finOf(draft.fin, 2), ssr: finOf(draft.fin, 3), [key]: f };
+          if (draft.fin.sr === 'texture' && draft.fin.ssr === 'gold') draft.fin = null;
+          renderFront();
+          draftChanged();
+        };
+        box.append(b);
+      }
+    for (const b of box.children) {
+      b.textContent = t('ffin.' + b.dataset.f);
+      b.setAttribute('aria-checked', String(b.dataset.f === finOf(fin, key === 'sr' ? 2 : 3)));
+    }
+  }
+  // 預覽
+  const i = Math.max(0, draft.items.findIndex((it) => it.img));
+  const art = thumbOf(draft, i).url;
+  const shape = draft.kind === 'card' ? 'card' : 'square';
+  if (!frontHolos) {
+    frontHolos = [2, 3].map((r) => {
+      const fig = document.createElement('figure');
+      const wrap = document.createElement('div');
+      wrap.className = 'tilt-wrap';
+      const el = document.createElement('div');
+      wrap.append(el);
+      const cap = document.createElement('figcaption');
+      cap.textContent = r === 2 ? 'SR' : 'SSR';
+      fig.append(wrap, cap);
+      $('front-prev').append(fig);
+      const h = new Holo(el, wrap); // 會晃：下面每次 renderFront 檢查，停了（離開開店頁）就再開始
+      return { h, r };
+    });
+  }
+  for (const { h, r } of frontHolos) {
+    h.set({ t: art, r, fin: finOf(draft.fin, r), shape, tag: false, name: '' });
+    if (!h.running) {
+      h.running = true;
+      h.start(() => (h.running = h.el.isConnected && app.dataset.mode === 'create'));
+    }
+  }
+  field.hidden = false;
 }
 
 // ---------- 背景（壁紙） ----------
@@ -751,6 +809,7 @@ function bindForm() {
       draft.kind = b.dataset.kind;
       for (const x of $('kinds').children) x.setAttribute('aria-checked', String(x === b));
       renderBack(); // 轉卡機才有卡背
+      renderFront(); // 預覽換成卡片／方形
       draftChanged();
     };
   }
@@ -1117,6 +1176,7 @@ async function showMachine(cfg, capsules, total = capsules) {
   machine.setTheme(cfg.theme);
   applyBg(cfg.bg);
   if (curKind === 'card') backArt(cfg.back).then((art) => shown === cfg && machine.setCardBack(art));
+  machine.setFrontFinish(cfg.fin);
   machine.setPile(capsules, total);
   scheduleDecor();
 }
@@ -1519,7 +1579,7 @@ function showResult(idx, first, view = false) {
   resultPlayer?.stop();
   // 獎品＝3D 閃卡（寶可夢卡的閃法，holo.js）：轉卡機是卡片、轉蛋機是方形的壓克力牌；有去背的話做好大張的就換上
   const isCard = play.cfg.kind === 'card';
-  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, shape: isCard ? 'card' : 'square', name: it.name, tag: isCard };
+  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, fin: finOf(play.cfg.fin, it.rarity), shape: isCard ? 'card' : 'square', name: it.name, tag: isCard };
   // 有音樂／影片：獎品改成「正在播放」卡（使用者 2026-10-26：「有音樂或動畫的設計改成這樣的設計」，nowplaying.js），封面還是 3D 閃卡（「立體的功能要留著」）
   const hasMedia = !!it.media;
   $('r-prize').hidden = $('r-name').hidden = hasMedia;
@@ -2113,6 +2173,7 @@ function setMode(mode) {
   if (mode === 'album') renderAlbum();
   requestAnimationFrame(updateInsets);
   if (mode === 'create') {
+    if (frontHolos) renderFront(); // 表面加工的預覽重新開始晃
     machine?.clearCapsules();
     machine?.setSlotHint(false);
     machine?.setHandleEnabled(false);
@@ -2478,6 +2539,7 @@ async function albumSync() {
   const e = a[key] || { items: {}, got: {}, order: [] };
   e.name = play.cfg.name;
   e.kind = play.cfg.kind === 'card' ? 'card' : 'capsule';
+  e.fin = play.cfg.fin || null; // 表面加工（卡冊、大卡的閃法）
   e.link = play.link;
   const names = play.cfg.items.map((it) => it.name);
   e.order = [...names, ...e.order.filter((n) => !names.includes(n))];
@@ -2601,7 +2663,7 @@ function openCardView(e, name) {
   cardPlayer?.stop();
   const md = it.md && mediaFromLink(it.md);
   $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
-  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, shape: e.kind === 'card' ? 'card' : 'round', name };
+  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name };
   cardPlayer = md ? mountNowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
   if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）

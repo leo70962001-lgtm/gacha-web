@@ -77,6 +77,15 @@
 - 上面預覽三張：一般、SR（金）、SSR（彩虹）— 翻開前的稀有度暗示照樣疊在自訂卡背上，3D 卡的閃光（cardkit 的 uMode 2／3）也照樣
 - 存在草稿（`draft.back` ＝ { img, text, color }）跟連結（codec `cb`＝[圖長度, 格式, 文字, 邊框色]，圖接在背景圖後面）；機台 `setCardBack()` 依內容重做 4 個稀有度的卡背貼圖（已經發出去的卡不變）
 
+### 卡背樣式＋SR／SSR 加工（2026-10-26）
+
+使用者：「跟背景一樣做給用戶選擇」「ssr sr 也給玩家有加工的選項」「再可愛跟手繪」。
+- **樣式**（Gemini 手繪水彩，兩張 16:9 各 4 張直的卡：`D:\ai\gemini\gacha\backs_a.png`、`backs_b.png` → `py -I tools/cut_backs.py <sheet> shop,night,sakura,stars web/assets/tex`、`… cats,dogs,galaxy,candy …`）：轉蛋店、夜晚街道、櫻花、星空、貓咪、狗狗、銀河、糖果 → `assets/tex/back_<id>.webp`（300×437）
+- 卡背格子跟背景一樣：預設、8 種樣式、選顏色（那個顏色的漸層＋白點點＋星星）、上傳；`draft.back`＝{ k: default|preset|color|img, id, c, img, text, color, sr, ssr }，全部預設＝null
+- **SR／SSR 卡背的加工**：金箔、銀箔、彩虹、雷射、不加工（預設 SR 金箔、SSR 彩虹）。2D 卡背圖（decor `drawCardBack` 的 fin）＋3D 閃光（machine `backModes`：金箔 3、彩虹 4、雷射 2、銀箔 5、不加工 0；cardkit 多了 mode 4＝彩虹不加金框、5＝銀箔）
+- 連結 codec `cb`＝[圖長度, 格式, 文字, 邊框色, 種類 i/p/c, 樣式 id 或顏色, SR 加工, SSR 加工]；舊的 4 欄格式照樣讀得懂
+- 坑：`draftBack()` 在開頁讀草稿時就會跑 → 它用到的 `backIsDefault` 要是 function 宣告（const 還沒初始化會讓整個 App 開不起來）
+
 ## 可以安裝的網路 App（PWA，2026-10-26）
 
 使用者：「追加成可以下載的網路app」。只有發佈的網站（GitHub Pages）跟本機預覽有；claude.ai artifact 在 iframe 裡裝不了。

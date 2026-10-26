@@ -7,6 +7,7 @@
 import { RARITY } from './decor.js';
 import { t } from './i18n.js';
 import { titleOf } from './albumedit.js';
+import { finOf } from './codec.js';
 
 const PER = 9; // 一頁 9 格
 const TEX = 'assets/tex/';
@@ -228,12 +229,13 @@ export class Binder {
       m.append(el('span', 'pk-no', `No.${String(idx + 1).padStart(2, '0')}`), el('span', 'pk-q', '?'), el('span', 'pk-sleeve'));
       return m;
     }
-    const b = el('button', `pk got r${it.r}`);
+    const fx = finOf(e.fin, it.r); // 店家選的表面加工
+    const b = el('button', `pk got r${it.r} fx-${fx}`);
     b.type = 'button';
     b.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
     const card = el('span', 'pk-card');
     if (it.t) card.style.backgroundImage = `url("${it.t}")`;
-    card.append(el('span', 'pk-holo'), el('span', 'pk-name', name));
+    card.append(el('span', 'pk-holo fx-' + fx), el('span', 'pk-name', name));
     if (it.md) card.append(el('span', 'pk-media', it.md[0] === 'yt' || it.md[0] === 'vi' ? '▶' : '♪'));
     b.append(card, el('span', 'pk-rk', R.key), el('span', 'pk-cnt', '×' + got), el('span', 'pk-sleeve'));
     b.setAttribute('aria-label', `${name} ${R.key} ×${got}`);
