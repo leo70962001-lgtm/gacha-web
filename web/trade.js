@@ -9,6 +9,7 @@ import { RARITY } from './decor.js';
 import { t } from './i18n.js';
 import { ensureBase, recount } from './albumedit.js';
 import { copyText } from './copy.js';
+import { mediaFromLink } from './media.js';
 import { tradeMe, tradeLookup, tradeOffer, tradeList, tradeAccept, tradeDecline, tradeCancel, tradeDone } from './cloud.js';
 
 const ALBUM = 'clatter.album';
@@ -54,6 +55,7 @@ function snapshot(key, e, name, me) {
   return {
     m: { key: toTradeKey(key, me), link: globalLink(e.link), name: e.name, kind: e.kind === 'card' ? 'card' : 'capsule', order, rar: rr },
     n: name, r: rar(it.r), t: it.t || null, s: it.s || null, b: it.b || null, st: Number.isFinite(it.st) ? it.st : null,
+    md: it.md || null,
   };
 }
 
@@ -72,6 +74,7 @@ export function clean(x) {
   return {
     m: { key, link: globalLink(m.link), name: str(m.name, 40) || '?', kind: m.kind === 'card' ? 'card' : 'capsule', order, rar: rr },
     n, r: rr[n], t: okImg(x.t), s: okImg(x.s), b: okImg(x.b), st: Number.isFinite(x.st) ? Math.min(1, Math.max(0, x.st)) : null,
+    md: Array.isArray(x.md) && mediaFromLink(x.md) ? [x.md[0], x.md[1]] : null, // 影音連結重新解析過才收
   };
 }
 
@@ -132,7 +135,7 @@ export class Trade {
     e.order = [...e.order, ...x.m.order.filter((o) => !e.order.includes(o))];
     for (const o of x.m.order) if (!e.items[o]) e.items[o] = { r: x.m.rar[o] ?? 0 };
     const old = e.items[x.n] || {};
-    e.items[x.n] = { r: x.r, t: old.t || x.t, s: old.s || x.s, b: old.b || x.b, st: old.st ?? x.st };
+    e.items[x.n] = { r: x.r, t: old.t || x.t, s: old.s || x.s, b: old.b || x.b, st: old.st ?? x.st, md: old.md || x.md };
     bump(e, x.n, 1);
     e.ts = Date.now();
     a[key] = e;

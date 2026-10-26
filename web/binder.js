@@ -234,6 +234,7 @@ export class Binder {
     const card = el('span', 'pk-card');
     if (it.t) card.style.backgroundImage = `url("${it.t}")`;
     card.append(el('span', 'pk-holo'), el('span', 'pk-name', name));
+    if (it.md) card.append(el('span', 'pk-media', it.md[0] === 'yt' || it.md[0] === 'vi' ? '▶' : '♪'));
     b.append(card, el('span', 'pk-rk', R.key), el('span', 'pk-cnt', '×' + got), el('span', 'pk-sleeve'));
     b.setAttribute('aria-label', `${name} ${R.key} ×${got}`);
     b.onclick = () => (this.opts.editing ? this.opts.onEditItem(e, name) : this.opts.onCard(e, name));
@@ -316,6 +317,7 @@ export function renderShelf(root, entries, { onCard, onPlay, editing, onEditItem
       if (got && it.s) toy.style.backgroundSize = `auto ${Math.round(100 / Math.max(0.4, 1 - (it.st ?? 0)))}%`;
       else toy.textContent = '?';
       cell.append(el('span', 'cap-dome'), toy, el('span', 'cap-cup'), el('span', 'cap-tag', got ? name : t('album.miss')));
+      if (got && it.md) cell.append(el('span', 'cap-media', it.md[0] === 'yt' || it.md[0] === 'vi' ? '▶' : '♪'));
       if (got) {
         cell.type = 'button';
         cell.append(el('span', 'cap-rk', R.key), el('span', 'cap-cnt', '×' + got));

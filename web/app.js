@@ -4,13 +4,14 @@ import { unlock, setMuted, sfx } from './sfx.js';
 import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS } from './codec.js';
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
-import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, mountPlayer, ytThumb, MAX_FILE } from './media.js';
+import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
 import { cutout } from './seg.js';
 import { Holo } from './holo.js';
 import { Binder, renderShelf } from './binder.js';
 import { Trade } from './trade.js';
-import { AlbumEdit, recount, ensureBase } from './albumedit.js';
+import { AlbumEdit, recount, ensureBase, titleOf } from './albumedit.js';
 import { copyText } from './copy.js';
+import { mountNowPlaying } from './nowplaying.js';
 import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
@@ -1279,9 +1280,10 @@ function showResult(idx, first, view = false) {
   resultView = view;
   const fresh = !view || view === 'step'; // 剛開出來的（不是回顧）
   resultPlayer?.stop();
-  const kind = mediaKind(it.media);
-  $('r-prize').hidden = kind === 'video'; // 影片直接取代獎品圖
-  resultPlayer = mountPlayer($('r-media'), it.media, { poster: thumbOf(play.cfg, idx).url, delay: fresh ? 1100 : 0 });
+  // 有音樂／影片：獎品改成「正在播放」卡（使用者 2026-10-26：「有音樂或動畫的設計改成這樣的設計」，nowplaying.js）
+  const hasMedia = !!it.media;
+  $('r-prize').hidden = $('r-name').hidden = hasMedia;
+  resultPlayer = mountNowPlaying($('r-media'), it.media, { art: thumbOf(play.cfg, idx).url, title: it.name, artist: play.cfg.name, rarity: it.rarity, delay: fresh ? 600 : 0 });
   resultIdx = idx;
   $('r-again').hidden = $('r-col').hidden = !!view;
   $('r-close').hidden = !view;
@@ -1309,6 +1311,7 @@ function showResult(idx, first, view = false) {
   resHolo.start(() => !$('sheet-result').hidden);
 }
 let viewHolo = null;
+let cardPlayer = null; // 收集簿大卡的「正在播放」
 let resHolo = null;
 let resultIdx = -1;
 // 獎品登場時往外噴的星星（亮的那一刻：R 0.35 秒、SR 1 秒、SSR 1.6 秒）
@@ -1689,7 +1692,7 @@ function openMediaSheet(i) {
   $('m-url').value = it.media && it.media.k !== 'file' ? it.media.u : '';
   $('m-remove').hidden = !it.media;
   mediaPreview?.stop();
-  mediaPreview = mountPlayer($('m-preview'), it.media, { poster: thumbOf(draft, i).url });
+  mediaPreview = mountNowPlaying($('m-preview'), it.media, { art: thumbOf(draft, i).url, title: it.name, artist: draft.name || '', rarity: it.rarity });
   if ($('sheet-media').hidden) openSheet('sheet-media', $('m-url'));
 }
 
@@ -1745,6 +1748,10 @@ function openSheet(id, focusEl) {
 }
 function closeSheet(id) {
   if (id === 'sheet-media') mediaPreview?.stop();
+  if (id === 'sheet-card') {
+    cardPlayer?.stop();
+    cardPlayer = null;
+  }
   $(id).hidden = true;
   lastFocus?.focus?.();
 }
@@ -2225,7 +2232,7 @@ async function albumSync() {
     const it = play.cfg.items[i];
     const nm = it.name;
     const th = thumbs[i];
-    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null };
+    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null };
     const n = play.got[i] || 0;
     const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0) + (e.cut[nm] || 0))); // 舊資料沒有 base：用 got 推回去
     if (base) e.base[nm] = base;
@@ -2333,6 +2340,12 @@ function openCardView(e, name) {
   $('v-name').textContent = name;
   $('v-meta').textContent = `${R.key} ${R.label} · ×${e.got[name]} · ${e.name}`;
   openSheet('sheet-card', $('sheet-card').querySelector('[data-close]'));
+  // 有音樂／影片 → 「正在播放」卡；沒有 → 3D 閃卡
+  cardPlayer?.stop();
+  const md = it.md && mediaFromLink(it.md);
+  $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
+  cardPlayer = md ? mountNowPlaying($('v-media'), md, { art: it.t, title: name, artist: titleOf(e), rarity: it.r }) : null;
+  if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）
   viewHolo.set({ t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, shape: e.kind === 'card' ? 'card' : 'round', name });
   viewHolo.start(() => !$('sheet-card').hidden);
