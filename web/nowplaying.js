@@ -82,7 +82,8 @@ async function palette(src) {
   }
 }
 
-// box 裡放一張「正在播放」卡；d＝{ art 封面圖、title、artist、rarity、delay 幾毫秒後開始播、autoplay }
+// box 裡放一張「正在播放」卡；d＝{ art 封面圖、artNode 封面的位置放這個（3D 閃卡）、title、artist、rarity、delay 幾毫秒後開始播、autoplay }
+//   使用者 2026-10-26：「立體的功能要留著」→ 音樂（含 SoundCloud／Spotify）的封面放 3D 閃卡（holo.js）；影片自己跟著游標斜＋反光；YouTube 維持平的（iframe 斜了不好點）
 export function mountNowPlaying(box, m, d = {}) {
   box.textContent = '';
   if (!m) return { stop() {} };
@@ -108,8 +109,10 @@ export function mountNowPlaying(box, m, d = {}) {
     cs.forEach((c, i) => card.style.setProperty(`--c${i + 1}`, c));
     card.classList.toggle('dark', dark);
   });
-  const art = el('div', 'np-art');
-  if (d.art) art.style.backgroundImage = `url("${d.art}")`;
+  const holo = d.artNode && kind !== 'video' && m.k !== 'yt';
+  const art = el('div', 'np-art' + (holo ? ' holo' : ''));
+  if (holo) art.append(d.artNode);
+  else if (d.art) art.style.backgroundImage = `url("${d.art}")`;
   // 名稱、機台、稀有度、⋯（原本的連結）
   const meta = el('div', 'np-meta');
   const txt = el('div', 'np-txt');
@@ -167,8 +170,20 @@ export function mountNowPlaying(box, m, d = {}) {
       el2 = document.createElement('video');
       el2.playsInline = true;
       if (d.art) el2.poster = d.art;
-      art.append(el2);
+      art.append(el2, el('i', 'np-glare'));
+      art.classList.add('tilty');
       art.onclick = () => (el2.paused ? el2.play().catch(() => {}) : el2.pause());
+      // 影片也有立體感：跟著游標斜一點、反光跟著走
+      card.addEventListener('pointermove', (e) => {
+        const r = art.getBoundingClientRect();
+        const x = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
+        const y = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height) * 2 - 1));
+        art.style.setProperty('--ry', `${x * 9}deg`);
+        art.style.setProperty('--rx', `${-y * 7}deg`);
+        art.style.setProperty('--gx', `${50 + x * 40}%`);
+        art.style.setProperty('--gy', `${50 + y * 40}%`);
+      });
+      card.addEventListener('pointerleave', () => ['--ry', '--rx', '--gx', '--gy'].forEach((k) => art.style.removeProperty(k)));
       el2.addEventListener('loadedmetadata', () => {
         if (!el2.videoWidth || !el2.videoHeight) return;
         const r = Math.min(16 / 9, Math.max(9 / 16, el2.videoWidth / el2.videoHeight));

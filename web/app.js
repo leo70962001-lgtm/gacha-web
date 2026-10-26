@@ -1280,10 +1280,14 @@ function showResult(idx, first, view = false) {
   resultView = view;
   const fresh = !view || view === 'step'; // 剛開出來的（不是回顧）
   resultPlayer?.stop();
-  // 有音樂／影片：獎品改成「正在播放」卡（使用者 2026-10-26：「有音樂或動畫的設計改成這樣的設計」，nowplaying.js）
+  // 獎品＝3D 閃卡（寶可夢卡的閃法，holo.js）：轉卡機是卡片、轉蛋機是方形的壓克力牌；有去背的話做好大張的就換上
+  const isCard = play.cfg.kind === 'card';
+  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, shape: isCard ? 'card' : 'square', name: it.name, tag: isCard };
+  // 有音樂／影片：獎品改成「正在播放」卡（使用者 2026-10-26：「有音樂或動畫的設計改成這樣的設計」，nowplaying.js），封面還是 3D 閃卡（「立體的功能要留著」）
   const hasMedia = !!it.media;
   $('r-prize').hidden = $('r-name').hidden = hasMedia;
-  resultPlayer = mountNowPlaying($('r-media'), it.media, { art: thumbOf(play.cfg, idx).url, title: it.name, artist: play.cfg.name, rarity: it.rarity, delay: fresh ? 600 : 0 });
+  const mediaHolo = hasMedia ? npHolo({ ...hd, tag: false }) : null;
+  resultPlayer = mountNowPlaying($('r-media'), it.media, { art: hd.t, artNode: mediaHolo?.node, title: it.name, artist: play.cfg.name, rarity: it.rarity, delay: fresh ? 600 : 0 });
   resultIdx = idx;
   $('r-again').hidden = $('r-col').hidden = !!view;
   $('r-close').hidden = !view;
@@ -1292,11 +1296,13 @@ function showResult(idx, first, view = false) {
   card.className = `sheet-card result r${it.rarity}${fresh ? ' fresh' : ''}`;
   card.style.setProperty('--rc', `var(--r-${r.key.toLowerCase()})`);
   $('r-rank').textContent = `${r.key} ${r.label}`;
-  // 獎品＝3D 閃卡（寶可夢卡的閃法，holo.js）：轉卡機是卡片、轉蛋機是方形的壓克力牌；有去背的話做好大張的就換上
-  const isCard = play.cfg.kind === 'card';
-  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, shape: isCard ? 'card' : 'square', name: it.name, tag: isCard };
   resHolo.set(hd);
-  if (it.mask) cutLayers(idx, 300, isCard ? 437 : 300).then((L) => resultIdx === idx && L.s && resHolo.set({ ...hd, s: L.s, b: L.b, st: L.st }));
+  if (it.mask)
+    cutLayers(idx, 300, isCard ? 437 : 300).then((L) => {
+      if (resultIdx !== idx || !L.s) return;
+      resHolo.set({ ...hd, s: L.s, b: L.b, st: L.st });
+      mediaHolo?.holo.set({ ...hd, tag: false, s: L.s, b: L.b, st: L.st });
+    });
   // 剛轉到：獎品照稀有度登場（N 跳出來、R 翻一圈、SR 剪影→轉一圈上色、SSR 剪影集氣→轉兩圈爆光）＋放射光、光環、星星
   const stage = $('r-prize');
   stage.classList.remove('go');
@@ -1312,6 +1318,18 @@ function showResult(idx, first, view = false) {
 }
 let viewHolo = null;
 let cardPlayer = null; // 收集簿大卡的「正在播放」
+// 「正在播放」卡封面用的 3D 閃卡（使用者 2026-10-26：「立體的功能要留著」）：跟著游標／陀螺儀斜、去背主體浮出來、稀有度的閃
+//   卡片從畫面拿掉（換獎品、關掉）就自己停
+function npHolo(hd) {
+  const node = document.createElement('div');
+  node.className = 'tilt-wrap';
+  const el = document.createElement('div');
+  node.append(el);
+  const holo = new Holo(el, node);
+  holo.set(hd);
+  holo.start(() => node.isConnected);
+  return { node, holo };
+}
 let resHolo = null;
 let resultIdx = -1;
 // 獎品登場時往外噴的星星（亮的那一刻：R 0.35 秒、SR 1 秒、SSR 1.6 秒）
@@ -1692,7 +1710,9 @@ function openMediaSheet(i) {
   $('m-url').value = it.media && it.media.k !== 'file' ? it.media.u : '';
   $('m-remove').hidden = !it.media;
   mediaPreview?.stop();
-  mediaPreview = mountNowPlaying($('m-preview'), it.media, { art: thumbOf(draft, i).url, title: it.name, artist: draft.name || '', rarity: it.rarity });
+  const art = thumbOf(draft, i).url;
+  const artNode = it.media ? npHolo({ t: art, r: it.rarity, shape: draft.kind === 'card' ? 'card' : 'square', name: it.name, tag: false }).node : null;
+  mediaPreview = mountNowPlaying($('m-preview'), it.media, { art, artNode, title: it.name, artist: draft.name || '', rarity: it.rarity });
   if ($('sheet-media').hidden) openSheet('sheet-media', $('m-url'));
 }
 
@@ -2344,10 +2364,11 @@ function openCardView(e, name) {
   cardPlayer?.stop();
   const md = it.md && mediaFromLink(it.md);
   $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
-  cardPlayer = md ? mountNowPlaying($('v-media'), md, { art: it.t, title: name, artist: titleOf(e), rarity: it.r }) : null;
+  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, shape: e.kind === 'card' ? 'card' : 'round', name };
+  cardPlayer = md ? mountNowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
   if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）
-  viewHolo.set({ t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, shape: e.kind === 'card' ? 'card' : 'round', name });
+  viewHolo.set(hdv);
   viewHolo.start(() => !$('sheet-card').hidden);
   // 好友交換：收集簿裡的獎品可以直接拿去交換
   $('v-acts').hidden = !(e.key && e.got[name] > 0 && cloudReady());

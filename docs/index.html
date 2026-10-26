@@ -216,6 +216,15 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .np-art.tall { aspect-ratio: 9 / 16; }
 .np-art video, .np-art iframe { width: 100%; height: 100%; display: block; border: 0; object-fit: cover; background: #000; }
 .np.is-video .np-art { cursor: pointer; }
+/* 封面是 3D 閃卡（holo.js）：不裁切、不要底色，讓卡片自己斜、主體浮出框 */
+.np-art.holo { aspect-ratio: auto; background: none; box-shadow: none; overflow: visible; border-radius: 0; display: grid; place-items: center; }
+.np-art.holo .tilt-wrap { padding: 4px 0 8px; }
+.np-art.holo .tilt { width: min(232px, 66vw); }
+.np-art.holo .tilt.square { width: min(100%, 290px); }
+.np-art.holo .tilt.round { width: min(250px, 70vw); }
+/* 影片：跟著游標斜一點＋反光 */
+.np-art.tilty { position: relative; transform: perspective(800px) rotateY(var(--ry, 0deg)) rotateX(var(--rx, 0deg)); transition: transform .18s ease-out; }
+.np-glare { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(farthest-corner circle at var(--gx, 30%) var(--gy, 20%), rgba(255, 255, 255, .32), rgba(255, 255, 255, 0) 55%); }
 .np-meta { display: flex; align-items: center; gap: 10px; }
 .np-txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .np-txt b { font-size: 19px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 8px rgba(40, 0, 60, .35); }
