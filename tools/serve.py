@@ -9,6 +9,14 @@ ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8790
 SHELL_HEAD = ('<!doctype html><html><head><meta charset=utf8>'
               '<meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">'
+              '<link rel="manifest" href="manifest.webmanifest">'
+              '<meta name="theme-color" content="#e23b34">'
+              '<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png">'
+              '<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">'
+              '<meta name="apple-mobile-web-app-capable" content="yes">'
+              '<meta name="mobile-web-app-capable" content="yes">'
+              '<meta name="apple-mobile-web-app-title" content="Clatter">'
+              '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
               '<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}'
               'body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>'
               '</head><body>')
@@ -17,7 +25,8 @@ SHELL_TAIL = '</body></html>'
 
 class H(http.server.SimpleHTTPRequestHandler):
     extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map,
-                      '.js': 'text/javascript', '.webp': 'image/webp', '.glb': 'model/gltf-binary'}
+                      '.js': 'text/javascript', '.webp': 'image/webp', '.glb': 'model/gltf-binary',
+                      '.webmanifest': 'application/manifest+json'}
 
     def do_GET(self):
         path = self.path.split('?')[0].split('#')[0]

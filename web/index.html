@@ -196,6 +196,11 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .bk-nav { display: flex; align-items: center; gap: 14px; }
 .bk-page { min-width: 92px; text-align: center; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 .bk-nav .icon-btn { font-size: 22px; line-height: 1; }
+/* 下載 App（PWA，使用者 2026-10-26：「追加成可以下載的網路app」） */
+.install-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 13px; white-space: nowrap; flex: none; background: var(--sun); box-shadow: 2px 2px 0 var(--stroke); }
+.install-btn svg { width: 16px; height: 16px; flex: none; }
+@media (max-width: 1080px) { .install-btn span { display: none; } .install-btn { padding: 7px; border-radius: 50%; } } /* 上方列放不下字 → 只留圖示（aria-label 有字） */
+.pwa-steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; font-weight: 700; }
 /* ---- 正在播放卡（nowplaying.js，使用者 2026-10-26：「有音樂或動畫的設計改成這樣的設計」）：
    Apple Music 那種 — 封面放大模糊當背景＋從封面抓的顏色做的光斑、大封面（停的時候縮一點）、名稱／機台、進度、⏪⏯⏩、音量 ---- */
 .np { --c1: #ff5fb0; --c2: #8a5cff; --c3: #4fa8ff; --c4: #ff9ad5; --ink2: #2a1740; position: relative; width: min(100%, 360px); padding: 22px 22px 18px; border-radius: 28px; overflow: hidden; isolation: isolate; color: #fff; display: grid; gap: 14px; text-align: left;
@@ -796,6 +801,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18"/></svg>
       <select id="lang"></select>
     </label>
+    <button class="btn install-btn" id="btn-install" type="button" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span data-i18n="pwa.install">下載 App</span></button>
     <button class="icon-btn" id="btn-sound" aria-pressed="true" data-i18n-aria="sound" aria-label="音效">
       <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/></svg>
       <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>
@@ -994,6 +1000,21 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <button class="btn primary" id="v-trade" data-i18n="tr.tradeThis">拿去交換</button>
       <button class="btn sun" id="v-gift" data-i18n="tr.giftThis">送給好友</button>
     </div>
+  </div>
+</div>
+
+<!-- 下載 App：iPhone／iPad 沒有安裝提示 → 教怎麼加到主畫面 -->
+<div class="sheet" id="sheet-install" hidden>
+  <div class="sheet-card trade-card" role="dialog" aria-modal="true" aria-labelledby="pwa-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="pwa-title" data-i18n="pwa.title">把 Clatter 裝到主畫面</h2>
+    <p class="tr-hint" data-i18n="pwa.why">裝好之後像一般 App 一樣從主畫面打開，全螢幕、沒有網址列，沒網路也能開（雲端的東西要連線）。</p>
+    <ol class="pwa-steps">
+      <li data-i18n="pwa.ios1">點 Safari 下方（iPad 在上方）的「分享」按鈕</li>
+      <li data-i18n="pwa.ios2">往下找「加入主畫面」</li>
+      <li data-i18n="pwa.ios3">按右上角的「新增」</li>
+    </ol>
+    <p class="tr-hint" data-i18n="pwa.other">Android／電腦的 Chrome、Edge：按網址列右邊或選單裡的「安裝應用程式」。</p>
   </div>
 </div>
 

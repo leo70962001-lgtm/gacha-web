@@ -12,6 +12,14 @@ OUT = os.path.join(ROOT, 'docs')
 
 SHELL_HEAD = ('<!doctype html><html lang="zh-Hant"><head><meta charset=utf8>'
               '<meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">'
+              '<link rel="manifest" href="manifest.webmanifest">'
+              '<meta name="theme-color" content="#e23b34">'
+              '<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png">'
+              '<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">'
+              '<meta name="apple-mobile-web-app-capable" content="yes">'
+              '<meta name="mobile-web-app-capable" content="yes">'
+              '<meta name="apple-mobile-web-app-title" content="Clatter">'
+              '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
               '<meta name="description" content="開一台自己的轉蛋機：放進獎品、設定價錢、產生連結，拿到連結的人就能投幣、轉把手、開扭蛋。">'
               '<meta property="og:title" content="Clatter 轉蛋鋪">'
               '<meta property="og:description" content="投幣、轉把手、開扭蛋！">'
@@ -43,6 +51,29 @@ if os.path.exists(src):
     canvas = Image.new('RGB', (tw, th), im.getpixel((5, 5)))
     canvas.paste(im, ((tw - im.width) // 2, (th - im.height) // 2 + 20))
     canvas.save(os.path.join(OUT, 'assets', 'og.jpg'), quality=85)
+
+# 離線快取（PWA）：sw.js 填入 docs/ 的檔案清單＋內容雜湊當版本（內容一變，舊快取就換掉）
+import hashlib, json
+files = []
+h = hashlib.sha256()
+for d, _, fs in os.walk(OUT):
+    for f in sorted(fs):
+        rel = os.path.relpath(os.path.join(d, f), OUT).replace(os.sep, '/')
+        if rel in ('sw.js', '.nojekyll') or rel.startswith('assets/og'):
+            continue
+        files.append(rel)
+for rel in sorted(files):
+    with open(os.path.join(OUT, rel), 'rb') as fh:
+        h.update(rel.encode() + fh.read())
+ver = h.hexdigest()[:12]
+sw_path = os.path.join(OUT, 'sw.js')
+with open(sw_path, encoding='utf-8') as fh:
+    sw = fh.read()
+assets = ['./'] + sorted(f for f in files if f != 'index.html') + ['index.html']
+sw = sw.replace("const VERSION = 'dev';", f"const VERSION = '{ver}';").replace('const ASSETS = [];', 'const ASSETS = ' + json.dumps(assets, ensure_ascii=False) + ';')
+with open(sw_path, 'w', encoding='utf-8') as fh:
+    fh.write(sw)
+print('sw', ver, len(assets), 'files')
 
 total = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(OUT) for f in fs)
 print('built docs/', round(total / 1024), 'KB')

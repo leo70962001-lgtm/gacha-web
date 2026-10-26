@@ -2379,6 +2379,35 @@ function openCardView(e, name) {
     };
 }
 let trade = null;
+
+// 可以安裝的網路 App（PWA，使用者 2026-10-26：「追加成可以下載的網路app」）
+//   發佈的網站（GitHub Pages）跟本機預覽才有 manifest：註冊 sw.js（離線也能開）、出現「下載 App」
+//   Chrome／Edge／Android：用瀏覽器的安裝提示；iPhone／iPad 的 Safari 沒有 → 打開教學；已經裝好（獨立視窗）就不顯示
+function setupPwa() {
+  if (!document.querySelector('link[rel="manifest"]') || window.top !== window) return; // claude.ai artifact 裡不行
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  const installed = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const b = $('btn-install');
+  b.setAttribute('aria-label', t('pwa.install')); // 窄的畫面只有圖示
+  let prompt = null;
+  addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    prompt = e;
+    b.hidden = installed();
+  });
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) b.hidden = installed();
+  b.onclick = async () => {
+    if (!prompt) return openSheet('sheet-install');
+    prompt.prompt();
+    const r = await prompt.userChoice.catch(() => null);
+    prompt = null;
+    if (r?.outcome === 'accepted') b.hidden = true;
+  };
+  addEventListener('appinstalled', () => {
+    b.hidden = true;
+    toast(t('pwa.installed'));
+  });
+}
 // 邀請連結 #f.<好友碼> → 加好友、打開收集簿的「好友交換」
 async function openInvite(code) {
   history.replaceState(null, '', location.pathname + location.search);
@@ -2476,6 +2505,7 @@ async function boot() {
     },
   });
   trade.poll();
+  setupPwa();
   resHolo = new Holo($('r-tilt'), $('result-card'));
   // 從連結進來的玩家 → 回到那台機器；賣家 → 用目前的表單內容試玩
   $('tab-play').onclick = () => {
