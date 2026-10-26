@@ -606,7 +606,7 @@ export class Machine {
   // front＝drawCardLayers 的三層（圖片窗做 3D 視差）或一張平面 canvas
   _makeCard(front, rarity, shown) {
     const fm = rarity; // 正面：N 一般、R ホロ、SR フルアート、SSR レインボー＋金（cardkit.js）
-    const bm = shown >= 3 ? 3 : shown === 2 ? 2 : 0;
+    const bm = this.backModes?.[shown] ?? (shown >= 3 ? 3 : shown === 2 ? 2 : 0);
     let layers = null;
     let face = front;
     if (front?.frame) {
@@ -621,7 +621,7 @@ export class Machine {
     addOutline(g.userData.edge, 0.0024, this.hullCache);
     if (shown >= 2) this.show.addGlints(g, shown === 3 ? 6 : 4, true);
     g.userData.upgrade = () => {
-      g.userData.setBack(this.backTex[3], 3);
+      g.userData.setBack(this.backTex[3], this.backModes?.[3] ?? 3);
       this.show.addGlints(g, 3, true);
     };
     return g;
@@ -629,10 +629,13 @@ export class Machine {
 
   // 店家自訂的卡背（decor.drawCardBack 的 back）→ 重做 4 個稀有度的卡背貼圖（已經發出去的卡不變）
   setCardBack(back) {
-    const key = back ? `${back.key || ''}|${back.text || ''}|${back.color || ''}` : '';
+    const key = back ? `${back.key || ''}|${back.text || ''}|${back.color || ''}|${back.sr || ''}|${back.ssr || ''}` : '';
     if (key === this.backKey || !this.art) return;
     this.backKey = key;
     this.backTex = [0, 0, 2, 3].map((tier) => cardTex(drawCardBack(this.art.cardback, tier, back)));
+    // 加工 → 卡背的 3D 閃光（cardkit uMode）：金箔＝金框亮粉、彩虹＝彩虹亮粉、雷射＝斜格虹光、銀箔＝銀色亮粉、不加工＝沒有
+    const MODE = { gold: 3, rainbow: 4, holo: 2, silver: 5, none: 0 };
+    this.backModes = [0, 0, MODE[back?.sr || 'gold'] ?? 3, MODE[back?.ssr || 'rainbow'] ?? 4];
   }
 
   _dropObj(g) {

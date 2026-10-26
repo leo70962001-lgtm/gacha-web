@@ -1,7 +1,7 @@
 // Clatter 轉蛋鋪：開店設定 → 產生連結 → 玩家投幣、轉把手、開扭蛋
 import { Machine, THEMES } from './machine.js';
 import { unlock, setMuted, sfx } from './sfx.js';
-import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS } from './codec.js';
+import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES } from './codec.js';
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers, drawCardBack } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
@@ -236,12 +236,18 @@ function draftBg(b) {
 // 卡背（轉卡機）：{ img, text, color }，什麼都沒有＝用預設的卡背
 function draftBack(b) {
   if (!b) return null;
+  const img = b.img?.b64 ? { bytes: Uint8Array.from(atob(b.img.b64), (ch) => ch.charCodeAt(0)), mime: b.img.mime } : null;
   const back = {
+    k: img ? 'img' : b.k === 'preset' && BACK_PRESETS.includes(b.id) ? 'preset' : b.k === 'color' && /^#[0-9a-f]{6}$/i.test(b.c || '') ? 'color' : 'default',
+    id: BACK_PRESETS.includes(b.id) ? b.id : undefined,
+    c: /^#[0-9a-f]{6}$/i.test(b.c || '') ? b.c : undefined,
+    img,
     text: String(b.text || '').slice(0, 16),
     color: /^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : '',
-    img: b.img?.b64 ? { bytes: Uint8Array.from(atob(b.img.b64), (ch) => ch.charCodeAt(0)), mime: b.img.mime } : null,
+    sr: FINISHES.includes(b.sr) ? b.sr : undefined,
+    ssr: FINISHES.includes(b.ssr) ? b.ssr : undefined,
   };
-  return back.img || back.text || back.color ? back : null;
+  return backIsDefault(back) ? null : back;
 }
 
 function draftMedia(m) {
@@ -440,38 +446,120 @@ function renderBgs() {
   }
 }
 
-// ---------- 卡背（轉卡機，使用者 2026-10-26：「增加卡面的背面也可以編輯」） ----------
-//   預設（Gemini 的卡背）／自己的圖；一行字（店名之類）；邊框顏色。右邊預覽一般、SR（金）、SSR（彩虹）三張
-let backBmp = null; // { bytes, bmp }：解碼過的卡背圖（預覽、機台都用）
+// ---------- 卡背（轉卡機，使用者 2026-10-26：「增加卡面的背面也可以編輯」「跟背景一樣做給用戶選擇」「ssr sr 也給玩家有加工的選項」） ----------
+//   跟背景一樣一排格子：預設（Gemini 的卡背）、8 種樣式（Gemini 畫的 back_<id>.webp）、選顏色、上傳自己的圖
+//   再加一行字（店名之類）、邊框顏色；SR／SSR 翻開前的卡背「加工」：金箔、銀箔、彩虹、雷射、不加工
+//   上面預覽一般、SR、SSR 三張；draft.back＝{ k: default|preset|color|img, id, c, img, text, color, sr, ssr }，全部預設＝null
+const presetBacks = new Map(); // id → Promise<HTMLImageElement>
+function presetBack(id) {
+  if (!presetBacks.has(id))
+    presetBacks.set(
+      id,
+      new Promise((res) => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => res(null);
+        im.src = asset('tex/back_' + id + '.webp');
+      }),
+    );
+  return presetBacks.get(id);
+}
+// 選顏色的卡背：那個顏色的漸層＋白點點＋中間一顆星
+function colorBack(c) {
+  const W = 300;
+  const H = 437;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d');
+  const grd = g.createRadialGradient(W / 2, H * 0.45, 10, W / 2, H / 2, H * 0.75);
+  grd.addColorStop(0, `color-mix(in srgb, ${c} 55%, #fff)`);
+  grd.addColorStop(1, c);
+  g.fillStyle = grd;
+  try {
+    g.fillRect(0, 0, W, H);
+  } catch (e) {
+    g.fillStyle = c;
+    g.fillRect(0, 0, W, H);
+  }
+  if (g.fillStyle === '#000000' && c !== '#000000') {
+    g.fillStyle = c; // 不支援 color-mix 的瀏覽器
+    g.fillRect(0, 0, W, H);
+  }
+  g.fillStyle = 'rgba(255,255,255,.28)';
+  for (let y = 18; y < H; y += 36) for (let x = (y / 36) % 2 ? 18 : 0; x < W; x += 36) {
+    g.beginPath();
+    g.arc(x, y, 5, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = '#fff';
+  g.strokeStyle = 'rgba(28,35,64,.85)';
+  g.lineWidth = 6;
+  g.beginPath();
+  for (let k = 0; k < 10; k++) {
+    const r = k % 2 ? 34 : 78;
+    const a = -Math.PI / 2 + (k * Math.PI) / 5;
+    g.lineTo(W / 2 + Math.cos(a) * r, H * 0.45 + Math.sin(a) * r);
+  }
+  g.closePath();
+  g.fill();
+  g.stroke();
+  return cv;
+}
+let backBmp = null; // { bytes, bmp }：解碼過的上傳卡背圖
 async function backArt(back) {
   if (!back) return null;
   let img = null;
-  if (back.img) {
+  let key = 'd';
+  if (back.k === 'img' && back.img) {
     if (backBmp?.bytes !== back.img.bytes) backBmp = { bytes: back.img.bytes, bmp: await createImageBitmap(new Blob([back.img.bytes], { type: back.img.mime })).catch(() => null) };
     img = backBmp.bmp;
+    key = 'i' + back.img.bytes.length + ':' + back.img.bytes[30];
+  } else if (back.k === 'preset' && BACK_PRESETS.includes(back.id)) {
+    img = await presetBack(back.id);
+    key = 'p' + back.id;
+  } else if (back.k === 'color' && back.c) {
+    img = colorBack(back.c);
+    key = 'c' + back.c;
   }
-  return { img, text: back.text, color: back.color, key: back.img ? back.img.bytes.length + ':' + back.img.bytes[30] : '' };
+  return { img, text: back.text, color: back.color, sr: back.sr || 'gold', ssr: back.ssr || 'rainbow', key };
+}
+// 全部都是預設的卡背（function 宣告：開頁讀草稿時就會用到，不能是之後才宣告的 const）
+function backIsDefault(b) {
+  return !b || ((b.k || 'default') === 'default' && !b.text && (!b.color || b.color === '#1c2340') && (b.sr || 'gold') === 'gold' && (b.ssr || 'rainbow') === 'rainbow');
 }
 let backRender = 0;
 async function renderBack() {
   const field = $('back-field');
   field.hidden = draft.kind !== 'card';
   if (field.hidden) return;
-  const back = draft.back || {};
+  const back = draft.back || { k: 'default' };
   const tiles = $('back-tiles');
   if (!tiles.childElementCount) {
-    const tile = (k) => {
+    const tile = (k, cls) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'bg-tile back-tile ' + k;
+      b.className = 'bg-tile back-tile ' + cls;
       b.dataset.k = k;
       b.setAttribute('role', 'radio');
       b.append(document.createElement('span'));
       tiles.append(b);
       return b;
     };
-    tile('default').onclick = () => setBack({ img: null });
-    tile('upload').onclick = () => {
+    tile('default', 'preset').onclick = () => setBack({ k: 'default', img: null });
+    for (const id of BACK_PRESETS) {
+      const b = tile('preset:' + id, 'preset');
+      b.style.backgroundImage = `url("${asset('tex/back_' + id + '.webp')}")`;
+      b.onclick = () => setBack({ k: 'preset', id, img: null });
+    }
+    const cb = tile('color', 'color');
+    const ci = document.createElement('input');
+    ci.type = 'color';
+    ci.value = '#ff8fb8';
+    ci.addEventListener('input', () => setBack({ k: 'color', c: ci.value, img: null }, true));
+    ci.addEventListener('click', () => setBack({ k: 'color', c: ci.value, img: null }));
+    cb.append(ci);
+    tile('img', 'upload').onclick = () => {
       $('file-back').value = '';
       $('file-back').click();
     };
@@ -479,7 +567,7 @@ async function renderBack() {
       const f = $('file-back').files[0];
       if (!f) return;
       try {
-        setBack({ img: await shrinkBack(f) });
+        setBack({ k: 'img', img: await shrinkBack(f) });
       } catch (e) {
         toast(t('t.badImage'));
       }
@@ -491,38 +579,64 @@ async function renderBack() {
       renderBack();
       draftChanged();
     };
+    // SR／SSR 的加工
+    for (const [box, key] of [[$('back-sr'), 'sr'], [$('back-ssr'), 'ssr']])
+      for (const f of FINISHES) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chip fin-chip fin-' + f;
+        b.dataset.f = f;
+        b.setAttribute('role', 'radio');
+        b.onclick = () => setBack({ [key]: f });
+        box.append(b);
+      }
   }
+  const cur = back.k === 'preset' ? 'preset:' + back.id : back.k || 'default';
   for (const b of tiles.children) {
-    const on = b.dataset.k === (back.img ? 'upload' : 'default');
-    b.setAttribute('aria-checked', String(on));
-    const label = t(b.dataset.k === 'default' ? 'back.default' : back.img ? 'back.custom' : 'back.upload');
+    const k = b.dataset.k;
+    b.setAttribute('aria-checked', String(k === cur));
+    const label = k === 'default' ? t('back.default') : k.startsWith('preset:') ? t('back.p.' + k.slice(7)) : k === 'color' ? t('bg.color') : back.k === 'img' ? t('back.custom') : t('back.upload');
     b.querySelector('span').textContent = label;
     b.setAttribute('aria-label', label);
-    if (b.dataset.k === 'upload') {
-      b.classList.toggle('has', !!back.img);
-      b.style.backgroundImage = back.img ? `url("${URL.createObjectURL(new Blob([back.img.bytes], { type: back.img.mime }))}")` : 'none';
-    } else b.style.backgroundImage = `url("${asset('tex/cardback.webp')}")`;
+    if (k === 'default') b.style.backgroundImage = `url("${asset('tex/cardback.webp')}")`;
+    if (k === 'color' && back.k === 'color') {
+      b.style.backgroundImage = 'none';
+      b.style.backgroundColor = back.c;
+      b.querySelector('input').value = back.c;
+    }
+    if (k === 'img') {
+      b.classList.toggle('has', back.k === 'img');
+      b.style.backgroundImage = back.k === 'img' && back.img ? `url("${URL.createObjectURL(new Blob([back.img.bytes], { type: back.img.mime }))}")` : 'none';
+    }
   }
+  for (const [box, key, def] of [[$('back-sr'), 'sr', 'gold'], [$('back-ssr'), 'ssr', 'rainbow']])
+    for (const b of box.children) {
+      b.textContent = t('fin.' + b.dataset.f);
+      b.setAttribute('aria-checked', String(b.dataset.f === (back[key] || def)));
+    }
   if (document.activeElement !== $('back-text')) $('back-text').value = back.text || '';
   $('back-text').placeholder = t('back.textPh');
   if (document.activeElement !== $('back-color')) $('back-color').value = back.color || '#1c2340';
   $('back-reset').hidden = !draft.back;
-  // 預覽：一般、SR（金）、SSR（彩虹）
+  // 預覽：一般、SR、SSR
   const my = ++backRender;
-  const art = await backArt(draft.back);
+  const art = (await backArt(draft.back)) || { sr: 'gold', ssr: 'rainbow' };
   if (my !== backRender) return;
   const prev = $('back-prev');
   prev.textContent = '';
   for (const tier of [0, 2, 3]) {
+    const fig = document.createElement('figure');
     const c = drawCardBack(machine?.art?.cardback || null, tier, art);
     c.className = 'back-card';
-    c.setAttribute('aria-hidden', 'true');
-    prev.append(c);
+    const cap = document.createElement('figcaption');
+    cap.textContent = tier === 0 ? 'N・R' : tier === 2 ? 'SR' : 'SSR';
+    fig.append(c, cap);
+    prev.append(fig);
   }
 }
 function setBack(patch, typing = false) {
-  draft.back = { ...(draft.back || {}), ...patch };
-  if (!draft.back.img && !draft.back.text && (!draft.back.color || draft.back.color === '#1c2340')) draft.back = null;
+  draft.back = { k: 'default', ...(draft.back || {}), ...patch };
+  if (backIsDefault(draft.back)) draft.back = null;
   if (typing) {
     clearTimeout(setBack.t);
     setBack.t = setTimeout(renderBack, 120);

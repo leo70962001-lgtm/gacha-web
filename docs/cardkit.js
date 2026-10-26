@@ -157,14 +157,20 @@ void main(){
     col = dodge(col, sh * 0.7 * I * wgt) + sh * 0.1 * I * wgt;
   } else if (uMode > 2.5) {
     // レインボーレア＋ゴールド：-30° 虹色（跟著光點半速滑）soft-light 上色 → 亮粉（每格一顆，斜到對的角度才亮）color-dodge；框變金
-    vec3 rb = sunK(dot(vUv, vec2(0.5, 0.87)) * 1.7 + par.x * 1.2 - par.y * 0.9 + uTime * 0.03);
+    // uMode 3＝金框、4＝彩虹不加金框、5＝銀箔（不上虹色、框變銀）— 4、5 只有卡背的「加工」會用到
+    float silver = step(4.5, uMode);
+    vec3 rb = mix(sunK(dot(vUv, vec2(0.5, 0.87)) * 1.7 + par.x * 1.2 - par.y * 0.9 + uTime * 0.03), vec3(0.92, 0.95, 1.), silver);
     float wgt = 1. - ovm;
     col = foilTint(col, rb, (0.3 + 0.3 * spot + 0.15 * fc) * wgt * (1. - 0.55 * sw * inArt) * (1. - frame)); // 虹色上色（主體淡一點）
     col = dodge(col, rb * (0.25 + 0.45 * spot) * I * wgt * (1. - 0.5 * sw * inArt));
-    if (frame > 0.5) {
+    if (frame > 0.5 && uMode < 3.5) {
       float lum = dot(col, vec3(.3, .59, .11));
       vec3 gold = mix(vec3(.55, .33, .05), vec3(1., .86, .45), smoothstep(0.15, 0.9, lum + 0.35 * spot));
       col = mix(col, gold, 0.65);
+    }
+    if (frame > 0.5 && silver > 0.5) {
+      float lum = dot(col, vec3(.3, .59, .11));
+      col = mix(col, mix(vec3(.34, .37, .44), vec3(.96, .97, 1.), smoothstep(0.25, 1.15, lum + 0.3 * spot)), 0.45); // 銀：亮的地方才白，保留圖案的明暗
     }
     vec2 cell = vUv * vec2(120., 175.);
     vec2 id = floor(cell);
@@ -172,7 +178,7 @@ void main(){
     float h1 = hash(id), h2 = hash(id + 7.3), h3 = hash(id + 19.1);
     float tw = sin(h1 * 40. + par.x * (18. + 30. * h2) + par.y * (18. + 30. * h3) + uTime * 0.6);
     float g = smoothstep(0.9, 1., tw) * smoothstep(0.42, 0.0, length(f)) * step(0.4, h2) * (1. - 0.65 * sw * inArt);
-    vec3 gc = frame > 0.5 ? vec3(1., .9, .55) : sun(h3 + par.x * 0.5);
+    vec3 gc = silver > 0.5 ? vec3(1.) : frame > 0.5 && uMode < 3.5 ? vec3(1., .9, .55) : sun(h3 + par.x * 0.5);
     col = dodge(col, gc * g * (0.5 + 0.5 * spot) * wgt);
     col += gc * g * 0.55 * wgt;
   }

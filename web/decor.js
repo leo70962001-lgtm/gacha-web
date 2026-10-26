@@ -650,16 +650,43 @@ export function drawCardBack(art, tier = 0, back = null) {
     g.textBaseline = 'middle';
     g.fillText('★', W / 2, H / 2);
   }
-  if (tier >= 2) {
-    // 金：整張蓋一層金色（保留圖案明暗）；彩虹：斜向七彩
-    g.globalCompositeOperation = 'color';
-    if (tier === 2) g.fillStyle = '#e8a000';
-    else {
+  // SR／SSR 翻開前的稀有度暗示＝「加工」（使用者 2026-10-26：「ssr sr 也給玩家有加工的選項」）
+  //   gold 金箔（整張蓋一層金色、保留明暗）、silver 銀箔（去色＋金屬反光）、rainbow 彩虹（斜向七彩）、holo 雷射（細的虹色斜條）、none 不加工
+  const fin = tier === 2 ? back?.sr || 'gold' : tier === 3 ? back?.ssr || 'rainbow' : null;
+  if (fin && fin !== 'none') {
+    const SUN = ['#ff5a7a', '#ffb13b', '#ffe94a', '#52e08a', '#4cc3ff', '#9b6bff', '#ff5ad1'];
+    if (fin === 'gold') {
+      g.globalCompositeOperation = 'color';
+      g.fillStyle = '#e8a000';
+      g.fillRect(0, 0, W, H);
+    } else if (fin === 'silver') {
+      g.globalCompositeOperation = 'saturation';
+      g.fillStyle = '#808080';
+      g.fillRect(0, 0, W, H);
+      g.globalCompositeOperation = 'soft-light';
+      const sh = g.createLinearGradient(0, 0, W, H);
+      [0, 0.3, 0.45, 0.6, 1].forEach((p, i) => sh.addColorStop(p, i % 2 ? '#e8ecf4' : '#3c4250')); // 金屬反光：亮暗交錯
+      g.fillStyle = sh;
+      g.fillRect(0, 0, W, H);
+    } else if (fin === 'rainbow') {
+      g.globalCompositeOperation = 'color';
       const rb = g.createLinearGradient(0, 0, W, H);
-      ['#ff5a7a', '#ffb13b', '#ffe94a', '#52e08a', '#4cc3ff', '#9b6bff', '#ff5ad1'].forEach((col, i, a) => rb.addColorStop(i / (a.length - 1), col));
+      SUN.forEach((col, i, a) => rb.addColorStop(i / (a.length - 1), col));
       g.fillStyle = rb;
+      g.fillRect(0, 0, W, H);
+    } else if (fin === 'holo') {
+      g.globalCompositeOperation = 'overlay';
+      g.globalAlpha = 0.75;
+      const rb = g.createLinearGradient(0, 0, W * 0.6, H * 0.35);
+      for (let k = 0; k <= 21; k++) rb.addColorStop(k / 21, SUN[k % SUN.length]);
+      g.fillStyle = rb;
+      g.save();
+      g.translate(W / 2, H / 2);
+      g.rotate(-0.5);
+      g.fillRect(-W, -H, W * 2, H * 2);
+      g.restore();
+      g.globalAlpha = 1;
     }
-    g.fillRect(0, 0, W, H);
     g.globalCompositeOperation = 'source-over';
   }
   g.restore();

@@ -11,6 +11,9 @@ export const CURRENCIES = ['NT$', '¥', 'HK$', 'US$', '代幣'];
 export const THEME_KEYS = ['red', 'white', 'yellow', 'blue', 'mint', 'pink', 'black'];
 export const LIMITS = { items: 16, name: 24, title: 24, qty: 999, coins: 20 };
 export const BG_PRESETS = ['plain', 'shop', 'night', 'sakura', 'stars', 'cats', 'dogs', 'galaxy'];
+export const BACK_PRESETS = ['shop', 'night', 'sakura', 'stars', 'cats', 'dogs', 'galaxy', 'candy']; // 卡背樣式（Gemini 畫的，assets/tex/back_<id>.webp）
+export const FINISHES = ['gold', 'silver', 'rainbow', 'holo', 'none']; // SR／SSR 卡背的加工
+const FIN_CODE = { gold: 'g', silver: 's', rainbow: 'r', holo: 'h', none: 'n' };
 
 export async function encodeConfig(cfg) {
   const imgs = [];
@@ -54,11 +57,16 @@ export async function encodeConfig(cfg) {
     json.b = ['i', bg.img.bytes.length, bg.img.mime === 'image/webp' ? 'w' : 'j'];
   }
   if (cfg.kind === 'card') json.k = 'c'; // 機台種類：沒寫＝轉蛋機
-  // 卡背：[圖片長度, 格式, 文字, 邊框色]（圖片接在背景圖後面）
+  // 卡背：[圖片長度, 格式, 文字, 邊框色, 種類（i 圖／p 樣式／c 顏色）, 樣式 id 或顏色, SR 加工, SSR 加工]（圖片接在背景圖後面）
   const back = cfg.back;
-  if (cfg.kind === 'card' && back && (back.img || back.text || back.color)) {
-    if (back.img) imgs.push(back.img.bytes);
-    json.cb = [back.img ? back.img.bytes.length : 0, back.img?.mime === 'image/webp' ? 'w' : 'j', back.text || '', back.color || ''];
+  if (cfg.kind === 'card' && back) {
+    const img = back.k === 'img' && back.img;
+    if (img) imgs.push(back.img.bytes);
+    json.cb = [
+      img ? back.img.bytes.length : 0, img && back.img.mime === 'image/webp' ? 'w' : 'j', back.text || '', back.color || '',
+      img ? 'i' : back.k === 'preset' ? 'p' : back.k === 'color' ? 'c' : '', back.k === 'preset' ? back.id : back.k === 'color' ? back.c : '',
+      FIN_CODE[back.sr] || '', FIN_CODE[back.ssr] || '',
+    ];
   }
   const jb = te.encode(JSON.stringify(json));
   const size = 4 + jb.length + imgs.reduce((a, b) => a + b.length, 0);
@@ -127,12 +135,14 @@ export async function decodeConfig(token) {
   let back = null;
   const cb = Array.isArray(j.cb) ? j.cb : null;
   if (cb) {
-    back = { text: str(cb[2], 16), color: /^#[0-9a-f]{6}$/i.test(cb[3]) ? cb[3] : '' };
+    const fin = (c) => Object.keys(FIN_CODE).find((k) => FIN_CODE[k] === c) || '';
+    back = { k: 'default', text: str(cb[2], 16), color: /^#[0-9a-f]{6}$/i.test(cb[3]) ? cb[3] : '', sr: fin(cb[6]), ssr: fin(cb[7]) };
     if (Number.isInteger(cb[0]) && cb[0] > 0 && cb[0] < 120000 && off + cb[0] <= buf.length) {
+      back.k = 'img';
       back.img = { bytes: buf.slice(off, off + cb[0]), mime: cb[1] === 'w' ? 'image/webp' : 'image/jpeg' };
       off += cb[0];
-    }
-    if (!back.img && !back.text && !back.color) back = null;
+    } else if (cb[4] === 'p' && BACK_PRESETS.includes(cb[5])) Object.assign(back, { k: 'preset', id: cb[5] });
+    else if (cb[4] === 'c' && /^#[0-9a-f]{6}$/i.test(cb[5])) Object.assign(back, { k: 'color', c: cb[5] });
   }
   const p = Array.isArray(j.p) ? j.p : [];
   return {

@@ -517,8 +517,18 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .back-prev .back-card:first-child { width: 92px; }
 .back-prev { align-items: flex-end; }
 .back-opts { display: grid; gap: 8px; min-width: 0; }
-.back-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.back-tile { aspect-ratio: 1.4; background-size: cover; background-position: center; }
+.bgs.back-tiles { grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); }
+.back-tile { aspect-ratio: 0.686; background-size: cover; background-position: center; }
+.back-prev figure { margin: 0; display: grid; justify-items: center; gap: 2px; }
+.back-prev figcaption { font: 10px/1 var(--font-num); color: var(--muted); }
+.fin-chips { gap: 6px; }
+.fin-chip { font-size: 12px; padding: 4px 10px; }
+.fin-chip[aria-checked="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.fin-chip.fin-gold::before, .fin-chip.fin-silver::before, .fin-chip.fin-rainbow::before, .fin-chip.fin-holo::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1px solid rgba(28, 35, 64, .5); }
+.fin-chip.fin-gold::before { background: linear-gradient(135deg, #8a5a0a, #ffe28a, #c8901c); }
+.fin-chip.fin-silver::before { background: linear-gradient(135deg, #6b7280, #ffffff, #9ca3af); }
+.fin-chip.fin-rainbow::before { background: conic-gradient(#ff5a7a, #ffe94a, #52e08a, #4cc3ff, #9b6bff, #ff5a7a); }
+.fin-chip.fin-holo::before { background: repeating-linear-gradient(120deg, #ff9ad5 0 3px, #9ee7ff 3px 6px, #fff59a 6px 9px); }
 .back-row { display: grid; gap: 3px; font-size: 12px; font-weight: 700; color: var(--muted); }
 .back-row input:not([type="color"]) { font: inherit; font-size: 14px; color: var(--ink); padding: 7px 10px; border-radius: 10px; border: 2px solid var(--stroke); background: var(--surface); }
 .back-colorrow { grid-template-columns: 1fr auto; align-items: center; }
@@ -908,13 +918,15 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
               <div class="back-ed">
                 <div class="back-prev" id="back-prev"></div>
                 <div class="back-opts">
-                  <div class="back-tiles" id="back-tiles" role="radiogroup" aria-labelledby="back-label"></div>
+                  <div class="bgs back-tiles" id="back-tiles" role="radiogroup" aria-labelledby="back-label"></div>
                   <label class="back-row"><span data-i18n="back.text">卡背文字（選填）</span><input id="back-text" maxlength="16"></label>
                   <label class="back-row back-colorrow"><span data-i18n="back.color">邊框顏色</span><input id="back-color" type="color" value="#1c2340"></label>
+                  <div class="back-row"><span id="sr-label" data-i18n="fin.sr">SR 卡背的加工</span><div class="chips fin-chips" id="back-sr" role="radiogroup" aria-labelledby="sr-label"></div></div>
+                  <div class="back-row"><span id="ssr-label" data-i18n="fin.ssr">SSR 卡背的加工</span><div class="chips fin-chips" id="back-ssr" role="radiogroup" aria-labelledby="ssr-label"></div></div>
                   <button type="button" class="btn ghost" id="back-reset" hidden data-i18n="back.reset">還原預設卡背</button>
                 </div>
               </div>
-              <p class="hint" data-i18n="back.hint">SR、SSR 的卡在翻開前，卡背會變成金色、彩虹色（上面的預覽）。</p>
+              <p class="hint" data-i18n="back.hint">SR、SSR 的卡在翻開前，卡背會先換成下面選的加工（上面的預覽）。</p>
               <input type="file" id="file-back" accept="image/*" hidden>
             </div>
           </li>
