@@ -717,6 +717,24 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; max-height: 50vh; overflow: auto; padding: 4px; }
 .sp-tile { aspect-ratio: 1; border: 2px solid var(--line); border-radius: 14px; background: var(--surface-2); padding: 6px; cursor: pointer; }
 .sp-tile img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.2)); }
+/* シールをはがす（peel.js；使用者 2026-10-27：「這樣的撥下來的方式」「可以慢慢撕下來」）：全螢幕一層，在對話框上面、toast 下面 */
+.peel-ov { position: fixed; inset: 0; z-index: 55; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--surface) 82%, #ffd6ea), var(--surface-2) 75%); color: var(--ink); touch-action: none; animation: peelIn 0.25s ease-out; }
+.peel-top { display: flex; gap: 10px; align-items: center; padding: 12px var(--gutter-r) 6px var(--gutter-l); }
+.peel-title { font-family: var(--font-display); font-weight: 400; font-size: 20px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peel-count { font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; background: var(--ink); color: var(--surface); border-radius: 999px; padding: 4px 12px; white-space: nowrap; }
+.peel-stage { position: relative; min-height: 0; }
+.peel-cv { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+.peel-cv:active { cursor: grabbing; }
+.peel-bottom { display: grid; gap: 8px; justify-items: center; padding: 6px 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
+.peel-hint { margin: 0; font-weight: 800; font-size: 14px; text-align: center; background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 6px 14px; border-radius: 999px; max-width: 100%; }
+.peel-bottom .row { justify-content: center; gap: 8px; }
+@keyframes peelIn { from { opacity: 0; } }
+/* シール帳：還沒撕的鋁箔包／台紙 */
+.sb-pack .sb-pk-tag { position: absolute; left: 50%; top: -6px; transform: translateX(-50%); font-size: 10px; font-weight: 900; color: #fff; background: var(--accent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.sb-pack img { object-fit: contain; }
+.sb-pack.sealed { animation: packWiggle 2.6s ease-in-out infinite; }
+@keyframes packWiggle { 0%, 78%, 100% { transform: rotate(0); } 84% { transform: rotate(-7deg); } 90% { transform: rotate(6deg); } 95% { transform: rotate(-3deg); } }
+@media (prefers-reduced-motion: reduce) { .sb-pack.sealed, .peel-ov { animation: none; } }
 /* 音量面板 */
 .snd-pop { position: fixed; z-index: 30; width: min(280px, calc(100vw - 16px)); display: grid; gap: 10px; padding: 14px; background: var(--surface); border: 2px solid var(--stroke); border-radius: 18px; box-shadow: 4px 4px 0 var(--stroke); }
 .snd-row { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }

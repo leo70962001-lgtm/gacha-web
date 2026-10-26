@@ -372,6 +372,7 @@ export function loadBook() {
     b = null;
   }
   if (!b || !Array.isArray(b.list)) b = { list: [], pages: [] };
+  if (!Array.isArray(b.packs)) b.packs = [];
   if (!Array.isArray(b.pages) || !b.pages.length) b.pages = PAPERS.slice(0, 3).map((bg) => ({ bg, items: [] }));
   for (const p of b.pages) {
     if (!PAPERS.includes(p.bg)) p.bg = 'dot';
@@ -407,6 +408,61 @@ export async function addSticker(canvas, meta) {
   saveBook(b2);
   return s;
 }
+// ---------- パック（使用者 2026-10-27：CapLog 的「指ではがす」）----------
+//   book.packs＝[{ id, kind: 'foil'（鋁箔包，先沿封口撕開）| 'sheet'（台紙）, title, key, src, open, ts, items: [{ id, name, fin, shape, key, from, saved }] }]
+//   圖先存進 IndexedDB；用手指撕下來（claimPackItem）才放進シール帳（同一個 key → 張數 +1）
+const newId = () => 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// 有 key 而且同一個 key 的鋁箔包還沒打開 → 用那一包（同一台轉到的貼紙裝在同一包）
+export async function createPack({ kind = 'sheet', title = '', key = '', src = 'made' }) {
+  const b = loadBook();
+  const same = key && b.packs.find((p) => p.key === key && p.kind === kind && !p.open);
+  if (same) return same;
+  const p = { id: 'p' + newId(), kind, title: String(title).slice(0, 30), key, src, open: kind !== 'foil', ts: Date.now(), items: [] };
+  b.packs.unshift(p);
+  saveBook(b);
+  return p;
+}
+export async function addToPack(packId, canvas, meta) {
+  const id = newId();
+  await putImg(id, await toBlob(canvas));
+  const b = loadBook();
+  const p = b.packs.find((x) => x.id === packId);
+  if (!p) return null;
+  p.items.push({ id, name: String(meta.name || '').slice(0, 24), fin: STICKER_FINS.includes(meta.fin) ? meta.fin : 'drop', shape: meta.shape || 'cut', key: meta.key || '', from: meta.from || '', saved: false });
+  p.ts = Date.now();
+  saveBook(b);
+  return p;
+}
+export function markPackOpened(packId) {
+  const b = loadBook();
+  const p = b.packs.find((x) => x.id === packId);
+  if (p) {
+    p.open = true;
+    saveBook(b);
+  }
+}
+// 撕下來一張 → シール帳（回傳シール帳裡的那一筆）；全部撕完那包就不見
+export async function claimPackItem(packId, idx) {
+  const b = loadBook();
+  const p = b.packs.find((x) => x.id === packId);
+  const it = p?.items[idx];
+  if (!it || it.saved) return null;
+  it.saved = true;
+  let st = it.key && b.list.find((x) => x.key === it.key);
+  const dup = !!st;
+  if (st) {
+    st.n = (st.n || 1) + 1;
+    st.ts = Date.now();
+  } else {
+    st = { id: it.id, name: it.name, fin: it.fin, shape: it.shape, n: 1, src: p.src || 'made', from: it.from, key: it.key, ts: Date.now() };
+    b.list.unshift(st);
+  }
+  if (p.items.every((x) => x.saved)) b.packs = b.packs.filter((x) => x !== p);
+  saveBook(b);
+  if (dup) await delImg(it.id); // 已經有同一張 → 這張的圖用不到
+  return st;
+}
+
 // 丟掉一張（沒貼的那幾張才能丟）；全部沒了 → 連圖一起刪
 export async function trashOne(id) {
   const b = loadBook();

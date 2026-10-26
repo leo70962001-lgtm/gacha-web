@@ -8,7 +8,8 @@ import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
 import { cutout } from './seg.js';
 import { Holo } from './holo.js';
-import { bakeSticker, hasAlpha, loadBook, saveBook, addSticker, stickerBlob, stickerUrl, STICKER_FINS, STICKER_SHAPES, PRESETS, presetFile } from './sticker.js';
+import { bakeSticker, hasAlpha, loadBook, saveBook, stickerBlob, stickerUrl, createPack, addToPack, markPackOpened, claimPackItem, STICKER_FINS, STICKER_SHAPES, PRESETS, presetFile } from './sticker.js';
+import { openPeel, drawFoilPack, FOIL } from './peel.js';
 import { StickerBook } from './stickerbook.js';
 import { Binder, renderShelf } from './binder.js';
 import { Trade } from './trade.js';
@@ -2835,7 +2836,7 @@ async function albumSync() {
 //   シール帳：收集簿的分頁（stickerbook.js）；貼到機台（machine.setStickers）；放進轉蛋（獎品的 sticker）；轉到貼紙獎品 → 進シール帳
 let sb = null;
 function stickerBook() {
-  sb = sb || new StickerBook($('album-stickers'), { t, toast, sfx, onMake: () => openStickerMaker(), onMachine: (x) => stickToMachine(x), onGacha: (x) => stickerToGacha(x), changed: () => app.dataset.mode === 'album' && albumTab === 'sticker' && renderAlbumTabsOnly() });
+  sb = sb || new StickerBook($('album-stickers'), { t, toast, sfx, foil, onPack: (id) => openPack(id), onMake: () => openStickerMaker(), onMachine: (x) => stickToMachine(x), onGacha: (x) => stickerToGacha(x), changed: () => app.dataset.mode === 'album' && albumTab === 'sticker' && renderAlbumTabsOnly() });
   return sb;
 }
 // 分頁上的張數跟著變（不重畫整本）
@@ -2847,11 +2848,13 @@ function renderAlbumTabsOnly() {
   $('album-sum').textContent = t('stk.sum', { k: b.list.length, n, p: b.pages.length });
 }
 
-const mk = { src: null, mask: null, shape: 'cut', fin: 'drop', baked: null, then: null, cutting: false };
+// 做貼紙（可以一次做好幾張，使用者 2026-10-27：CapLog「複数のステッカーつくれる」）：
+//   手繪素材點一下＝選／取消（可以選好幾個）、「用照片做」＝裁切＋自動去背，一張一張加進來；形狀、加工整批一樣
+//   「シートにする」→ 做成一張台紙 → 馬上打開（peel.js）：一張一張用手指慢慢撕下來才會放進シール帳
+const mk = { srcs: [], shape: 'cut', fin: 'drop', then: null };
 function openStickerMaker(then) {
   mk.then = then || null;
-  mk.src = mk.baked = mk.mask = null;
-  mk.cutting = false;
+  mk.srcs = [];
   mk.shape = 'cut';
   $('sk-name').value = '';
   renderMaker();
@@ -2864,64 +2867,102 @@ function presetImg(i) {
   return presetImgs.get(i);
 }
 async function usePreset(i) {
+  const had = mk.srcs.findIndex((x) => x.preset === i);
+  if (had >= 0) {
+    mk.srcs.splice(had, 1);
+    return renderMaker();
+  }
+  if (mk.srcs.length >= 12) return toast(t('stk.max12'));
   let bmp;
   try {
     bmp = await presetImg(i);
   } catch (e) {
     return toast(t('loadFail'));
   }
-  mk.src = bmp;
-  mk.mask = null;
-  mk.cutting = false;
-  mk.shape = 'cut';
-  mk.preset = i;
-  $('sk-name').value = t('stk.n.' + PRESETS[i]);
+  mk.srcs.push({ src: bmp, mask: null, preset: i, name: t('stk.n.' + PRESETS[i]), alpha: true });
   renderMaker();
 }
-// シール帳第一次打開（還沒有貼紙）→ 送 4 張手繪貼紙
+// 鋁箔包的圖（程式畫，FOIL 有封口、標籤的位置）
+let foilImg = null;
+const foil = () => (foilImg = foilImg || drawFoilPack());
+// 打開一包／一張台紙：還沒撕下來的貼紙放上去，撕一張存一張
+async function openPack(packId, onDone) {
+  const b = loadBook();
+  const p = b.packs.find((x) => x.id === packId);
+  if (!p) return;
+  const todo = p.items.map((x, i) => ({ x, i })).filter(({ x }) => !x.saved);
+  const items = [];
+  for (const { x, i } of todo) {
+    const bl = await stickerBlob(x.id);
+    const img = bl ? await createImageBitmap(bl).catch(() => null) : null;
+    if (img) items.push({ img, name: x.name, at: i });
+  }
+  if (!items.length) return;
+  const saved = [];
+  openPeel(items, {
+    t,
+    sfx,
+    title: p.title || t('peel.sheetTitle'),
+    pack: p.kind === 'foil' && !p.open ? { img: foil(), seal: FOIL.seal, labelAt: FOIL.labelAt, label: t('peel.packLabel', { n: items.length }) } : null,
+    onOpened: () => markPackOpened(p.id),
+    onSave: async (k) => {
+      const st = await claimPackItem(p.id, items[k].at);
+      if (st) saved.push(st);
+      refreshStickerBook();
+    },
+    onClose: () => {
+      refreshStickerBook();
+      onDone?.(saved);
+    },
+  });
+}
+function refreshStickerBook() {
+  if (app.dataset.mode === 'album' && albumTab === 'sticker') renderAlbum();
+}
+// シール帳第一次打開（還沒有貼紙）→ 送一包 4 張手繪貼紙，直接打開
 async function welcomeStickers() {
   const b = loadBook();
-  if (b.welcomed || b.list.length) return false;
+  if (b.welcomed || b.list.length || b.packs.length) return false;
   b.welcomed = true;
   saveBook(b);
-  const pick = [[1, 'drop'], [5, 'glitter'], [4, 'aurora'], [10, 'fuwa']];
-  for (const [i, fin] of pick.reverse()) {
+  const pk = await createPack({ kind: 'foil', title: t('stk.welcomePack'), src: 'gift' });
+  for (const [i, fin] of [[1, 'drop'], [5, 'glitter'], [4, 'aurora'], [10, 'fuwa']]) {
     try {
-      const c = bakeSticker(await presetImg(i), { shape: 'cut', fin, size: 384, seed: i + 1 });
-      await addSticker(c, { name: t('stk.n.' + PRESETS[i]), fin, shape: 'cut', src: 'gift' });
+      await addToPack(pk.id, bakeSticker(await presetImg(i), { shape: 'cut', fin, size: 384, seed: i + 1 }), { name: t('stk.n.' + PRESETS[i]), fin, shape: 'cut' });
     } catch (e) {
       console.warn(e);
     }
   }
   toast(t('stk.welcome'));
+  openPack(pk.id);
   return true;
 }
-async function onStickerFile(f) {
-  let bmp;
-  try {
-    bmp = await createImageBitmap(f);
-  } catch (e) {
-    return toast(t('t.badImage'));
+async function onStickerFiles(files) {
+  for (const f of files) {
+    if (mk.srcs.length >= 12) return toast(t('stk.max12'));
+    let bmp;
+    try {
+      bmp = await createImageBitmap(f);
+    } catch (e) {
+      toast(t('t.badImage'));
+      continue;
+    }
+    const c = await openCrop({ bmp, out: [512, 512], title: t('stk.cropTitle') });
+    if (!c) continue;
+    const s = { src: c, mask: null, preset: -1, name: f.name.replace(/\.[^.]+$/, '').slice(0, 24) || t('stk.defaultName'), alpha: hasAlpha(c) };
+    mk.srcs.push(s);
+    if ($('sheet-sticker').hidden) openSheet('sheet-sticker', $('sk-save'));
+    renderMaker();
+    if (s.alpha) continue; // 已經去背的圖（PNG）→ 直接用它的透明
+    s.cutting = true;
+    renderMaker();
+    s.mask = await cutout(c).catch(() => null);
+    s.cutting = false;
+    renderMaker();
   }
-  const c = await openCrop({ bmp, out: [512, 512], title: t('stk.cropTitle') });
-  if (!c) return;
-  mk.src = c;
-  mk.mask = null;
-  mk.shape = 'cut';
-  mk.preset = -1;
-  $('sk-name').value = f.name.replace(/\.[^.]+$/, '').slice(0, 24) || t('stk.defaultName');
-  if ($('sheet-sticker').hidden) openSheet('sheet-sticker', $('sk-save'));
-  renderMaker();
-  if (hasAlpha(c)) return; // 已經去背的圖（PNG）→ 直接用它的透明
-  mk.cutting = true;
-  renderMaker();
-  const m = await cutout(c).catch(() => null);
-  if (mk.src !== c) return;
-  mk.cutting = false;
-  mk.mask = m;
-  if (!m) mk.shape = 'circle';
-  renderMaker();
 }
+const canCut = (s) => s.alpha || !!s.mask;
+const shapeOf = (s) => (mk.shape === 'cut' && !canCut(s) ? 'circle' : mk.shape);
 function renderMaker() {
   const box = $('sk-shapes');
   if (!box.childElementCount) {
@@ -2965,53 +3006,71 @@ function renderMaker() {
       pg.append(b);
     });
   for (const b of pg.children) {
-    b.setAttribute('aria-pressed', String(mk.src && mk.preset === +b.dataset.i));
+    b.setAttribute('aria-pressed', String(mk.srcs.some((x) => x.preset === +b.dataset.i)));
     b.setAttribute('aria-label', t('stk.n.' + PRESETS[b.dataset.i]));
     b.title = t('stk.n.' + PRESETS[b.dataset.i]);
   }
-  $('sk-pick').textContent = t(mk.src && mk.preset < 0 ? 'stk.change' : 'stk.fromPhoto');
-  $('sk-empty').hidden = !!mk.src;
-  const canCut = !!mk.mask || (mk.src && hasAlpha(mk.src));
+  const n = mk.srcs.length;
+  const cutting = mk.srcs.some((x) => x.cutting);
+  $('sk-pick').textContent = t('stk.fromPhoto');
+  $('sk-empty').hidden = !!n;
   for (const b of box.children) {
     b.textContent = t('stk.sh.' + b.dataset.v);
     b.setAttribute('aria-checked', String(b.dataset.v === mk.shape));
-    b.disabled = b.dataset.v === 'cut' && !canCut && !mk.cutting;
   }
   for (const b of $('sk-fins').children) {
     b.textContent = t('stk.f.' + b.dataset.v);
     b.setAttribute('aria-checked', String(b.dataset.v === mk.fin));
   }
-  $('sk-busy').hidden = !mk.cutting;
+  $('sk-busy').hidden = !cutting;
+  // 名字：只有一張的時候可以改
+  $('sk-name').closest('.field').hidden = n !== 1;
+  if (n === 1 && !$('sk-name').value) $('sk-name').value = mk.srcs[0].name;
+  $('sk-save').disabled = !n || cutting;
+  $('sk-save').textContent = n > 1 ? t('stk.makeSheet', { n }) : t('stk.save');
+  // 預覽：一張＝大張；好幾張＝小格子
   const stage = $('sk-stage');
   stage.querySelector('canvas')?.remove();
-  $('sk-save').disabled = !mk.src;
-  if (!mk.src) return;
-  mk.baked = bakeSticker(mk.src, { mask: mk.mask, shape: mk.shape === 'cut' && !canCut ? 'circle' : mk.shape, fin: mk.fin, size: 512 }); // 自己做的：512 px（シール帳放大也清楚）
-  mk.baked.className = 'sk-prev';
-  stage.prepend(mk.baked);
+  if (!n) return;
+  const cols = n === 1 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : 4;
+  const cell = n === 1 ? 512 : 160;
+  const c = document.createElement('canvas');
+  c.width = c.height = cell * cols;
+  const g = c.getContext('2d');
+  mk.srcs.forEach((s, i) => {
+    const b = bakeSticker(s.src, { mask: s.mask, shape: shapeOf(s), fin: mk.fin, size: cell, seed: i + 1 });
+    g.drawImage(b, (i % cols) * cell, Math.floor(i / cols) * cell);
+  });
+  c.className = 'sk-prev';
+  stage.prepend(c);
 }
 function bindMaker() {
+  $('file-sticker').multiple = true;
   $('file-sticker').addEventListener('change', () => {
-    const f = $('file-sticker').files[0];
-    if (f) onStickerFile(f);
+    const fs = [...$('file-sticker').files];
+    if (fs.length) onStickerFiles(fs);
   });
   $('sk-pick').onclick = () => {
     $('file-sticker').value = '';
     $('file-sticker').click();
   };
   $('sk-save').onclick = async () => {
-    if (!mk.baked) return;
+    const list = mk.srcs.slice();
+    if (!list.length) return;
     $('sk-save').disabled = true;
-    const shape = mk.shape === 'cut' && !(mk.mask || hasAlpha(mk.src)) ? 'circle' : mk.shape;
-    const st = await addSticker(mk.baked, { name: $('sk-name').value.trim() || t('stk.defaultName'), fin: mk.fin, shape, src: 'made' });
-    mk.src = mk.baked = null;
+    const pk = await createPack({ kind: 'sheet', title: t('peel.sheetTitle'), src: 'made' });
+    for (const [i, s] of list.entries()) {
+      const name = list.length === 1 ? $('sk-name').value.trim() || s.name : s.name;
+      await addToPack(pk.id, bakeSticker(s.src, { mask: s.mask, shape: shapeOf(s), fin: mk.fin, size: 512, seed: i + 1 }), { name, fin: mk.fin, shape: shapeOf(s) });
+    }
+    mk.srcs = [];
     closeSheet('sheet-sticker');
-    sfx.stick();
-    toast(t('stk.saved'));
-    if (app.dataset.mode === 'album') renderAlbum();
+    sfx.pop();
+    refreshStickerBook();
     const then = mk.then;
     mk.then = null;
-    then?.(st);
+    // 做好的那張台紙直接打開：一張一張撕下來
+    openPack(pk.id, (saved) => saved.length && then?.(saved[0]));
   };
 }
 
@@ -3198,8 +3257,9 @@ async function grantSticker(cfg, idx) {
     shape = mask ? 'cut' : card ? 'square' : 'circle';
     c = bakeSticker(src, { mask, shape, fin: it.sticker.fin, size: 256, seed: idx + 3 });
   }
-  await addSticker(c, { name: it.name, fin: it.sticker.fin, shape, src: 'gacha', from: cfg.name, key });
-  toast(t('stk.got', { name: it.name }));
+  const pk = await createPack({ kind: 'foil', title: cfg.name, key: 'g|' + albumKey(), src: 'gacha' });
+  await addToPack(pk.id, c, { name: it.name, fin: it.sticker.fin, shape, key, from: cfg.name });
+  toast(t('stk.gotPack', { name: it.name }));
 }
 
 // 收集簿：分「卡片冊」（轉卡機，像真的卡冊）跟「轉蛋收藏」（轉蛋機，木頭展示櫃）兩個分頁（binder.js）
@@ -3246,7 +3306,7 @@ function renderAlbum() {
     $('album-empty').hidden = $('album-binder').hidden = $('album-shelf').hidden = $('album-trade').hidden = true;
     $('album-sum').textContent = t('stk.sum', { k: book.list.length, n: stkN, p: book.pages.length });
     stickerBook().render();
-    if (!book.welcomed && !book.list.length) welcomeStickers().then((ok) => ok && app.dataset.mode === 'album' && albumTab === 'sticker' && renderAlbum());
+    if (!book.welcomed && !book.list.length && !book.packs.length) welcomeStickers().then((ok) => ok && refreshStickerBook());
     return;
   }
   // 好友名單／交換（trade.js）

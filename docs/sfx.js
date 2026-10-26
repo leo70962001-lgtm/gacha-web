@@ -422,6 +422,17 @@ export const sfx = {
     noise(t, 0.22, 0.16, 'bandpass', 900, 4200, 3, { wet: 0.08 });
     tone('sine', 500, 900, t + 0.18, 0.06, 0.05, { wet: 0.08 });
   },
+  // 鋁箔包沿著封口撕：一小段一小段「ジッ」；慢慢撕貼紙：小小的「ぺり」
+  tear() {
+    if (!ready()) return;
+    const t = now();
+    noise(t, 0.05, 0.2, 'bandpass', vary(3000, 0.25), 2200, 2.5, { pan: rpan(0.3), wet: 0.05 });
+    noise(t, 0.025, 0.1, 'highpass', 6500, 6500, 1);
+  },
+  peelTick() {
+    if (!ready()) return;
+    noise(now(), 0.035, 0.07, 'bandpass', vary(1800, 0.3), 1200, 4, { wet: 0.04 });
+  },
   // 對話框打開：軟軟的「啵」
   open() {
     if (!ready()) return;

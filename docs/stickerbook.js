@@ -92,7 +92,7 @@ export class StickerBook {
     this.page = Math.max(0, Math.min(b.pages.length - 1, this.page));
     const pg = b.pages[this.page];
     // 圖的網址先全部拿好（IndexedDB）
-    const ids = new Set([...b.list.map((s) => s.id), ...pg.items.map((x) => x.id)]);
+    const ids = new Set([...b.list.map((s) => s.id), ...pg.items.map((x) => x.id), ...b.packs.map((p) => p.items.find((x) => !x.saved)?.id).filter(Boolean)]);
     this.urls = Object.fromEntries(await Promise.all([...ids].map(async (id) => [id, await stickerUrl(id)])));
     const byId = Object.fromEntries(b.list.map((s) => [s.id, s]));
     // 上面一排
@@ -142,10 +142,30 @@ export class StickerBook {
       this.$tools.append(peel, front);
       page.append(this.$tools);
     }
-    this.$hint.textContent = t(b.list.length ? 'stk.hint' : 'stk.empty');
+    this.$hint.textContent = t(b.packs.length ? 'stk.packHint' : b.list.length ? 'stk.hint' : 'stk.empty');
     // 下面一排：還沒貼的
     this.$make.textContent = t('stk.make');
     this.$stock.textContent = '';
+    // 還沒撕的：鋁箔包（封著）／台紙（剩幾張）→ 點了打開，用手指撕
+    for (const p of b.packs) {
+      const left = p.items.filter((x) => !x.saved).length;
+      if (!left) continue;
+      const sealed = p.kind === 'foil' && !p.open;
+      const tile = el('button', 'sb-tile sb-pack' + (sealed ? ' sealed' : ''));
+      tile.type = 'button';
+      tile.dataset.pack = p.id;
+      tile.title = p.title || '';
+      tile.setAttribute('aria-label', t(sealed ? 'stk.packTile' : 'stk.sheetTile', { n: left }));
+      const im = el('img');
+      if (sealed) {
+        this.foilUrl = this.foilUrl || this.o.foil?.().toDataURL('image/png');
+        im.src = this.foilUrl || '';
+      } else im.src = this.urls[p.items.find((x) => !x.saved)?.id] || '';
+      im.alt = '';
+      im.draggable = false;
+      tile.append(im, el('b', 'sb-n', '×' + left), el('span', 'sb-pk-tag', t(sealed ? 'stk.packTag' : 'stk.sheetTag')));
+      this.$stock.append(tile);
+    }
     for (const s of b.list) {
       const left = available(b, s);
       const tile = el('button', 'sb-tile shine fin-' + s.fin + (left ? '' : ' used') + (this.pick === s.id ? ' on' : ''));
@@ -317,12 +337,13 @@ export class StickerBook {
     stock.addEventListener('pointerdown', (e) => {
       const tile = e.target.closest('.sb-tile');
       if (!tile) return;
-      drag = { id: tile.dataset.id, x0: e.clientX, y0: e.clientY, ghost: null, tile, pid: e.pointerId };
+      drag = { id: tile.dataset.id, pack: tile.dataset.pack, x0: e.clientX, y0: e.clientY, ghost: null, tile, pid: e.pointerId };
     });
     addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.pid) return;
       const dx = e.clientX - drag.x0;
       const dy = e.clientY - drag.y0;
+      if (drag.pack) return; // パック：點了才打開，不能拖
       if (!drag.ghost) {
         // 往上拉（或滑鼠拖）才算拖曳；手機橫著滑＝捲動這一排
         if (Math.hypot(dx, dy) < 8 || (e.pointerType === 'touch' && Math.abs(dy) < Math.abs(dx))) return;
@@ -350,6 +371,10 @@ export class StickerBook {
       if (!drag || e.pointerId !== drag.pid) return;
       const d = drag;
       drag = null;
+      if (d.pack) {
+        if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 10) this.o.onPack?.(d.pack);
+        return;
+      }
       if (!d.ghost) {
         // 點一下：選它／再點一下取消
         this.pick = this.pick === d.id ? null : d.id;
