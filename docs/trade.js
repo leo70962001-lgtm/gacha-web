@@ -35,6 +35,17 @@ const okImg = (u) => (typeof u === 'string' && u.length < 150000 && /^data:image
 const str = (x, n) => (typeof x === 'string' ? x.trim().slice(0, n) : '');
 const rar = (r) => (Number.isInteger(r) && r >= 0 && r <= 3 ? r : 0);
 
+// 收集簿數量 ±d：記在 tr（交換進出），got＝base（轉到的）＋tr；app.js 的 albumSync 也照這個算，交換出去的不會再跑回來
+function bump(e, n, d) {
+  e.base = e.base || {};
+  e.tr = e.tr || {};
+  if (e.base[n] == null) e.base[n] = Math.max(0, (e.got[n] || 0) - (e.tr[n] || 0));
+  e.tr[n] = (e.tr[n] || 0) + d;
+  const g = e.base[n] + e.tr[n];
+  if (g > 0) e.got[n] = g;
+  else delete e.got[n];
+}
+
 // 收集簿裡的一個獎品 → 要送出去的資料（機台資訊＋縮圖）
 function snapshot(key, e, name, me) {
   const it = e.items[name] || {};
@@ -110,8 +121,7 @@ export class Trade {
     const a = this.album();
     const e = a[key];
     if (!e?.got[n]) return false;
-    e.got[n] -= 1;
-    if (e.got[n] <= 0) delete e.got[n];
+    bump(e, n, -1);
     this.d.store.set(ALBUM, a);
     return true;
   }
@@ -125,7 +135,7 @@ export class Trade {
     for (const o of x.m.order) if (!e.items[o]) e.items[o] = { r: x.m.rar[o] ?? 0 };
     const old = e.items[x.n] || {};
     e.items[x.n] = { r: x.r, t: old.t || x.t, s: old.s || x.s, b: old.b || x.b, st: old.st ?? x.st };
-    e.got[x.n] = (e.got[x.n] || 0) + 1;
+    bump(e, x.n, 1);
     e.ts = Date.now();
     a[key] = e;
     this.d.store.set(ALBUM, a);
@@ -136,7 +146,7 @@ export class Trade {
     const key = fromTradeKey(String(tradeKey || ''), this.w.id);
     const e = a[key];
     if (!e || typeof n !== 'string') return;
-    e.got[n] = (e.got[n] || 0) + 1;
+    bump(e, n, 1);
     this.d.store.set(ALBUM, a);
   }
 
@@ -216,11 +226,14 @@ export class Trade {
     return f?.name || fmtCode(id);
   }
 
-  // ---------- 畫面：收集簿的「好友交換」分頁 ----------
-  async render(root) {
+  // ---------- 畫面：收集簿的「好友名單」（view＝friends）、「交換」（view＝trades）分頁 ----------
+  //   使用者 2026-10-26：「分成好友名單跟交換介面2個」
+  async render(root, view = 'trades') {
     this.root = root;
+    const tok = (this.tok = (this.tok || 0) + 1); // 讀伺服器的時候換了分頁 → 舊的不要畫
     root.className = 'trade';
     root.textContent = '';
+    this.inBox = this.giftBox = this.friendBox = this.outBox = this.logBox = null;
     if (!this.d.cloudOk()) {
       root.append(el('p', 'album-empty card-box', t('tr.offline')));
       return;
@@ -231,11 +244,21 @@ export class Trade {
       await this.ensure();
       await Promise.all([this.refresh(), this.syncNames()]);
     } catch (e) {
-      wait.textContent = t('tr.offline');
+      if (tok === this.tok) wait.textContent = t('tr.offline');
       return;
     }
+    if (tok !== this.tok) return;
     root.textContent = '';
-    root.append(this.meCard(), (this.inBox = el('section', 'tr-box card-box')), (this.friendBox = el('section', 'tr-box card-box')), (this.outBox = el('section', 'tr-box card-box')), (this.logBox = el('section', 'tr-box card-box')));
+    const box = () => el('section', 'tr-box card-box');
+    if (view === 'friends') root.append(this.meCard(), (this.friendBox = box()));
+    else {
+      // 交換：最上面「送出新的交換」，下面收到的、等回覆的、紀錄
+      const bar = el('div', 'tr-bar');
+      // 使用者 2026-10-26：「分成2種交換跟贈與」
+      bar.append(btn('btn primary big', t('tr.newSwap'), () => this.sendFlow({ mode: 'swap' })), btn('btn sun big', t('tr.newGift'), () => this.sendFlow({ mode: 'gift' })));
+      if (!this.friends.length) bar.append(el('p', 'tr-hint', t('tr.needFriend')));
+      root.append(bar, (this.inBox = box()), (this.giftBox = box()), (this.outBox = box()), (this.logBox = box()));
+    }
     this.renderLists();
   }
 
@@ -288,13 +311,25 @@ export class Trade {
   }
 
   renderLists() {
-    if (!this.inBox) return;
-    // 收到的
-    const ib = this.inBox;
-    ib.textContent = '';
-    ib.append(el('h2', '', `${t('tr.inbox')}${this.list.in.length ? ` (${this.list.in.length})` : ''}`));
-    if (!this.list.in.length) ib.append(el('p', 'tr-none', t('tr.none')));
-    for (const o of this.list.in) {
+    this.renderIn();
+    this.renderFriends();
+    this.renderOut();
+    this.renderLog();
+  }
+
+  // 收到的
+  renderIn() {
+    for (const [ib, mode] of [[this.inBox, 'swap'], [this.giftBox, 'gift']]) {
+      if (!ib) continue;
+      const list = this.list.in.filter((o) => (o.mode === 'gift') === (mode === 'gift'));
+      ib.textContent = '';
+      ib.append(el('h2', '', `${t(mode === 'gift' ? 'tr.inGift' : 'tr.inSwap')}${list.length ? ` (${list.length})` : ''}`));
+      if (!list.length) ib.append(el('p', 'tr-none', t('tr.none')));
+      this.renderOffers(ib, list);
+    }
+  }
+  renderOffers(ib, list) {
+    for (const o of list) {
       const g = clean(o.give);
       if (!g) continue;
       const who = o.name || this.nameOf(o.from);
@@ -311,8 +346,12 @@ export class Trade {
       row.append(this.mini(g), txt, acts);
       ib.append(row);
     }
-    // 好友
+  }
+
+  // 好友
+  renderFriends() {
     const fb = this.friendBox;
+    if (!fb) return;
     fb.textContent = '';
     fb.append(el('h2', '', t('tr.friends')));
     const add = el('form', 'tr-add');
@@ -342,11 +381,15 @@ export class Trade {
           del.textContent = t('tr.removeSure');
         }
       });
-      row.append(nm, btn('btn primary', t('tr.send'), () => this.sendFlow({ to: f.id })), del);
+      row.append(nm, btn('btn primary', t('tr.swapShort'), () => this.sendFlow({ to: f.id, mode: 'swap' })), btn('btn sun', t('tr.giftShort'), () => this.sendFlow({ to: f.id, mode: 'gift' })), del);
       fb.append(row);
     }
-    // 送出的
+  }
+
+  // 送出的（等回覆）
+  renderOut() {
     const ob = this.outBox;
+    if (!ob) return;
     ob.textContent = '';
     ob.append(el('h2', '', t('tr.outbox')));
     const open = this.list.out.filter((o) => o.status === 'open');
@@ -358,8 +401,12 @@ export class Trade {
       row.append(nm, btn('btn ghost', t('tr.cancel'), () => this.cancel(o)));
       ob.append(row);
     }
-    // 紀錄
+  }
+
+  // 紀錄
+  renderLog() {
     const lb = this.logBox;
+    if (!lb) return;
     lb.textContent = '';
     lb.append(el('h2', '', t('tr.log')));
     const log = this.log;
@@ -421,9 +468,10 @@ export class Trade {
   sendFlow(st = {}) {
     if (!this.d.cloudOk()) return this.d.toast(t('tr.offline'));
     const s = { mode: 'swap', note: '', ...st };
+    const gift = s.mode === 'gift';
     const draw = () =>
       this.open((b) => {
-        b.append(el('h2', '', t('tr.sendTitle')));
+        b.append(el('h2', '', t(gift ? 'tr.giftTitle' : 'tr.swapTitle')), el('p', 'tr-hint', t(gift ? 'tr.giftHint' : 'tr.swapHint')));
         // 送什麼
         const what = el('div', 'tr-field');
         what.append(el('small', '', t('tr.what')));
@@ -439,7 +487,11 @@ export class Trade {
         const who = el('div', 'tr-field');
         who.append(el('small', '', t('tr.to')));
         const chips = el('div', 'chips');
-        if (!this.friends.length) who.append(el('p', 'tr-none', t('tr.noFriends')));
+        if (!this.friends.length)
+          who.append(el('p', 'tr-none', t('tr.needFriend')), btn('btn sun', t('tr.goFriends'), () => {
+            this.close();
+            this.d.goFriends();
+          }));
         for (const f of this.friends) {
           const c = btn('chip', f.name || fmtCode(f.id), () => {
             s.to = f.id;
@@ -449,27 +501,14 @@ export class Trade {
           chips.append(c);
         }
         who.append(chips);
-        // 交換／送禮
-        const how = el('div', 'tr-field');
-        how.append(el('small', '', t('tr.mode')));
-        const mc = el('div', 'chips');
-        for (const k of ['swap', 'gift']) {
-          const c = btn('chip', t('tr.' + k), () => {
-            s.mode = k;
-            draw();
-          });
-          c.setAttribute('aria-pressed', String(s.mode === k));
-          mc.append(c);
-        }
-        how.append(mc, el('p', 'tr-hint', t(s.mode === 'swap' ? 'tr.swapHint' : 'tr.giftHint')));
         const note = el('input', 'tr-note');
         note.maxLength = 80;
         note.placeholder = t('tr.note');
         note.value = s.note;
         note.oninput = () => (s.note = note.value);
-        const go = btn('btn primary big', t('tr.sendBtn'), () => this.send(s, go));
+        const go = btn('btn primary big', t(gift ? 'tr.giftBtn' : 'tr.swapBtn'), () => this.send(s, go));
         go.disabled = !(e && e.got[s.item.n] > 0 && s.to);
-        b.append(what, who, how, note, go);
+        b.append(what, who, note, go);
       });
     const pickIt = () =>
       this.pick(t('tr.pick'), (x) => {

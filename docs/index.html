@@ -199,6 +199,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 /* ---- 好友交換（trade.js）：好友碼、收到的、好友、送出的、紀錄 ---- */
 .tab-badge { margin-left: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #ff3d5a; color: #fff; font: 11px/18px var(--font-num); text-align: center; border: 1.5px solid var(--stroke); }
 .trade { display: grid; gap: 14px; }
+.tr-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 .tr-me, .tr-box { padding: 14px; display: grid; gap: 10px; }
 .tr-box h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 19px; }
 .tr-me { grid-template-columns: auto 1fr; align-items: center; background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--surface) 80%, #ffcf33)); }
@@ -249,7 +250,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .tr-swap .tr-mini { width: 84px; }
 .tr-arrow { font-size: 30px; }
 .tr-back { justify-self: start; }
-#v-trade { justify-self: center; }
+.v-acts { justify-content: center; }
 /* ---- 轉蛋收藏：展示櫃（Gemini 壁紙＋一層一層的木板），獎品站在打開的扭蛋殼裡 ---- */
 .shelf { display: grid; gap: 18px; }
 .cab { padding: 12px; display: grid; gap: 10px; }
@@ -902,7 +903,10 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     </div>
     <h2 id="v-name"></h2>
     <p class="meta-line" id="v-meta"></p>
-    <button class="btn sun" id="v-trade" hidden data-i18n="tr.tradeThis">拿去交換</button>
+    <div class="row v-acts" id="v-acts" hidden>
+      <button class="btn primary" id="v-trade" data-i18n="tr.tradeThis">拿去交換</button>
+      <button class="btn sun" id="v-gift" data-i18n="tr.giftThis">送給好友</button>
+    </div>
   </div>
 </div>
 

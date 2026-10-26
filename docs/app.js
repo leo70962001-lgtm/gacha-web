@@ -1306,7 +1306,7 @@ function showResult(idx, first, view = false) {
   $('r-name').textContent = it.name;
   $('r-new').hidden = !fresh || !first;
   const total = play.cfg.items.reduce((a, b) => a + b.qty, 0);
-  $('r-sub').textContent = t('resultSub', { n: play.pulls, p: pct(it.qty / total), c: play.got[idx] });
+  $('r-sub').textContent = t('resultSub', { n: play.pulls, p: pct(it.qty / total), c: owned(idx) });
   openSheet('sheet-result', view ? $('r-close') : $('r-again'));
   resHolo.start(() => !$('sheet-result').hidden);
 }
@@ -1797,7 +1797,7 @@ function openCollection() {
   grid.textContent = '';
   let kinds = 0;
   cfg.items.forEach((it, i) => {
-    const n = play.got[i] || 0;
+    const n = owned(i);
     if (n) kinds++;
     const cell = document.createElement(n ? 'button' : 'div');
     cell.className = 'cell' + (n ? '' : ' miss') + (n && it.media ? ' can-play' : '');
@@ -2152,10 +2152,31 @@ async function cutLayers(idx, W, H) {
 }
 
 // 收集簿跟著這台機台的紀錄更新（轉到東西、進機台時）
+// 這台機台在收集簿裡的 key（開店的人自己試玩用 draft.<uid>，設定一改 play id 就會變）
+const albumKey = () => (play.fromDraft ? 'draft.' + play.fromDraft : play.id);
+// 手上有幾個：轉到的（這次 play 跟收集簿記的取大的）＋好友交換進出（使用者 2026-10-26：「卡片交換出去要扣掉」）
+function owned(i) {
+  const n = play.cfg.items[i].name;
+  const e = (store.get('clatter.album') || {})[albumKey()];
+  return Math.max(0, Math.max(play.got[i] || 0, e?.base?.[n] || 0) + (e?.tr?.[n] || 0));
+}
+
+// 收集簿的數量：base＝從機台轉到的（取大的）、tr＝好友交換進出（收到 +1、送出 −1）、got＝base＋tr
+//   以前直接 got＝max(轉到的, got) → 交換出去的下次同步又會跑回來
 async function albumSync() {
   if (!play?.cfg) return;
+  const key = albumKey();
+  // 縮圖先做（要等）；做好再讀最新的收集簿來改 —— 等的時候好友交換可能剛改過
+  const old = (store.get('clatter.album') || {})[key];
+  const thumbs = [];
+  for (let i = 0; i < play.cfg.items.length; i++) {
+    const it = play.cfg.items[i];
+    const prev = old?.items[it.name];
+    const need = !prev?.t || (it.mask && (!prev.s || prev.st == null)); // 還沒有縮圖，或後來才去背 → 重做
+    thumbs.push(need ? await albumThumb(i) : prev);
+  }
+  if (!play?.cfg || albumKey() !== key) return; // 等的時候換了機台
   const a = store.get('clatter.album') || {};
-  const key = play.fromDraft ? 'draft.' + play.fromDraft : play.id;
   // 舊版用 play id 記的自己機台（設定每改一次就多一筆）：同名、不是短連結、獎品一半以上一樣的全部併過來
   if (play.fromDraft) {
     const names = new Set(play.cfg.items.map((it) => it.name));
@@ -2164,11 +2185,13 @@ async function albumSync() {
       .filter(([, v]) => Object.keys(v.items || {}).filter((n) => names.has(n)).length * 2 >= names.size)
       .sort((x, y) => (x[1].ts || 0) - (y[1].ts || 0));
     if (olds.length) {
-      const m = { items: {}, got: {}, order: [] };
+      const m = { items: {}, got: {}, order: [], base: {}, tr: {} };
       if (a[key]) olds.push([key, a[key]]); // 現在的也一起（放最後，縮圖用最新的）
       for (const [k, v] of olds) {
         Object.assign(m.items, v.items);
         for (const [n, c] of Object.entries(v.got || {})) m.got[n] = Math.max(c, m.got[n] || 0);
+        for (const [n, c] of Object.entries(v.base || {})) m.base[n] = Math.max(c, m.base[n] || 0);
+        for (const [n, c] of Object.entries(v.tr || {})) m.tr[n] = (m.tr[n] || 0) + c;
         m.order = [...m.order, ...(v.order || []).filter((n) => !m.order.includes(n))];
         m.ts = v.ts;
         delete a[k];
@@ -2182,20 +2205,23 @@ async function albumSync() {
   e.link = play.link;
   const names = play.cfg.items.map((it) => it.name);
   e.order = [...names, ...e.order.filter((n) => !names.includes(n))];
+  e.base = e.base || {};
+  e.tr = e.tr || {};
   let any = false;
   for (let i = 0; i < play.cfg.items.length; i++) {
     const it = play.cfg.items[i];
-    const prev = e.items[it.name];
-    const need = !prev?.t || (it.mask && (!prev.s || prev.st == null)); // 還沒有縮圖，或後來才去背 → 重做
-    const th = need ? await albumThumb(i) : prev;
-    e.items[it.name] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null };
+    const nm = it.name;
+    const th = thumbs[i];
+    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null };
     const n = play.got[i] || 0;
-    if (n) {
-      e.got[it.name] = Math.max(n, e.got[it.name] || 0);
-      any = true;
-    }
+    const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0))); // 舊資料沒有 base：got 扣掉交換的
+    if (base) e.base[nm] = base;
+    const g = base + (e.tr[nm] || 0);
+    if (g > 0) e.got[nm] = g;
+    else delete e.got[nm];
+    if (n) any = true;
   }
-  if (!any && !Object.keys(e.got).length) return; // 還沒轉到東西 → 先不放進收集簿
+  if (!any && !Object.keys(e.got).length && !Object.keys(e.tr).length) return; // 還沒轉到東西 → 先不放進收集簿
   e.ts = Date.now();
   a[key] = e;
   store.set('clatter.album', a);
@@ -2214,12 +2240,15 @@ function renderAlbum() {
   if (!albumTab) albumTab = cards.length || !caps.length ? 'card' : 'capsule';
   const tabs = $('album-tabs');
   tabs.textContent = '';
-  for (const [k, list] of [['card', cards], ['capsule', caps], ['trade', null]]) {
+  for (const [k, list] of [['card', cards], ['capsule', caps], ['friends', null], ['trade', null]]) {
     const b = document.createElement('button');
     b.className = 'chip';
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(albumTab === k));
-    b.textContent = k === 'trade' ? t('album.trade') + (trade?.list.in.length ? ` (${trade.list.in.length})` : '') : `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${list.length})`;
+    b.textContent =
+      k === 'trade' ? t('album.trade') + (trade?.list.in.length ? ` (${trade.list.in.length})` : '')
+      : k === 'friends' ? `${t('album.friends')} (${trade?.friends.length || 0})`
+      : `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${list.length})`;
     b.onclick = () => {
       albumTab = k;
       store.set('clatter.albumTab', k);
@@ -2227,11 +2256,18 @@ function renderAlbum() {
     };
     tabs.append(b);
   }
-  $('album-trade').hidden = albumTab !== 'trade';
-  if (albumTab === 'trade') {
+  // 好友名單／交換（trade.js）
+  const social = albumTab === 'friends' || albumTab === 'trade';
+  $('album-trade').hidden = !social;
+  if (social) {
     $('album-empty').hidden = $('album-binder').hidden = $('album-shelf').hidden = true;
-    $('album-sum').textContent = t('album.sumTrade', { f: trade.friends.length, n: trade.list.in.length });
-    trade.render($('album-trade')).then(() => ($('album-sum').textContent = t('album.sumTrade', { f: trade.friends.length, n: trade.list.in.length })));
+    const sum = () =>
+      ($('album-sum').textContent =
+        albumTab === 'friends'
+          ? t('album.sumFriends', { f: trade.friends.length })
+          : t('album.sumTrade', { n: trade.list.in.length, o: trade.list.out.filter((o) => o.status === 'open').length }));
+    sum();
+    trade.render($('album-trade'), albumTab === 'friends' ? 'friends' : 'trades').then(sum);
     return;
   }
   const list = albumTab === 'card' ? cards : caps;
@@ -2266,18 +2302,18 @@ function openCardView(e, name) {
   viewHolo.set({ t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, shape: e.kind === 'card' ? 'card' : 'round', name });
   viewHolo.start(() => !$('sheet-card').hidden);
   // 好友交換：收集簿裡的獎品可以直接拿去交換
-  const tb = $('v-trade');
-  tb.hidden = !(e.key && e.got[name] > 0 && cloudReady());
-  tb.onclick = () => {
-    closeSheet('sheet-card');
-    trade.sendFlow({ item: { key: e.key, n: name } });
-  };
+  $('v-acts').hidden = !(e.key && e.got[name] > 0 && cloudReady());
+  for (const [id, mode] of [['v-trade', 'swap'], ['v-gift', 'gift']])
+    $(id).onclick = () => {
+      closeSheet('sheet-card');
+      trade.sendFlow({ item: { key: e.key, n: name }, mode });
+    };
 }
 let trade = null;
 // 邀請連結 #f.<好友碼> → 加好友、打開收集簿的「好友交換」
 async function openInvite(code) {
   history.replaceState(null, '', location.pathname + location.search);
-  albumTab = 'trade';
+  albumTab = 'friends';
   setMode('album');
   try {
     await trade.addFriend(code);
@@ -2357,7 +2393,13 @@ async function boot() {
   trade = new Trade({
     store, toast, loadWallet, openSheet, closeSheet, openCardView, shareBase,
     cloudOk: cloudReady,
-    albumChanged: () => app.dataset.mode === 'album' && albumTab !== 'trade' && renderAlbum(),
+    albumChanged: () => app.dataset.mode === 'album' && albumTab !== 'trade' && albumTab !== 'friends' && renderAlbum(),
+    goFriends: () => {
+      albumTab = 'friends';
+      store.set('clatter.albumTab', 'friends');
+      setMode('album');
+      renderAlbum();
+    },
     badge: (n) => {
       $('album-badge').hidden = !n;
       $('album-badge').textContent = n;
