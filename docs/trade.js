@@ -7,6 +7,8 @@
 //   別人送來的資料都要檢查（圖片只收 data:image 的 base64、名字截長度）才放進收集簿
 import { RARITY } from './decor.js';
 import { t } from './i18n.js';
+import { ensureBase, recount } from './albumedit.js';
+import { copyText } from './copy.js';
 import { tradeMe, tradeLookup, tradeOffer, tradeList, tradeAccept, tradeDecline, tradeCancel, tradeDone } from './cloud.js';
 
 const ALBUM = 'clatter.album';
@@ -35,15 +37,11 @@ const okImg = (u) => (typeof u === 'string' && u.length < 150000 && /^data:image
 const str = (x, n) => (typeof x === 'string' ? x.trim().slice(0, n) : '');
 const rar = (r) => (Number.isInteger(r) && r >= 0 && r <= 3 ? r : 0);
 
-// 收集簿數量 ±d：記在 tr（交換進出），got＝base（轉到的）＋tr；app.js 的 albumSync 也照這個算，交換出去的不會再跑回來
+// 收集簿數量 ±d：記在 tr（交換進出），got＝base（轉到的）＋tr−cut（albumedit.js）；app.js 的 albumSync 也照這個算，交換出去的不會再跑回來
 function bump(e, n, d) {
-  e.base = e.base || {};
-  e.tr = e.tr || {};
-  if (e.base[n] == null) e.base[n] = Math.max(0, (e.got[n] || 0) - (e.tr[n] || 0));
+  ensureBase(e, n);
   e.tr[n] = (e.tr[n] || 0) + d;
-  const g = e.base[n] + e.tr[n];
-  if (g > 0) e.got[n] = g;
-  else delete e.got[n];
+  recount(e, n);
 }
 
 // 收集簿裡的一個獎品 → 要送出去的資料（機台資訊＋縮圖）
@@ -268,7 +266,11 @@ export class Trade {
     code.append(el('small', '', t('tr.myCode')), el('strong', '', fmtCode(this.w.id)));
     const acts = el('div', 'tr-acts');
     acts.append(
-      btn('btn', t('tr.copy'), () => navigator.clipboard?.writeText(this.w.id).then(() => this.d.toast(t('tr.copied')), () => {})),
+      // 複製的就是畫面上的好友碼（加好友的欄位有沒有「-」都收）
+      btn('btn', t('tr.copy'), async () => {
+        const c = fmtCode(this.w.id);
+        this.d.toast((await copyText(c)) ? t('tr.copied', { c }) : t('tr.copyFail', { c }));
+      }),
       btn('btn sun', t('tr.invite'), () => this.invite()),
     );
     const nm = el('form', 'tr-name');
@@ -307,7 +309,7 @@ export class Trade {
         if (e.name === 'AbortError') return;
       }
     }
-    navigator.clipboard?.writeText(`${text}\n${url}`).then(() => this.d.toast(t('tr.inviteCopied')), () => {});
+    this.d.toast((await copyText(`${text}\n${url}`)) ? t('tr.inviteCopied') : url);
   }
 
   renderLists() {

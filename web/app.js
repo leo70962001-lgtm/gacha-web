@@ -9,6 +9,8 @@ import { cutout } from './seg.js';
 import { Holo } from './holo.js';
 import { Binder, renderShelf } from './binder.js';
 import { Trade } from './trade.js';
+import { AlbumEdit, recount, ensureBase } from './albumedit.js';
+import { copyText } from './copy.js';
 import { cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
@@ -625,14 +627,10 @@ function bindForm() {
     requestSync(false).then(() => draft.cloud && toast(t('t.newLink')));
   };
   $('copy').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText($('link').value);
-      toast(t('t.copied'));
-    } catch (e) {
-      $('link').focus();
-      $('link').select();
-      toast(t('t.selectCopy'));
-    }
+    if (await copyText($('link').value)) return toast(t('t.copied'));
+    $('link').focus();
+    $('link').select();
+    toast(t('t.selectCopy'));
   };
   $('try').onclick = async () => {
     if (!linkToken) linkToken = await encodeConfig(draft);
@@ -974,7 +972,7 @@ async function enterPlay(token) {
       let k = 0;
       m.picks.forEach((idx, i) => {
         if (m.opened?.[i] || !(idx >= 0 && idx < cfg.items.length)) return;
-        play.got[idx] = (play.got[idx] || 0) + 1;
+        gotOne(idx);
         k++;
       });
       if (k) {
@@ -994,7 +992,7 @@ async function enterPlay(token) {
     // 上次投好幣（伺服器已經抽了）還沒打開就離開 → 放進收藏
     const idx = saved?.pend;
     if (Number.isInteger(idx) && idx >= 0 && idx < cfg.items.length) {
-      play.got[idx] = (play.got[idx] || 0) + 1;
+      gotOne(idx);
       toast(t('t.pendRestored'));
     }
     savePlay();
@@ -1264,7 +1262,7 @@ async function openIt() {
   await machine.openCapsule(curKind === 'card' ? null : drawPrizeCard(it, thumbOf(play.cfg, idx).bmp || placeholderThumb(it.name, idx), !play.got[idx]));
   sfx.reveal(it.rarity);
   const first = !play.got[idx];
-  play.got[idx] = (play.got[idx] || 0) + 1;
+  gotOne(idx);
   play.pending = null;
   savePlay();
   albumSync();
@@ -1468,7 +1466,7 @@ function creditMulti(i) {
   if (m.opened[i]) return;
   const idx = m.picks[i];
   m.isNew[i] = !play.got[idx];
-  play.got[idx] = (play.got[idx] || 0) + 1;
+  gotOne(idx);
   m.opened[i] = true;
   albumSync();
 }
@@ -2041,12 +2039,8 @@ async function renderShop() {
     });
     if (id)
       btn(t('copy'), '', async () => {
-        try {
-          await navigator.clipboard.writeText(shareBase() + '#s.' + id);
-          toast(t('t.copied'));
-        } catch (e) {
-          toast(shareBase() + '#s.' + id);
-        }
+        const url = shareBase() + '#s.' + id;
+        toast((await copyText(url)) ? t('t.copied') : url);
       });
     const del = btn(t('shop.del'), 'ghost', () => {
       // 按兩下才刪（第一下變成「確定拿掉？」）
@@ -2158,7 +2152,24 @@ const albumKey = () => (play.fromDraft ? 'draft.' + play.fromDraft : play.id);
 function owned(i) {
   const n = play.cfg.items[i].name;
   const e = (store.get('clatter.album') || {})[albumKey()];
-  return Math.max(0, Math.max(play.got[i] || 0, e?.base?.[n] || 0) + (e?.tr?.[n] || 0));
+  return Math.max(0, Math.max(play.got[i] || 0, e?.base?.[n] || 0) + (e?.tr?.[n] || 0) - (e?.cut?.[n] || 0));
+}
+
+// 轉到一個：機台的紀錄＋1、收集簿的 base 也直接＋1
+//   （以前只靠 albumSync 取「這次 play 轉到的」跟收集簿的大的 → 刪掉的機台、換過設定的試玩，新轉到的不會算進去）
+function gotOne(idx) {
+  play.got[idx] = (play.got[idx] || 0) + 1;
+  const a = store.get('clatter.album') || {};
+  const key = albumKey();
+  const nm = play.cfg.items[idx].name;
+  const e = a[key] || { name: play.cfg.name, kind: play.cfg.kind === 'card' ? 'card' : 'capsule', link: play.link, items: {}, got: {}, order: [] };
+  ensureBase(e, nm);
+  e.base[nm] += 1;
+  recount(e, nm);
+  if (!e.order.includes(nm)) e.order.push(nm);
+  e.ts = Date.now();
+  a[key] = e;
+  store.set('clatter.album', a);
 }
 
 // 收集簿的數量：base＝從機台轉到的（取大的）、tr＝好友交換進出（收到 +1、送出 −1）、got＝base＋tr
@@ -2192,6 +2203,7 @@ async function albumSync() {
         for (const [n, c] of Object.entries(v.got || {})) m.got[n] = Math.max(c, m.got[n] || 0);
         for (const [n, c] of Object.entries(v.base || {})) m.base[n] = Math.max(c, m.base[n] || 0);
         for (const [n, c] of Object.entries(v.tr || {})) m.tr[n] = (m.tr[n] || 0) + c;
+        for (const [n, c] of Object.entries(v.cut || {})) m.cut = { ...m.cut, [n]: ((m.cut || {})[n] || 0) + c };
         m.order = [...m.order, ...(v.order || []).filter((n) => !m.order.includes(n))];
         m.ts = v.ts;
         delete a[k];
@@ -2207,6 +2219,7 @@ async function albumSync() {
   e.order = [...names, ...e.order.filter((n) => !names.includes(n))];
   e.base = e.base || {};
   e.tr = e.tr || {};
+  e.cut = e.cut || {};
   let any = false;
   for (let i = 0; i < play.cfg.items.length; i++) {
     const it = play.cfg.items[i];
@@ -2214,11 +2227,9 @@ async function albumSync() {
     const th = thumbs[i];
     e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null };
     const n = play.got[i] || 0;
-    const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0))); // 舊資料沒有 base：got 扣掉交換的
+    const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0) + (e.cut[nm] || 0))); // 舊資料沒有 base：用 got 推回去
     if (base) e.base[nm] = base;
-    const g = base + (e.tr[nm] || 0);
-    if (g > 0) e.got[nm] = g;
-    else delete e.got[nm];
+    recount(e, nm); // got＝base＋tr−cut；刪掉的機台（hidden）有新轉到的才會再出現
     if (n) any = true;
   }
   if (!any && !Object.keys(e.got).length && !Object.keys(e.tr).length) return; // 還沒轉到東西 → 先不放進收集簿
@@ -2229,11 +2240,15 @@ async function albumSync() {
 
 // 收集簿：分「卡片冊」（轉卡機，像真的卡冊）跟「轉蛋收藏」（轉蛋機，木頭展示櫃）兩個分頁（binder.js）
 let albumTab = store.get('clatter.albumTab') || null;
+let albumEditing = false;
+let albumEdit = null;
 let binder = null;
 function renderAlbum() {
   const a = store.get('clatter.album') || {};
-  const entries = Object.entries(a).sort((x, y) => (y[1].ts || 0) - (x[1].ts || 0));
-  for (const [k, e] of entries) e.key = k; // 大卡「拿去交換」要知道是哪一筆
+  const entries = Object.entries(a)
+    .filter(([, e]) => !e.hidden) // 刪掉的機台
+    .sort((x, y) => (y[1].ts || 0) - (x[1].ts || 0));
+  for (const [k, e] of entries) e.key = k; // 大卡「拿去交換」、編輯要知道是哪一筆
   const cards = entries.filter(([, e]) => e.kind === 'card');
   const caps = entries.filter(([, e]) => e.kind !== 'card');
   // 第一次打開：有卡片就先看卡片冊
@@ -2260,6 +2275,8 @@ function renderAlbum() {
   const social = albumTab === 'friends' || albumTab === 'trade';
   $('album-trade').hidden = !social;
   if (social) {
+    albumEditing = false;
+    $('album-edit').hidden = $('album-edit-hint').hidden = true;
     $('album-empty').hidden = $('album-binder').hidden = $('album-shelf').hidden = true;
     const sum = () =>
       ($('album-sum').textContent =
@@ -2283,9 +2300,27 @@ function renderAlbum() {
   empty.textContent = t(albumTab === 'card' ? 'album.emptyCard' : 'album.emptyCap');
   $('album-binder').hidden = albumTab !== 'card' || !list.length;
   $('album-shelf').hidden = albumTab !== 'capsule' || !list.length;
-  const opts = { onCard: openCardView, onPlay: (link) => enterPlay(link) };
+  // 編輯（使用者 2026-10-26：「收集相簿 可以編輯或刪除」）：點獎品調數量、目錄／櫃子上改名或刪掉整台
+  const eb = $('album-edit');
+  eb.hidden = !list.length;
+  eb.textContent = t(albumEditing ? 'album.done' : 'album.edit');
+  eb.setAttribute('aria-pressed', String(albumEditing));
+  eb.onclick = () => {
+    albumEditing = !albumEditing;
+    renderAlbum();
+  };
+  $('album-edit-hint').hidden = !(albumEditing && list.length);
+  $('album-edit-hint').textContent = t(albumTab === 'card' ? 'album.editHintCard' : 'album.editHintCap');
+  const opts = {
+    onCard: openCardView, onPlay: (link) => enterPlay(link),
+    editing: albumEditing,
+    onEditItem: (e, n) => albumEdit.item(e, n),
+    onRename: (e) => albumEdit.rename(e),
+    onDelete: (e) => albumEdit.remove(e),
+  };
   if (albumTab === 'card' && list.length) {
     binder = binder || new Binder($('album-binder'), opts);
+    binder.opts = opts;
     binder.set(list);
   }
   if (albumTab === 'capsule' && list.length) renderShelf($('album-shelf'), list, opts);
@@ -2390,6 +2425,7 @@ async function boot() {
   $('shop-new').onclick = newMachine;
   // 收集簿的大卡、結果卡：3D 閃卡（滑鼠移動／手機傾斜 → 跟著斜，holo.js）
   viewHolo = new Holo($('v-tilt'), $('sheet-card'));
+  albumEdit = new AlbumEdit({ store, toast, openSheet, closeSheet, changed: () => renderAlbum() });
   trade = new Trade({
     store, toast, loadWallet, openSheet, closeSheet, openCardView, shareBase,
     cloudOk: cloudReady,

@@ -196,6 +196,28 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .bk-nav { display: flex; align-items: center; gap: 14px; }
 .bk-page { min-width: 92px; text-align: center; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 .bk-nav .icon-btn { font-size: 22px; line-height: 1; }
+/* ---- 收集簿編輯（albumedit.js）：編輯中獎品右下角有 ✎、點了調數量；目錄／櫃子上改名、刪除 ---- */
+.album-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+#album-edit { padding: 5px 14px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
+#album-edit[aria-pressed="true"] { background: var(--sun); }
+#album-edit-hint { margin: -6px 0 0; }
+.editing .pk.got::after, .editing .cap.got::after { content: "✎"; position: absolute; right: -6px; bottom: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--sun); border: 1.5px solid var(--stroke); display: grid; place-items: center; font-size: 12px; line-height: 1; z-index: 6; }
+.editing .pk.got .pk-card, .editing .cap.got .cap-toy { animation: wiggle .5s ease-in-out infinite alternate; }
+@keyframes wiggle { from { rotate: -1.2deg; } to { rotate: 1.2deg; } }
+.btn.danger { background: #ff5a6e; color: #fff; }
+#ed-body { display: grid; gap: 12px; }
+#ed-body h2 { padding-right: 40px; }
+#ed-body .tr-hint { margin: 0; }
+.ed-row { display: flex; align-items: center; gap: 18px; }
+.ed-row .tr-mini { width: 84px; }
+.ed-lab { display: grid; gap: 6px; }
+.ed-lab small { font-size: 12px; font-weight: 700; color: var(--muted); }
+.ed-step { display: flex; align-items: center; gap: 12px; }
+.ed-step .icon-btn { font-size: 22px; }
+.ed-num { min-width: 2.2em; text-align: center; font-family: var(--font-num); font-size: 28px; font-variant-numeric: tabular-nums; }
+.ed-acts { justify-content: flex-start; }
+.ed-form { display: grid; gap: 10px; }
+@media (prefers-reduced-motion: reduce) { .editing .pk.got .pk-card, .editing .cap.got .cap-toy { animation: none; } }
 /* ---- 好友交換（trade.js）：好友碼、收到的、好友、送出的、紀錄 ---- */
 .tab-badge { margin-left: 4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #ff3d5a; color: #fff; font: 11px/18px var(--font-num); text-align: center; border: 1.5px solid var(--stroke); }
 .trade { display: grid; gap: 14px; }
@@ -840,7 +862,11 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
           <h1 id="album-title" data-i18n="album.title">收集簿</h1>
           <p class="lede" id="album-sum"></p>
         </header>
-        <div class="chips album-tabs" id="album-tabs" role="tablist"></div>
+        <div class="album-bar">
+          <div class="chips album-tabs" id="album-tabs" role="tablist"></div>
+          <button class="btn ghost" id="album-edit" type="button" aria-pressed="false" hidden>編輯</button>
+        </div>
+        <p class="tr-hint" id="album-edit-hint" hidden></p>
         <p class="album-empty card-box" id="album-empty" hidden></p>
         <div id="album-binder" hidden></div>
         <div id="album-shelf" hidden></div>
@@ -907,6 +933,14 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <button class="btn primary" id="v-trade" data-i18n="tr.tradeThis">拿去交換</button>
       <button class="btn sun" id="v-gift" data-i18n="tr.giftThis">送給好友</button>
     </div>
+  </div>
+</div>
+
+<!-- 收集簿編輯（albumedit.js：數量、改名、刪除） -->
+<div class="sheet" id="sheet-edit" hidden>
+  <div class="sheet-card trade-card" role="dialog" aria-modal="true">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <div id="ed-body"></div>
   </div>
 </div>
 

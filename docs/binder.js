@@ -6,6 +6,7 @@
 //     還沒轉到的是關著的灰色扭蛋
 import { RARITY } from './decor.js';
 import { t } from './i18n.js';
+import { titleOf } from './albumedit.js';
 
 const PER = 9; // 一頁 9 格
 const TEX = 'assets/tex/';
@@ -19,11 +20,10 @@ function el(tag, cls, text) {
 const have = (e) => e.order.filter((n) => e.got[n]).length;
 
 export class Binder {
-  // onCard(e, name)＝打開大卡、onPlay(link)＝再去轉
-  constructor(root, { onCard, onPlay }) {
+  // opts＝{ onCard(e, name) 打開大卡、onPlay(link) 再去轉、editing 編輯中、onEditItem(e, name)、onRename(e)、onDelete(e) }（每次 renderAlbum 換新的）
+  constructor(root, opts) {
     this.root = root;
-    this.onCard = onCard;
-    this.onPlay = onPlay;
+    this.opts = opts;
     this.s = 0; // 攤開到第幾張（0＝闔著）
     this.busy = false;
     root.className = 'binder';
@@ -118,6 +118,7 @@ export class Binder {
     this.root.classList.toggle('spread', !!this.wide);
     this.root.classList.toggle('single', !this.wide);
     this.root.classList.toggle('closed', this.s === 0);
+    this.root.classList.toggle('editing', !!this.opts.editing);
     this.left.replaceChildren(...(left ? [this.face(left)] : []));
     this.right.replaceChildren(this.face(right));
     this.prevB.disabled = this.s === 0;
@@ -204,7 +205,7 @@ export class Binder {
     const { e, k, n, start, slots } = f;
     // 每台機台的第一頁：上面一個索引標籤（機台名、收集進度）
     const tab = el('div', 'bk-tab' + (k === 0 ? '' : ' cont'));
-    tab.append(el('b', '', e.name), el('small', '', `${have(e)} / ${e.order.length}${n > 1 ? ` · ${k + 1}/${n}` : ''}`));
+    tab.append(el('b', '', titleOf(e)), el('small', '', `${have(e)} / ${e.order.length}${n > 1 ? ` · ${k + 1}/${n}` : ''}`));
     p.append(tab);
     slots.forEach((name, i) => grid.append(this.pocket(e, name, start + i)));
     for (let i = slots.length; i < PER; i++) grid.append(this.emptyPocket());
@@ -235,7 +236,7 @@ export class Binder {
     card.append(el('span', 'pk-holo'), el('span', 'pk-name', name));
     b.append(card, el('span', 'pk-rk', R.key), el('span', 'pk-cnt', '×' + got), el('span', 'pk-sleeve'));
     b.setAttribute('aria-label', `${name} ${R.key} ×${got}`);
-    b.onclick = () => this.onCard(e, name);
+    b.onclick = () => (this.opts.editing ? this.opts.onEditItem(e, name) : this.opts.onCard(e, name));
     return b;
   }
 
@@ -249,17 +250,24 @@ export class Binder {
       const first = this.pages.findIndex((x) => x.e === e);
       const go = el('button', 'idx-go');
       go.type = 'button';
-      go.setAttribute('aria-label', `${e.name} — ${t('album.go')}`);
+      go.setAttribute('aria-label', `${titleOf(e)} — ${t('album.go')}`);
       const bar = el('i', 'idx-bar');
       const fill = el('i');
       fill.style.width = `${Math.round((have(e) / Math.max(1, e.order.length)) * 100)}%`;
       bar.append(fill);
-      go.append(el('b', '', e.name), bar, el('small', '', `${have(e)} / ${e.order.length}`), el('span', 'idx-pg', `p.${first + 1}`));
+      go.append(el('b', '', titleOf(e)), bar, el('small', '', `${have(e)} / ${e.order.length}`), el('span', 'idx-pg', `p.${first + 1}`));
       go.onclick = () => this.go(0, this.wide ? Math.floor((first + 1) / 2) + 1 : first + 2); // 那一頁在右頁（偶數）或左頁（奇數）的那一張
       li.append(go);
-      if (e.link) {
+      if (this.opts.editing) {
+        // 編輯中：改名、刪掉這台
+        const ren = el('button', 'btn idx-again', t('ed.rename'));
+        ren.onclick = () => this.opts.onRename(e);
+        const del = el('button', 'btn idx-again danger', t('ed.delete'));
+        del.onclick = () => this.opts.onDelete(e);
+        li.append(ren, del);
+      } else if (e.link) {
         const again = el('button', 'btn sun idx-again', t('album.again'));
-        again.onclick = () => this.onPlay(e.link);
+        again.onclick = () => this.opts.onPlay(e.link);
         li.append(again);
       }
       ul.append(li);
@@ -270,8 +278,8 @@ export class Binder {
 }
 
 // 轉蛋收藏：每台轉蛋機一個展示櫃（壁紙＋一層一層的木板），獎品站在打開的扭蛋殼裡
-export function renderShelf(root, entries, { onCard, onPlay }) {
-  root.className = 'shelf';
+export function renderShelf(root, entries, { onCard, onPlay, editing, onEditItem, onRename, onDelete }) {
+  root.className = 'shelf' + (editing ? ' editing' : '');
   root.textContent = '';
   for (const [, e] of entries) {
     const cab = el('section', 'cab card-box');
@@ -280,8 +288,14 @@ export function renderShelf(root, entries, { onCard, onPlay }) {
     const bar = el('i');
     bar.style.width = `${Math.round((have(e) / Math.max(1, e.order.length)) * 100)}%`;
     prog.append(bar);
-    head.append(el('h2', '', e.name), prog, el('small', '', `${have(e)} / ${e.order.length}`));
-    if (e.link) {
+    head.append(el('h2', '', titleOf(e)), prog, el('small', '', `${have(e)} / ${e.order.length}`));
+    if (editing) {
+      const ren = el('button', 'btn', t('ed.rename'));
+      ren.onclick = () => onRename(e);
+      const del = el('button', 'btn danger', t('ed.delete'));
+      del.onclick = () => onDelete(e);
+      head.append(ren, del);
+    } else if (e.link) {
       const again = el('button', 'btn sun', t('album.again'));
       again.onclick = () => onPlay(e.link);
       head.append(again);
@@ -306,7 +320,7 @@ export function renderShelf(root, entries, { onCard, onPlay }) {
         cell.type = 'button';
         cell.append(el('span', 'cap-rk', R.key), el('span', 'cap-cnt', '×' + got));
         cell.setAttribute('aria-label', `${name} ${R.key} ×${got}`);
-        cell.onclick = () => onCard(e, name);
+        cell.onclick = () => (editing ? onEditItem(e, name) : onCard(e, name));
       }
       body.append(cell);
     });
