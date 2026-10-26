@@ -8,6 +8,8 @@ import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
 import { cutout } from './seg.js';
 import { Holo } from './holo.js';
+import { bakeSticker, hasAlpha, loadBook, saveBook, addSticker, stickerBlob, stickerUrl, STICKER_FINS, STICKER_SHAPES, PRESETS, presetFile } from './sticker.js';
+import { StickerBook } from './stickerbook.js';
 import { Binder, renderShelf } from './binder.js';
 import { Trade } from './trade.js';
 import { AlbumEdit, recount, ensureBase, titleOf } from './albumedit.js';
@@ -193,9 +195,9 @@ async function shrinkImage(file) {
   g.drawImage(bmp, (SW - bmp.width * s) / 2, (SH - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
   return encodeImg(c);
 }
-async function encodeImg(c) {
+async function encodeImg(c, alpha = false) {
   let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.78));
-  if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
+  if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => (alpha ? c.toBlob(r, 'image/png') : c.toBlob(r, 'image/jpeg', 0.8)));
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
 }
 
@@ -231,6 +233,7 @@ function loadDraft(uid = shop.cur) {
     noMask: !!it.noMask,
     media: draftMedia(it.media),
     uid: typeof it.uid === 'string' ? it.uid : null,
+    sticker: it.sticker && STICKER_FINS.includes(it.sticker.fin) ? { fin: it.sticker.fin, baked: !!it.sticker.baked } : null,
   }));
   ensureUids(d);
   if (!THEME_KEYS.includes(d.theme)) d.theme = 'red';
@@ -238,6 +241,7 @@ function loadDraft(uid = shop.cur) {
   d.bg = draftBg(d.bg);
   d.back = draftBack(d.back);
   d.bgm = draftBgm(d.bgm);
+  d.stickers = draftStickers(d.stickers);
   d.fin = d.fin && (FRONT_FINISHES.includes(d.fin.sr) || FRONT_FINISHES.includes(d.fin.ssr)) ? { sr: FRONT_FINISHES.includes(d.fin.sr) ? d.fin.sr : 'texture', ssr: FRONT_FINISHES.includes(d.fin.ssr) ? d.fin.ssr : 'gold' } : null;
   if (!d.price || !CURRENCIES.includes(d.price.cur)) d.price = { coins: 5, unit: 10, cur: 'NT$' };
   // 雲端短連結的 id＋修改鑰匙：有的話之後改設定會自動更新到同一條連結
@@ -268,6 +272,15 @@ function draftBack(b) {
   return backIsDefault(back) ? null : back;
 }
 
+// 機台上的貼紙：[{ id, img { bytes, mime }, fin, k 機台種類, m 零件編號, p, n, s 大小, r 角度 }]（最多 8 張）
+function draftStickers(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((x) => x?.img?.b64 && Array.isArray(x.p) && Array.isArray(x.n))
+    .slice(0, 8)
+    .map((x) => ({ id: String(x.id || 'm' + newUid()), img: { bytes: Uint8Array.from(atob(x.img.b64), (ch) => ch.charCodeAt(0)), mime: x.img.mime }, fin: STICKER_FINS.includes(x.fin) ? x.fin : 'flat', k: x.k === 'card' ? 'card' : 'capsule', m: x.m | 0, p: x.p.map(Number), n: x.n.map(Number), s: +x.s || 0.14, r: +x.r || 0 }));
+}
+
 // 背景音樂：{ k: 'preset', id }、{ k: 'none' }、{ k: 'media', media }（上傳的本機檔案或 mp3 網址）；null＝預設曲
 function draftBgm(b) {
   if (b?.k === 'none') return { k: 'none' };
@@ -292,10 +305,12 @@ function draftMedia(m) {
 function saveDraft() {
   const bg = draft.bg?.k === 'img' ? { k: 'img', img: { b64: btoa(String.fromCharCode(...draft.bg.img.bytes)), mime: draft.bg.img.mime } } : draft.bg;
   const back = draft.back ? { ...draft.back, img: draft.back.img ? { b64: btoa(String.fromCharCode(...draft.back.img.bytes)), mime: draft.back.img.mime } : null } : null;
+  const b64 = (im) => ({ b64: btoa(String.fromCharCode(...im.bytes)), mime: im.mime });
   store.set(draftKey(), {
     ...draft,
     bg,
     back,
+    stickers: (draft.stickers || []).map((x) => ({ id: x.id, img: b64(x.img), fin: x.fin, k: x.k, m: x.m, p: x.p, n: x.n, s: x.s, r: x.r })),
     items: draft.items.map((it) => ({
       ...it,
       img: it.img ? { b64: btoa(String.fromCharCode(...it.img.bytes)), mime: it.img.mime } : null,
@@ -381,6 +396,14 @@ function renderItems() {
       mb.textContent = t('media.add');
     }
     mrow.append(mb);
+    // 轉到就變成貼紙（放進買家的シール帳）
+    const ss = document.createElement('select');
+    ss.className = 'stk-sel' + (it.sticker ? ' on' : '');
+    ss.setAttribute('aria-label', t('stk.prizeLabel'));
+    ss.append(new Option(t('stk.notSticker'), ''));
+    for (const f of STICKER_FINS) ss.append(new Option(t('stk.asSticker', { f: t('stk.f.' + f) }), f));
+    ss.value = it.sticker?.fin || '';
+    mrow.append(ss);
     li.append(th, name, del, meta, mrow);
     ul.append(li);
   });
@@ -411,6 +434,7 @@ function renderForm() {
   for (const b of $('kinds').children) b.setAttribute('aria-checked', String(b.dataset.kind === (draft.kind || 'capsule')));
   renderBgs();
   renderBgm();
+  renderMachineStickers();
   renderBack();
   renderFront();
   renderSwitch();
@@ -964,6 +988,7 @@ function bindForm() {
       for (const x of $('kinds').children) x.setAttribute('aria-checked', String(x === b));
       renderBack(); // 轉卡機才有卡背
       renderFront(); // 預覽換成卡片／方形
+      renderMachineStickers(); // 貼在另一種機台上的貼紙變淡
       draftChanged();
     };
   }
@@ -994,6 +1019,10 @@ function bindForm() {
     if (e.target.classList.contains('name')) it.name = e.target.value.slice(0, LIMITS.name) || t('defaultPrize');
     if (e.target.classList.contains('qty')) it.qty = Math.min(LIMITS.qty, Math.max(1, parseInt(e.target.value, 10) || 1));
     if (e.target.classList.contains('rarity')) it.rarity = +e.target.value;
+    if (e.target.classList.contains('stk-sel')) {
+      it.sticker = e.target.value ? { fin: e.target.value, baked: !!it.sticker?.baked } : null;
+      e.target.classList.toggle('on', !!it.sticker);
+    }
     if (e.target.classList.contains('name')) {
       const img = li.querySelector('.thumb img');
       if (!it.img) img.src = thumbOf(draft, +li.dataset.i).url;
@@ -1357,6 +1386,7 @@ async function showMachine(cfg, capsules, total = capsules) {
   if (curKind === 'card') backArt(cfg.back).then((art) => shown === cfg && machine.setCardBack(art));
   machine.setFrontFinish(cfg.fin);
   machine.setPile(capsules, total);
+  applyStickers(cfg);
   playBgm(cfg.bgm);
   scheduleDecor();
 }
@@ -2344,6 +2374,7 @@ function updateInsets() {
 }
 
 function setMode(mode) {
+  if (mode !== 'create') cancelStick();
   app.dataset.mode = mode;
   $('tab-create').setAttribute('aria-selected', String(mode === 'create'));
   $('tab-play').setAttribute('aria-selected', String(mode === 'play'));
@@ -2718,6 +2749,7 @@ function owned(i) {
 //   （以前只靠 albumSync 取「這次 play 轉到的」跟收集簿的大的 → 刪掉的機台、換過設定的試玩，新轉到的不會算進去）
 function gotOne(idx) {
   play.got[idx] = (play.got[idx] || 0) + 1;
+  if (play.cfg.items[idx].sticker) grantSticker(play.cfg, idx).catch((e) => console.warn(e));
   const a = store.get('clatter.album') || {};
   const key = albumKey();
   const nm = play.cfg.items[idx].name;
@@ -2798,6 +2830,378 @@ async function albumSync() {
   store.set('clatter.album', a);
 }
 
+// ---------- シール（使用者 2026-10-26：「增加貼子的功能 跟貼子簿 … 貼紙製作後可以貼在轉蛋機上或者放進轉蛋裡」） ----------
+//   做貼紙：選照片 → 裁切 → 自動去背（seg.js）→ 形狀、加工、名字 → 放進シール帳（sticker.js 的 bakeSticker 把白フチ、加工畫進圖裡）
+//   シール帳：收集簿的分頁（stickerbook.js）；貼到機台（machine.setStickers）；放進轉蛋（獎品的 sticker）；轉到貼紙獎品 → 進シール帳
+let sb = null;
+function stickerBook() {
+  sb = sb || new StickerBook($('album-stickers'), { t, toast, sfx, onMake: () => openStickerMaker(), onMachine: (x) => stickToMachine(x), onGacha: (x) => stickerToGacha(x), changed: () => app.dataset.mode === 'album' && albumTab === 'sticker' && renderAlbumTabsOnly() });
+  return sb;
+}
+// 分頁上的張數跟著變（不重畫整本）
+function renderAlbumTabsOnly() {
+  const b = loadBook();
+  const n = b.list.reduce((m, x) => m + (x.n || 1), 0);
+  const tab = [...$('album-tabs').children].find((x) => x.textContent.startsWith(t('album.stickers')));
+  if (tab) tab.textContent = `${t('album.stickers')} (${n})`;
+  $('album-sum').textContent = t('stk.sum', { k: b.list.length, n, p: b.pages.length });
+}
+
+const mk = { src: null, mask: null, shape: 'cut', fin: 'drop', baked: null, then: null, cutting: false };
+function openStickerMaker(then) {
+  mk.then = then || null;
+  mk.src = mk.baked = mk.mask = null;
+  mk.cutting = false;
+  mk.shape = 'cut';
+  $('sk-name').value = '';
+  renderMaker();
+  openSheet('sheet-sticker', $('sk-pick'));
+}
+// 手繪素材 → 做貼紙的原圖（已經去背 → 沿輪廓）
+const presetImgs = new Map();
+function presetImg(i) {
+  if (!presetImgs.has(i)) presetImgs.set(i, fetch(asset(presetFile(i))).then((r) => (r.ok ? r.blob() : Promise.reject(new Error('preset ' + r.status)))).then((b) => createImageBitmap(b)));
+  return presetImgs.get(i);
+}
+async function usePreset(i) {
+  let bmp;
+  try {
+    bmp = await presetImg(i);
+  } catch (e) {
+    return toast(t('loadFail'));
+  }
+  mk.src = bmp;
+  mk.mask = null;
+  mk.cutting = false;
+  mk.shape = 'cut';
+  mk.preset = i;
+  $('sk-name').value = t('stk.n.' + PRESETS[i]);
+  renderMaker();
+}
+// シール帳第一次打開（還沒有貼紙）→ 送 4 張手繪貼紙
+async function welcomeStickers() {
+  const b = loadBook();
+  if (b.welcomed || b.list.length) return false;
+  b.welcomed = true;
+  saveBook(b);
+  const pick = [[1, 'drop'], [5, 'glitter'], [4, 'aurora'], [10, 'fuwa']];
+  for (const [i, fin] of pick.reverse()) {
+    try {
+      const c = bakeSticker(await presetImg(i), { shape: 'cut', fin, size: 384, seed: i + 1 });
+      await addSticker(c, { name: t('stk.n.' + PRESETS[i]), fin, shape: 'cut', src: 'gift' });
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+  toast(t('stk.welcome'));
+  return true;
+}
+async function onStickerFile(f) {
+  let bmp;
+  try {
+    bmp = await createImageBitmap(f);
+  } catch (e) {
+    return toast(t('t.badImage'));
+  }
+  const c = await openCrop({ bmp, out: [512, 512], title: t('stk.cropTitle') });
+  if (!c) return;
+  mk.src = c;
+  mk.mask = null;
+  mk.shape = 'cut';
+  mk.preset = -1;
+  $('sk-name').value = f.name.replace(/\.[^.]+$/, '').slice(0, 24) || t('stk.defaultName');
+  if ($('sheet-sticker').hidden) openSheet('sheet-sticker', $('sk-save'));
+  renderMaker();
+  if (hasAlpha(c)) return; // 已經去背的圖（PNG）→ 直接用它的透明
+  mk.cutting = true;
+  renderMaker();
+  const m = await cutout(c).catch(() => null);
+  if (mk.src !== c) return;
+  mk.cutting = false;
+  mk.mask = m;
+  if (!m) mk.shape = 'circle';
+  renderMaker();
+}
+function renderMaker() {
+  const box = $('sk-shapes');
+  if (!box.childElementCount) {
+    for (const v of STICKER_SHAPES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.dataset.v = v;
+      b.setAttribute('role', 'radio');
+      b.onclick = () => {
+        mk.shape = v;
+        renderMaker();
+      };
+      box.append(b);
+    }
+    for (const v of STICKER_FINS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip fin-chip stkfin-' + v;
+      b.dataset.v = v;
+      b.setAttribute('role', 'radio');
+      b.onclick = () => {
+        mk.fin = v;
+        renderMaker();
+      };
+      $('sk-fins').append(b);
+    }
+  }
+  const pg = $('sk-presets');
+  if (!pg.childElementCount)
+    PRESETS.forEach((k, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sk-pre';
+      b.dataset.i = i;
+      const im = document.createElement('img');
+      im.src = asset(presetFile(i));
+      im.alt = '';
+      b.append(im);
+      b.onclick = () => usePreset(i);
+      pg.append(b);
+    });
+  for (const b of pg.children) {
+    b.setAttribute('aria-pressed', String(mk.src && mk.preset === +b.dataset.i));
+    b.setAttribute('aria-label', t('stk.n.' + PRESETS[b.dataset.i]));
+    b.title = t('stk.n.' + PRESETS[b.dataset.i]);
+  }
+  $('sk-pick').textContent = t(mk.src && mk.preset < 0 ? 'stk.change' : 'stk.fromPhoto');
+  $('sk-empty').hidden = !!mk.src;
+  const canCut = !!mk.mask || (mk.src && hasAlpha(mk.src));
+  for (const b of box.children) {
+    b.textContent = t('stk.sh.' + b.dataset.v);
+    b.setAttribute('aria-checked', String(b.dataset.v === mk.shape));
+    b.disabled = b.dataset.v === 'cut' && !canCut && !mk.cutting;
+  }
+  for (const b of $('sk-fins').children) {
+    b.textContent = t('stk.f.' + b.dataset.v);
+    b.setAttribute('aria-checked', String(b.dataset.v === mk.fin));
+  }
+  $('sk-busy').hidden = !mk.cutting;
+  const stage = $('sk-stage');
+  stage.querySelector('canvas')?.remove();
+  $('sk-save').disabled = !mk.src;
+  if (!mk.src) return;
+  mk.baked = bakeSticker(mk.src, { mask: mk.mask, shape: mk.shape === 'cut' && !canCut ? 'circle' : mk.shape, fin: mk.fin, size: 512 }); // 自己做的：512 px（シール帳放大也清楚）
+  mk.baked.className = 'sk-prev';
+  stage.prepend(mk.baked);
+}
+function bindMaker() {
+  $('file-sticker').addEventListener('change', () => {
+    const f = $('file-sticker').files[0];
+    if (f) onStickerFile(f);
+  });
+  $('sk-pick').onclick = () => {
+    $('file-sticker').value = '';
+    $('file-sticker').click();
+  };
+  $('sk-save').onclick = async () => {
+    if (!mk.baked) return;
+    $('sk-save').disabled = true;
+    const shape = mk.shape === 'cut' && !(mk.mask || hasAlpha(mk.src)) ? 'circle' : mk.shape;
+    const st = await addSticker(mk.baked, { name: $('sk-name').value.trim() || t('stk.defaultName'), fin: mk.fin, shape, src: 'made' });
+    mk.src = mk.baked = null;
+    closeSheet('sheet-sticker');
+    sfx.stick();
+    toast(t('stk.saved'));
+    if (app.dataset.mode === 'album') renderAlbum();
+    const then = mk.then;
+    mk.then = null;
+    then?.(st);
+  };
+}
+
+// 貼紙圖縮小（機台、連結用）：長邊 size px，透明底 webp
+async function shrinkSticker(blob, size = 160) {
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const k = Math.min(size / bmp.width, size / bmp.height);
+  c.getContext('2d').drawImage(bmp, (size - bmp.width * k) / 2, (size - bmp.height * k) / 2, bmp.width * k, bmp.height * k);
+  let b = await new Promise((r) => c.toBlob(r, 'image/webp', 0.85));
+  if (!b || b.type !== 'image/webp') b = await new Promise((r) => c.toBlob(r, 'image/png'));
+  return { bytes: new Uint8Array(await b.arrayBuffer()), mime: b.type };
+}
+
+// 貼到機台：選好貼紙 → 點機台想貼的地方（machine.startStick）
+async function stickToMachine(st) {
+  if ((draft.stickers || []).length >= 8) return toast(t('stk.machineFull'));
+  const blob = await stickerBlob(st.id);
+  if (!blob) return;
+  const img = await shrinkSticker(blob);
+  setMode('create');
+  $('stick-hint').hidden = false;
+  machine?.startStick((at) => {
+    $('stick-hint').hidden = true;
+    const x = { id: 'm' + newUid(), img, fin: st.fin, ...at, s: 0.14, r: 0 };
+    draft.stickers = [...(draft.stickers || []), x];
+    mstkSel = draft.stickers.length - 1;
+    sfx.stick();
+    draftChanged();
+    renderMachineStickers();
+    applyStickers(draft);
+    toast(t('stk.machineStuck'));
+  });
+}
+function cancelStick() {
+  machine?.stopStick();
+  if ($('stick-hint')) $('stick-hint').hidden = true;
+}
+// 機台上的貼紙：圖 → ImageBitmap（machine.js 做貼圖）
+const stkBmp = new WeakMap();
+async function applyStickers(cfg) {
+  const list = cfg.stickers || [];
+  for (const x of list) {
+    if (x.bmp || !x.img) continue;
+    let b = stkBmp.get(x.img);
+    if (!b) {
+      b = await createImageBitmap(new Blob([x.img.bytes], { type: x.img.mime })).catch(() => null);
+      if (b) stkBmp.set(x.img, b);
+    }
+    x.bmp = b;
+  }
+  if (shown === cfg) machine?.setStickers(list);
+}
+const stkThumb = new WeakMap();
+const thumbUrlOf = (im) => {
+  let u = stkThumb.get(im);
+  if (!u) stkThumb.set(im, (u = URL.createObjectURL(new Blob([im.bytes], { type: im.mime }))));
+  return u;
+};
+let mstkSel = -1;
+function renderMachineStickers() {
+  const box = $('mstk-list');
+  box.textContent = '';
+  const arr = draft.stickers || [];
+  if (mstkSel >= arr.length) mstkSel = arr.length - 1;
+  const kind = draft.kind === 'card' ? 'card' : 'capsule';
+  arr.forEach((x, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'mstk' + (i === mstkSel ? ' on' : '') + (x.k !== kind ? ' other' : '');
+    b.title = x.k !== kind ? t('stk.otherKind') : '';
+    const im = document.createElement('img');
+    im.src = thumbUrlOf(x.img);
+    im.alt = '';
+    const del = document.createElement('span');
+    del.className = 'mstk-del';
+    del.textContent = '✕';
+    del.dataset.del = '1';
+    del.setAttribute('aria-label', t('stk.peel'));
+    b.append(im, del);
+    b.onclick = (e) => {
+      if (e.target.closest('[data-del]')) {
+        draft.stickers = arr.filter((_, k) => k !== i);
+        mstkSel = -1;
+        sfx.peel();
+        draftChanged();
+        applyStickers(draft);
+      } else mstkSel = mstkSel === i ? -1 : i;
+      renderMachineStickers();
+    };
+    box.append(b);
+  });
+  $('mstk-add').disabled = arr.length >= 8;
+  const sel = arr[mstkSel];
+  $('mstk-adj').hidden = !sel;
+  if (sel) {
+    $('mstk-size').value = sel.s;
+    $('mstk-rot').value = sel.r || 0;
+  }
+}
+function bindMachineStickers() {
+  let raf = 0;
+  const live = () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => applyStickers(draft));
+  };
+  $('mstk-size').addEventListener('input', () => {
+    const x = draft.stickers?.[mstkSel];
+    if (!x) return;
+    x.s = +$('mstk-size').value;
+    live();
+  });
+  $('mstk-rot').addEventListener('input', () => {
+    const x = draft.stickers?.[mstkSel];
+    if (!x) return;
+    x.r = +$('mstk-rot').value;
+    live();
+  });
+  for (const id of ['mstk-size', 'mstk-rot']) $(id).addEventListener('change', () => draftChanged());
+  $('mstk-add').onclick = () => openStickerPicker();
+  $('stick-cancel').onclick = cancelStick;
+  $('sp-make').onclick = () => {
+    closeSheet('sheet-stkpick');
+    openStickerMaker((st) => stickToMachine(st));
+  };
+}
+async function openStickerPicker() {
+  const grid = $('sp-grid');
+  grid.textContent = '';
+  const b = loadBook();
+  $('sp-empty').hidden = !!b.list.length;
+  for (const x of b.list) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sp-tile';
+    btn.title = x.name;
+    const im = document.createElement('img');
+    im.src = (await stickerUrl(x.id)) || '';
+    im.alt = x.name;
+    btn.append(im);
+    btn.onclick = () => {
+      closeSheet('sheet-stkpick');
+      stickToMachine(x);
+    };
+    grid.append(btn);
+  }
+  openSheet('sheet-stkpick', grid.querySelector('button') || $('sp-make'));
+}
+
+// 放進轉蛋：做好的貼紙變成現在這台的獎品（圖已經是貼紙 → baked）
+async function stickerToGacha(st) {
+  if (draft.items.length >= LIMITS.items) return toast(t('stk.full'));
+  const blob = await stickerBlob(st.id);
+  if (!blob) return;
+  const bmp = await createImageBitmap(blob);
+  const [W, H] = prizeSize();
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const k = Math.min(W / bmp.width, H / bmp.height) * 0.96;
+  c.getContext('2d').drawImage(bmp, (W - bmp.width * k) / 2, (H - bmp.height * k) / 2, bmp.width * k, bmp.height * k);
+  draft.items.push({ name: (st.name || t('stk.defaultName')).slice(0, LIMITS.name), rarity: 0, qty: 5, img: await encodeImg(c, true), mask: null, noMask: true, uid: newUid(), sticker: { fin: st.fin, baked: true } });
+  draftChanged(true);
+  setMode('create');
+  toast(t('stk.toGachaDone', { m: draft.name }));
+}
+
+// 轉到貼紙獎品 → 做成貼紙放進シール帳（同一台的同一個獎品再轉到 → 張數 +1）
+async function grantSticker(cfg, idx) {
+  const it = cfg.items[idx];
+  const key = albumKey() + '|' + it.name;
+  const card = cfg.kind === 'card';
+  const src = it.img ? await createImageBitmap(new Blob([it.img.bytes], { type: it.img.mime })) : placeholderThumb(it.name, idx);
+  let c;
+  let shape = 'cut';
+  if (it.sticker.baked) {
+    c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const k = Math.min(256 / src.width, 256 / src.height);
+    c.getContext('2d').drawImage(src, (256 - src.width * k) / 2, (256 - src.height * k) / 2, src.width * k, src.height * k);
+  } else {
+    const mask = it.mask ? await createImageBitmap(new Blob([it.mask.bytes], { type: it.mask.mime })).catch(() => null) : null;
+    shape = mask ? 'cut' : card ? 'square' : 'circle';
+    c = bakeSticker(src, { mask, shape, fin: it.sticker.fin, size: 256, seed: idx + 3 });
+  }
+  await addSticker(c, { name: it.name, fin: it.sticker.fin, shape, src: 'gacha', from: cfg.name, key });
+  toast(t('stk.got', { name: it.name }));
+}
+
 // 收集簿：分「卡片冊」（轉卡機，像真的卡冊）跟「轉蛋收藏」（轉蛋機，木頭展示櫃）兩個分頁（binder.js）
 let albumTab = store.get('clatter.albumTab') || null;
 let albumEditing = false;
@@ -2815,7 +3219,9 @@ function renderAlbum() {
   if (!albumTab) albumTab = cards.length || !caps.length ? 'card' : 'capsule';
   const tabs = $('album-tabs');
   tabs.textContent = '';
-  for (const [k, list] of [['card', cards], ['capsule', caps], ['friends', null], ['trade', null]]) {
+  const book = loadBook();
+  const stkN = book.list.reduce((n, x) => n + (x.n || 1), 0);
+  for (const [k, list] of [['card', cards], ['capsule', caps], ['sticker', null], ['friends', null], ['trade', null]]) {
     const b = document.createElement('button');
     b.className = 'chip';
     b.setAttribute('role', 'tab');
@@ -2823,6 +3229,7 @@ function renderAlbum() {
     b.textContent =
       k === 'trade' ? t('album.trade') + (trade?.list.in.length ? ` (${trade.list.in.length})` : '')
       : k === 'friends' ? `${t('album.friends')} (${trade?.friends.length || 0})`
+      : k === 'sticker' ? `${t('album.stickers')} (${stkN})`
       : `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${list.length})`;
     b.onclick = () => {
       albumTab = k;
@@ -2830,6 +3237,17 @@ function renderAlbum() {
       renderAlbum();
     };
     tabs.append(b);
+  }
+  // シール帳（stickerbook.js）
+  $('album-stickers').hidden = albumTab !== 'sticker';
+  if (albumTab === 'sticker') {
+    albumEditing = false;
+    $('album-edit').hidden = $('album-edit-hint').hidden = true;
+    $('album-empty').hidden = $('album-binder').hidden = $('album-shelf').hidden = $('album-trade').hidden = true;
+    $('album-sum').textContent = t('stk.sum', { k: book.list.length, n: stkN, p: book.pages.length });
+    stickerBook().render();
+    if (!book.welcomed && !book.list.length) welcomeStickers().then((ok) => ok && app.dataset.mode === 'album' && albumTab === 'sticker' && renderAlbum());
+    return;
   }
   // 好友名單／交換（trade.js）
   const social = albumTab === 'friends' || albumTab === 'trade';
@@ -3386,6 +3804,8 @@ async function boot() {
   $('mach-new').onclick = newMachine;
   $('mach-dup').onclick = () => dupMachine(shop.cur);
   bindCover();
+  bindMaker();
+  bindMachineStickers();
   // 收集簿的大卡、結果卡：3D 閃卡（滑鼠移動／手機傾斜 → 跟著斜，holo.js）
   viewHolo = new Holo($('v-tilt'), $('sheet-card'));
   albumEdit = new AlbumEdit({ store, toast, openSheet, closeSheet, changed: () => renderAlbum() });

@@ -3,6 +3,7 @@
 // 內容：4 bytes 的 JSON 長度 + JSON（UTF-8）+ 各張圖片的原始位元組（JSON 裡記長度與格式）
 // 只用英數字和 . _ - ：claude.ai 的 artifact 連結只會把這類字元的 #錨點 傳進頁面
 import { mediaToLink, mediaFromLink } from './media.js';
+import { STICKER_FINS, finCode, finFromCode } from './sticker.js';
 
 const te = new TextEncoder();
 const td = new TextDecoder();
@@ -35,7 +36,8 @@ export async function encodeConfig(cfg) {
     s: cfg.shop,
     t: cfg.theme,
     p: [cfg.price.coins, cfg.price.unit, cfg.price.cur],
-    // 每列：[名稱, 稀有度, 數量, 圖片長度, 圖片格式, 影音連結, 獎品 id, 遮罩長度, 遮罩格式]（後面沒有就省略）
+    // 每列：[名稱, 稀有度, 數量, 圖片長度, 圖片格式, 影音連結, 獎品 id, 遮罩長度, 遮罩格式, 貼紙]（後面沒有就省略）
+    //   貼紙（使用者 2026-10-26）：加工代號（d ボンドロ…）＋「b」＝照片本身已經是做好的貼紙；轉到就放進買家的シール帳
     //   遮罩＝主體去背（seg.js），位元組接在同一個獎品的照片後面
     i: cfg.items.map((it) => {
       const row = [it.name, it.rarity, it.qty];
@@ -56,6 +58,11 @@ export async function encodeConfig(cfg) {
       if (it.mask && it.img) {
         imgs.push(it.mask.bytes);
         row.push(it.mask.bytes.length, it.mask.mime === 'image/webp' ? 'w' : 'p');
+      }
+      if (it.sticker && STICKER_FINS.includes(it.sticker.fin)) {
+        const pad = [0, '', null, '', 0, ''];
+        while (row.length < 9) row.push(pad[row.length - 3]);
+        row.push(finCode(it.sticker.fin) + (it.sticker.baked ? 'b' : ''));
       }
       return row;
     }),
@@ -80,6 +87,14 @@ export async function encodeConfig(cfg) {
       img ? 'i' : back.k === 'preset' ? 'p' : back.k === 'color' ? 'c' : '', back.k === 'preset' ? back.id : back.k === 'color' ? back.c : '',
       FIN_CODE[back.sr] || '', FIN_CODE[back.ssr] || '',
     ];
+  }
+  // 貼在機台上的貼紙：每張 [圖片長度, 格式, 加工, 機台種類 c／p, 零件編號, 點 x y z, 法線 x y z, 大小（公尺）, 角度]（圖接在卡背圖後面）
+  const sk = (cfg.stickers || []).filter((x) => x.img).slice(0, 8);
+  if (sk.length) {
+    json.sk = sk.map((x) => {
+      imgs.push(x.img.bytes);
+      return [x.img.bytes.length, x.img.mime === 'image/webp' ? 'w' : 'p', finCode(x.fin), x.k === 'card' ? 'c' : 'p', x.m, ...x.p, ...x.n, x.s, x.r || 0];
+    });
   }
   // 背景音樂：['n'] 不要音樂、['p', 預設曲]、['a', 音樂網址]（上傳到雲端的檔案或 mp3 網址）；預設曲 shop 就不寫
   const bm = cfg.bgm;
@@ -123,7 +138,7 @@ export async function decodeConfig(token) {
   }
   let off = j.__off;
   const items = (Array.isArray(j.i) ? j.i : []).slice(0, LIMITS.items).map((r) => {
-    const [name, rarity, qty, len, fmt, media, uid, mlen, mfmt] = Array.isArray(r) ? r : [];
+    const [name, rarity, qty, len, fmt, media, uid, mlen, mfmt, stk] = Array.isArray(r) ? r : [];
     let img = null;
     let mask = null;
     if (Number.isInteger(len) && len > 0 && off + len <= buf.length) {
@@ -142,6 +157,7 @@ export async function decodeConfig(token) {
       media: mediaFromLink(media),
       uid: typeof uid === 'string' && /^[0-9A-Za-z]{4,12}$/.test(uid) ? uid : null,
       mask,
+      sticker: typeof stk === 'string' && finFromCode(stk[0]) ? { fin: finFromCode(stk[0]), baked: stk[1] === 'b' } : null,
     };
   });
   if (!items.length) throw new Error('e.empty');
@@ -164,6 +180,20 @@ export async function decodeConfig(token) {
       off += cb[0];
     } else if (cb[4] === 'p' && BACK_PRESETS.includes(cb[5])) Object.assign(back, { k: 'preset', id: cb[5] });
     else if (cb[4] === 'c' && /^#[0-9a-f]{6}$/i.test(cb[5])) Object.assign(back, { k: 'color', c: cb[5] });
+  }
+  // 機台上的貼紙（卡背圖之後）
+  const stickers = [];
+  const num = (v, lim) => (Number.isFinite(v) && Math.abs(v) <= lim ? v : null);
+  for (const [i, x] of (Array.isArray(j.sk) ? j.sk : []).slice(0, 8).entries()) {
+    if (!Array.isArray(x)) continue;
+    const [len, fmt, fc, k, m, px, py, pz, nx, ny, nz, sz, rot] = x;
+    if (!Number.isInteger(len) || len <= 0 || len > 60000 || off + len > buf.length) continue;
+    const img = { bytes: buf.slice(off, off + len), mime: fmt === 'w' ? 'image/webp' : 'image/png' };
+    off += len;
+    const p = [px, py, pz].map((v) => num(v, 3));
+    const n = [nx, ny, nz].map((v) => num(v, 1.01));
+    if (!Number.isInteger(m) || m < 0 || m > 500 || p.includes(null) || n.includes(null) || !num(sz, 0.6) || sz < 0.02) continue;
+    stickers.push({ id: 'l' + i + '_' + len, img, fin: finFromCode(fc) || 'flat', k: k === 'c' ? 'card' : 'capsule', m, p, n, s: sz, r: num(rot, 360) || 0 });
   }
   let bgm = { k: 'preset', id: BGM_DEFAULT };
   const bm = Array.isArray(j.bm) ? j.bm : [];
@@ -188,6 +218,7 @@ export async function decodeConfig(token) {
     kind: j.k === 'c' ? 'card' : 'capsule',
     back,
     bgm,
+    stickers,
     fin: Array.isArray(j.cf) ? { sr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[0]), ssr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[1]) } : null,
   };
 }

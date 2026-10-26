@@ -409,6 +409,19 @@ export const sfx = {
     const t = now();
     tone('sine', on ? 700 : 1000, on ? 1100 : 650, t, 0.09, 0.06, { wet: 0.05 });
   },
+  // シール帳：貼上去「ぺたっ」、撕下來「ぺりっ」
+  stick() {
+    if (!ready()) return;
+    const t = now();
+    tone('sine', vary(210, 0.05), 120, t, 0.08, 0.16, { wet: 0.05 });
+    noise(t, 0.05, 0.1, 'lowpass', 1400, 600, 1, { wet: 0.04 });
+  },
+  peel() {
+    if (!ready()) return;
+    const t = now();
+    noise(t, 0.22, 0.16, 'bandpass', 900, 4200, 3, { wet: 0.08 });
+    tone('sine', 500, 900, t + 0.18, 0.06, 0.05, { wet: 0.08 });
+  },
   // 對話框打開：軟軟的「啵」
   open() {
     if (!ready()) return;

@@ -630,6 +630,93 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .bgm-none, .bgm-up { color: var(--ink); }
 .bgm-up span { color: var(--ink); text-shadow: none; }
 .bgm-none span { text-shadow: none; }
+/* ---------- シール（使用者 2026-10-26：「增加貼子的功能 跟貼子簿」） ---------- */
+/* 台紙：點點、方眼、格紋、粉彩、透明（クリアファイル）、夜空 */
+.paper-dot { background: radial-gradient(circle, #ffc2d6 1.8px, transparent 2.3px) 0 0 / 18px 18px, #fff8fb; }
+.paper-grid { background: linear-gradient(#cfe3f5 1px, transparent 1px) 0 0 / 20px 20px, linear-gradient(90deg, #cfe3f5 1px, transparent 1px) 0 0 / 20px 20px, #fdfdf7; }
+.paper-gingham { background: repeating-linear-gradient(0deg, rgba(110, 206, 180, 0.32) 0 14px, transparent 14px 28px), repeating-linear-gradient(90deg, rgba(110, 206, 180, 0.32) 0 14px, transparent 14px 28px), #fff; }
+.paper-pastel { background: linear-gradient(160deg, #ffe1ef, #ece4ff 50%, #dff4ff); }
+.paper-clear { background: repeating-linear-gradient(115deg, transparent 0 70px, rgba(255, 255, 255, 0.6) 70px 76px, transparent 76px 150px), radial-gradient(circle, rgba(255, 255, 255, 0.95) 1px, transparent 1.6px) 0 0 / 34px 34px, linear-gradient(160deg, #eaf6ff, #f5eaff); }
+.paper-night { background: radial-gradient(circle, rgba(255, 255, 255, 0.85) 1px, transparent 1.6px) 0 0 / 26px 26px, radial-gradient(circle, rgba(255, 233, 160, 0.7) 1.2px, transparent 1.8px) 13px 9px / 41px 41px, linear-gradient(170deg, #27306b, #4b3a7a); }
+.sb { display: grid; gap: 12px; justify-items: center; grid-template-columns: minmax(0, 1fr); grid-template-areas: "bar" "page" "hint" "tray" "acts"; width: 100%; min-width: 0; }
+/* 寬的畫面：貼紙那排放在頁面右邊（拖的時候兩個都看得到） */
+@media (min-width: 900px) {
+  .sb { grid-template-columns: auto minmax(260px, 340px); grid-template-rows: auto auto 1fr auto; grid-template-areas: "bar bar" "page tray" "page acts" "hint ."; align-items: start; justify-content: center; column-gap: 20px; }
+  .sb-tray { flex-direction: column; align-items: stretch; }
+  .sb-stock { flex-wrap: wrap; overflow: visible; touch-action: auto; }
+  .sb-acts { grid-template-columns: 56px minmax(0, 1fr); }
+}
+.sb-bar { grid-area: bar; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; width: min(100%, 560px); }
+.sb-pno { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 6em; text-align: center; }
+.sb-papers { display: flex; gap: 6px; }
+.sb-paper { width: 28px; height: 28px; border-radius: 8px; border: 2px solid var(--stroke); cursor: pointer; padding: 0; }
+.sb-paper[aria-checked="true"] { outline: 3px solid var(--accent); outline-offset: 2px; }
+.sb-page { grid-area: page; position: relative; width: max(240px, min(100%, 520px, calc((100dvh - 290px) * 0.75))); aspect-ratio: 3 / 4; border: 3px solid var(--stroke); border-radius: 16px; box-shadow: 6px 6px 0 var(--stroke); overflow: hidden; touch-action: none; user-select: none; }
+.sb-page::before { content: ""; position: absolute; left: 10px; top: 14px; bottom: 14px; width: 14px; background: radial-gradient(circle, rgba(28, 35, 64, 0.28) 5px, transparent 5.5px) 0 0 / 14px 54px repeat-y; pointer-events: none; }
+.sb-st { position: absolute; aspect-ratio: 1; cursor: grab; touch-action: none; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.28)) drop-shadow(0 4px 5px rgba(0, 0, 0, 0.16)); }
+.sb-st:active { cursor: grabbing; }
+.sb-st img { width: 100%; height: 100%; display: block; pointer-events: none; -webkit-user-drag: none; }
+.sb-st.sel { outline: 2px dashed var(--accent); outline-offset: -4%; border-radius: 12px; }
+.sb-h { position: absolute; right: 2%; bottom: 2%; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 900; color: #fff; background: var(--accent); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); cursor: nwse-resize; touch-action: none; }
+.sb-tools { position: absolute; left: 32px; top: 8px; display: flex; gap: 6px; z-index: 2; }
+.sb-tools .btn { padding: 5px 12px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
+.sb-tools .btn.ghost { background: var(--surface); }
+.sb-hint { grid-area: hint; margin: 0; color: var(--muted); font-size: 13px; text-align: center; max-width: 520px; }
+.sb-tray { grid-area: tray; display: flex; gap: 10px; align-items: center; width: min(100%, 760px); padding: 10px; border: 2px dashed var(--line); border-radius: 18px; background: var(--surface-2); }
+.sb-make { flex: none; }
+.sb-stock { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; touch-action: pan-x; min-width: 0; flex: 1; }
+.sb-tile { position: relative; flex: none; width: 74px; height: 74px; border: 0; background: transparent; padding: 0; cursor: grab; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.14)); }
+.sb-tile img { width: 100%; height: 100%; pointer-events: none; -webkit-user-drag: none; }
+.sb-tile.used { opacity: 0.4; }
+.sb-tile.on { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 12px; }
+.sb-n { position: absolute; right: -2px; bottom: -2px; font: 11px/1 var(--font-num); color: #fff; background: var(--ink); border: 1.5px solid #fff; border-radius: 999px; padding: 3px 6px; }
+.sb-acts { grid-area: acts; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px 12px; align-items: center; padding: 12px; width: min(100%, 560px); }
+.sb-acts > img { width: 64px; height: 64px; grid-row: span 2; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.2)); }
+.sb-info { display: grid; gap: 2px; min-width: 0; }
+.sb-info small { color: var(--muted); font-size: 12px; }
+.sb-acts .row { gap: 6px; }
+.sb-acts .btn { padding: 6px 12px; font-size: 13px; }
+.sb-ghost { position: fixed; z-index: 70; width: 96px; height: 96px; transform: translate(-50%, -50%) rotate(-6deg) scale(1.05); pointer-events: none; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.3)); }
+/* 加工的光（--m＝貼紙圖，只照在貼紙上） */
+.shine::after { content: ""; position: absolute; inset: 0; pointer-events: none; -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; opacity: 0; }
+.shine.fin-drop::after, .shine.fin-clear::after { opacity: 1; background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.55) 48%, transparent 58%) 0 0 / 300% 100%; animation: stkShine 4.5s ease-in-out infinite; }
+.shine.fin-aurora::after { opacity: 0.4; mix-blend-mode: color-dodge; background: linear-gradient(115deg, #ff9ad5, #a0f0ff, #fff3a0, #c6a8ff, #ff9ad5) 0 0 / 300% 300%; animation: stkShine 5s linear infinite; }
+.shine.fin-glitter::after { opacity: 1; mix-blend-mode: screen; background: radial-gradient(circle, #fff 0.8px, transparent 1.4px) 0 0 / 11px 13px, radial-gradient(circle, #fff6b0 0.7px, transparent 1.3px) 5px 7px / 17px 15px; animation: stkTwinkle 1.6s steps(2) infinite; }
+@keyframes stkShine { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+@keyframes stkTwinkle { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .shine::after { animation: none !important; } }
+/* 做貼紙 */
+.stk-card { width: min(100%, 460px); }
+.sk-stage { position: relative; justify-self: center; width: min(100%, 240px); height: min(240px, 62vw); flex: none; border-radius: 18px; border: 2px solid var(--stroke); display: grid; place-items: center; overflow: hidden; }
+.sk-prev { width: 88%; height: 88%; filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.28)) drop-shadow(0 6px 8px rgba(0, 0, 0, 0.18)); }
+.sk-busy { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); margin: 0; font-size: 12px; font-weight: 800; background: var(--ink); color: var(--surface); padding: 3px 10px; border-radius: 999px; }
+#sk-pick { justify-self: center; }
+.sk-empty { margin: 0; padding: 0 16px; text-align: center; color: var(--muted); font-size: 13px; font-weight: 700; }
+.sk-presets { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.sk-pre { aspect-ratio: 1; border: 2px solid var(--line); border-radius: 12px; background: var(--surface); padding: 4px; cursor: pointer; }
+.sk-pre img { width: 100%; height: 100%; object-fit: contain; }
+.sk-pre[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.stk-card .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.stk-card .chip[aria-checked="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.stk-card .chip:disabled { opacity: 0.4; }
+#sk-name { font: inherit; border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface); color: var(--ink); }
+/* 獎品列：轉到變成貼紙 */
+.stk-sel { font: inherit; font-size: 12px; font-weight: 700; border: 1.5px dashed var(--muted); border-radius: 999px; padding: 2px 8px; background: transparent; color: var(--muted); cursor: pointer; max-width: 100%; }
+.stk-sel.on { border-style: solid; border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+/* 機台上的貼紙 */
+.mstk-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.mstk { position: relative; width: 56px; height: 56px; border-radius: 12px; border: 2px solid var(--stroke); background: var(--surface-2); padding: 4px; cursor: pointer; }
+.mstk img { width: 100%; height: 100%; object-fit: contain; }
+.mstk.on { outline: 3px solid var(--accent); outline-offset: 2px; }
+.mstk.other { opacity: 0.45; }
+.mstk-del { position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); color: var(--surface); font-size: 11px; line-height: 20px; text-align: center; }
+.mstk-adj { display: grid; gap: 6px; }
+.stick-hint { position: absolute; z-index: 6; left: 50%; top: 12px; transform: translateX(-50%); width: max-content; display: flex; gap: 10px; align-items: center; padding: 8px 8px 8px 16px; border-radius: 999px; background: var(--ink); color: var(--surface); font-weight: 800; font-size: 14px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); max-width: calc(100% - 24px); }
+.stick-hint span { min-width: 0; line-height: 1.35; }
+.stick-hint .btn { flex: none; padding: 5px 12px; font-size: 13px; box-shadow: none; white-space: nowrap; }
+.sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; max-height: 50vh; overflow: auto; padding: 4px; }
+.sp-tile { aspect-ratio: 1; border: 2px solid var(--line); border-radius: 14px; background: var(--surface-2); padding: 6px; cursor: pointer; }
+.sp-tile img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.2)); }
 /* 音量面板 */
 .snd-pop { position: fixed; z-index: 30; width: min(280px, calc(100vw - 16px)); display: grid; gap: 10px; padding: 14px; background: var(--surface); border: 2px solid var(--stroke); border-radius: 18px; box-shadow: 4px 4px 0 var(--stroke); }
 .snd-row { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
@@ -943,6 +1030,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 
   <main>
     <section class="stage" id="stage" data-i18n-aria="stage" aria-label="轉蛋機">
+      <div class="stick-hint" id="stick-hint" hidden><span data-i18n="stk.tapMachine">點轉蛋機想貼的地方</span><button type="button" class="btn" id="stick-cancel" data-i18n="stk.cancel">取消</button></div>
       <div class="loading" id="loading"><div class="cap" aria-hidden="true"></div><span id="loading-text" data-i18n="loading">機台搬進來中…</span></div>
       <p class="stage-tip" data-i18n="stageTip">拖曳空白處可以轉機台看側面</p>
 
@@ -1029,6 +1117,15 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
             </div>
             <div class="field"><span id="sw-label" data-i18n="machineColor">機台顏色</span><div class="swatches" id="swatches" role="radiogroup" aria-labelledby="sw-label"></div></div>
             <div class="field"><span id="bg-label" data-i18n="bg.label">背景</span><div class="bgs" id="bgs" role="radiogroup" aria-labelledby="bg-label"></div></div>
+            <div class="field" id="mstk-field"><span data-i18n="stk.machine">轉蛋機上的貼紙</span>
+              <div class="mstk-list" id="mstk-list"></div>
+              <div class="mstk-adj" id="mstk-adj" hidden>
+                <label class="snd-row"><span data-i18n="stk.size">大小</span><input type="range" id="mstk-size" min="0.04" max="0.3" step="0.005"></label>
+                <label class="snd-row"><span data-i18n="stk.rot">角度</span><input type="range" id="mstk-rot" min="-180" max="180" step="1"></label>
+              </div>
+              <button type="button" class="btn ghost" id="mstk-add" data-i18n="stk.machineAdd">＋ 貼貼紙</button>
+              <p class="hint-text" data-i18n="stk.machineHint"></p>
+            </div>
             <div class="field"><span id="bgm-label" data-i18n="bgm.label">背景音樂</span><div class="bgm-tiles" id="bgm-tiles" role="radiogroup" aria-labelledby="bgm-label"></div><p class="hint-text" data-i18n="bgm.hint"></p></div>
             <div class="field" id="front-field" hidden><span data-i18n="ffin.label">SR／SSR 表面加工</span>
               <div class="front-ed">
@@ -1130,6 +1227,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         <div id="album-binder" hidden></div>
         <div id="album-shelf" hidden></div>
         <div id="album-trade" hidden></div>
+        <div id="album-stickers" hidden></div>
       </div>
     </section>
   </main>
@@ -1259,6 +1357,31 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   </div>
 </div>
 
+<!-- 做貼紙：照片 → 裁切 → 去背 → 形狀、加工、名字（app.js 的 openStickerMaker；裁切對話框要蓋在它上面 → 放在它前面） -->
+<div class="sheet" id="sheet-sticker" hidden>
+  <div class="sheet-card stk-card" role="dialog" aria-modal="true" aria-labelledby="sk-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="sk-title" data-i18n="stk.makeTitle">做貼紙</h2>
+    <div class="sk-stage paper-dot" id="sk-stage"><p class="sk-empty" id="sk-empty" data-i18n="stk.pickSrc">選一個手繪素材，或用照片做</p><p class="sk-busy" id="sk-busy" hidden data-i18n="stk.cutting">去背中…</p></div>
+    <button type="button" class="btn sun" id="sk-pick">用照片做</button>
+    <div class="field"><span data-i18n="stk.presets">手繪素材</span><div class="sk-presets" id="sk-presets"></div></div>
+    <div class="field"><span data-i18n="stk.shape">形狀</span><div class="chips" id="sk-shapes" role="radiogroup"></div></div>
+    <div class="field"><span data-i18n="stk.fin">加工</span><div class="chips" id="sk-fins" role="radiogroup"></div></div>
+    <div class="field"><label for="sk-name" data-i18n="stk.name">名字</label><input id="sk-name" maxlength="24"></div>
+    <button class="btn primary big" id="sk-save" data-i18n="stk.save">放進貼紙簿</button>
+  </div>
+</div>
+<!-- 選要貼到機台上的貼紙 -->
+<div class="sheet" id="sheet-stkpick" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sp-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="sp-title" data-i18n="stk.pickTitle">選要貼的貼紙</h2>
+    <p class="hint-text" id="sp-empty" data-i18n="stk.pickEmpty">貼紙簿裡還沒有貼紙</p>
+    <div class="sp-grid" id="sp-grid"></div>
+    <button class="btn primary" id="sp-make" data-i18n="stk.make">＋ 做貼紙</button>
+  </div>
+</div>
+
 <!-- 裁切對話框：逛機台的封面、獎品照片共用（拖曳調位置、滑桿／滾輪調大小；比例跟著輸出，app.js 的 openCrop） -->
 <div class="sheet" id="sheet-cover" hidden>
   <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="cv-title">
@@ -1279,6 +1402,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 <input type="file" id="file-bg" accept="image/*" hidden>
 <input type="file" id="file-cover" accept="image/*" hidden>
 <input type="file" id="file-bgm" accept="audio/*" hidden>
+<input type="file" id="file-sticker" accept="image/*" hidden>
 
 <!-- 音量（右上角的喇叭）：效果音、背景音樂分開調 -->
 <div class="snd-pop" id="snd-pop" role="dialog" data-i18n-aria="snd.title" aria-label="音量" hidden>

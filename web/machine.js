@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { sfx } from './sfx.js';
 import { RARITY, drawLid, drawPrice, drawArrow, drawLabel, drawCard, drawSide, drawBoard, drawCardBack, CARD_PX, CARD_WIN } from './decor.js';
 import { makeCard, cardTex, stepCards, CARD_H } from './cardkit.js';
@@ -123,6 +124,13 @@ function hullGeometry(geo) {
   const m = mergeVertices(g, 1e-4);
   m.computeVertexNormals();
   return m;
+}
+
+// 貼紙可以貼的零件（順序固定：存的時候記編號）：模型的網格（描邊、貼紙本身除外）＋印刷的面板
+function stickables(scene, decals) {
+  const list = [];
+  scene.traverse((o) => o.isMesh && o.name !== 'outline' && o.name !== 'sticker' && list.push(o));
+  return list.concat(Object.values(decals));
 }
 
 function addOutline(mesh, w, cache) {
@@ -421,6 +429,7 @@ export class Machine {
     this._buildDecals();
     this.show = new Spectacle(this);
     this._buildPile();
+    this.stickTargets = { capsule: stickables(gltf.scene, this.decals) };
     this.kinds.capsule = { group: capG, handle: this.handle, handleBase: this.handleBase, slotHit: this.slotHit, slotRing: this.slotRing, decals: this.decals, mats: this.mats };
     this._dg = null;
     this.loaded = true;
@@ -515,6 +524,7 @@ export class Machine {
     // 卡背（N/R 一般、SR 金、SSR 彩虹）與卡邊
     this.backTex = [0, 0, 2, 3].map((tier) => cardTex(drawCardBack(this.art.cardback, tier)));
     this.cardEdge = toon({ color: 0xffffff });
+    this.stickTargets.card = stickables(gltf.scene, this.decals);
     this.kinds.card = { group: cardG, handle, handleBase: this.handleBase, slotHit: this.slotHit, slotRing: this.slotRing, decals: this.decals, mats: cm };
     Object.assign(this, keep); // 目前還是扭蛋機，setKind 再切
     this._dg = null;
@@ -1942,6 +1952,88 @@ export class Machine {
     this._layoutGrid();
   }
 
+  // ---------- 店家貼的貼紙（使用者 2026-10-26：「貼紙製作後可以貼在轉蛋機上」） ----------
+  //   DecalGeometry 沿表面法線投影；附近的零件全部投一次（貼紙可以跨過面板跟機身），每片掛在那個零件底下（把手轉它也跟著轉）
+  //   位置＝零件編號＋零件自己座標的點、法線 → 重新載入、換機台種類都貼得回原處
+  pickSurface(e) {
+    const list = this.stickTargets?.[this.kind];
+    if (!this.loaded || !list) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    this.root.updateMatrixWorld(true);
+    const hit = this.raycaster.intersectObjects(list, false)[0];
+    if (!hit?.face) return null;
+    const r4 = (v) => Math.round(v * 1e4) / 1e4;
+    return { k: this.kind, m: list.indexOf(hit.object), p: hit.object.worldToLocal(hit.point.clone()).toArray().map(r4), n: hit.face.normal.toArray().map(r4) };
+  }
+
+  // list：[{ k 機台種類, m 零件編號, p, n, s 大小（公尺）, r 角度（度）, bmp 貼紙圖 }]；跟上次一樣就不重做
+  setStickers(list = []) {
+    if (!this.loaded) return;
+    const sig = this.kind + '|' + list.map((s) => [s.k, s.m, ...s.p, ...s.n, s.s, s.r, s.bmp ? s.bmp.width : 0, s.id].join(',')).join('|');
+    if (sig === this._stkSig) return;
+    this._stkSig = sig;
+    for (const d of this._stkMeshes || []) {
+      d.removeFromParent();
+      d.geometry.dispose();
+      d.material.dispose();
+    }
+    this._stkMeshes = [];
+    const targets = this.stickTargets?.[this.kind] || [];
+    this.root.updateMatrixWorld(true);
+    this._stkTex = this._stkTex || new WeakMap();
+    const sphere = new THREE.Sphere();
+    for (const s of list) {
+      const anchor = s.k === this.kind && targets[s.m];
+      if (!anchor || !s.bmp) continue;
+      let tex = this._stkTex.get(s.bmp);
+      if (!tex) {
+        tex = new THREE.Texture(s.bmp);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 4;
+        tex.needsUpdate = true;
+        this._stkTex.set(s.bmp, tex);
+      }
+      const p = anchor.localToWorld(new THREE.Vector3(...s.p));
+      const n = new THREE.Vector3(...s.n).applyMatrix3(new THREE.Matrix3().getNormalMatrix(anchor.matrixWorld)).normalize();
+      const o = new THREE.Object3D();
+      o.position.copy(p);
+      o.lookAt(p.clone().add(n));
+      o.rotateZ((-(s.r || 0) * Math.PI) / 180);
+      const size = new THREE.Vector3(s.s, s.s, Math.min(0.08, s.s * 0.8));
+      for (const mesh of targets) {
+        if (!mesh.visible || !mesh.geometry) continue;
+        if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+        sphere.copy(mesh.geometry.boundingSphere).applyMatrix4(mesh.matrixWorld);
+        if (sphere.distanceToPoint(p) > s.s) continue; // 太遠的零件不用投
+        const geo = new DecalGeometry(mesh, p, o.rotation, size);
+        if (!geo.getAttribute('position')?.count) {
+          geo.dispose();
+          continue;
+        }
+        geo.applyMatrix4(mesh.matrixWorld.clone().invert());
+        const mat = new THREE.MeshToonMaterial({ map: tex, gradientMap: this.ramp, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+        const d = new THREE.Mesh(geo, mat);
+        d.name = 'sticker';
+        d.renderOrder = mesh.material?.transparent ? (mesh.renderOrder || 0) + 1 : 4;
+        d.receiveShadow = true;
+        mesh.add(d);
+        this._stkMeshes.push(d);
+      }
+    }
+  }
+
+  // 貼貼紙模式：點到機台 → fn(位置)；點空白一樣拖曳轉機台看側面
+  startStick(fn) {
+    this.stickMode = fn;
+    this.renderer.domElement.style.cursor = 'crosshair';
+  }
+  stopStick() {
+    this.stickMode = null;
+    this.renderer.domElement.style.cursor = '';
+  }
+
   // 畫面上下被 UI 蓋住的高度（px）：機器要放在剩下的空間裡；gridTop＝10 連格子的上緣（連右上的價錢章都避開）
   setInsets(top, bottom, gridTop = top) {
     const o = this.insets;
@@ -2095,8 +2187,16 @@ export class Machine {
       DeviceOrientationEvent.requestPermission().catch(() => {});
     });
     el.addEventListener('pointerdown', (e) => {
-      const what = this._pick(e);
       this.idleT = 0;
+      if (this.stickMode) {
+        const at = this.pickSurface(e);
+        if (at) {
+          const fn = this.stickMode;
+          this.stopStick();
+          return fn(at);
+        }
+      }
+      const what = this._pick(e);
       if (what === 'handle') {
         if (!this.handleEnabled || this.turning) {
           if (!this.turning) {
@@ -2156,6 +2256,7 @@ export class Machine {
         this.yawTarget = THREE.MathUtils.clamp(this.dragYaw.yaw + (e.clientX - this.dragYaw.x) * 0.006, -1.1, 1.1);
         return;
       }
+      if (this.stickMode) return;
       const what = this._pick(e);
       this.gridHover = what === 'grid' ? this.pickIdx : -1;
       el.style.cursor = { handle: 'grab', slot: 'pointer', exit: 'pointer', open: 'pointer', grid: 'pointer', gridCard: 'pointer' }[what] || 'default';
