@@ -3391,13 +3391,55 @@ function openCardView(e, name) {
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）
   viewHolo.set(hdv);
   viewHolo.start(() => !$('sheet-card').hidden);
-  // 好友交換：收集簿裡的獎品可以直接拿去交換
-  $('v-acts').hidden = !(e.key && e.got[name] > 0 && cloudReady());
+  // 好友交換（要連得上雲端）、貼到シール帳：收集簿裡有的獎品才行
+  $('v-acts').hidden = !(e.key && e.got[name] > 0);
+  $('v-trade').hidden = $('v-gift').hidden = !cloudReady();
   for (const [id, mode] of [['v-trade', 'swap'], ['v-gift', 'gift']])
     $(id).onclick = () => {
       closeSheet('sheet-card');
       trade.sendFlow({ item: { key: e.key, n: name }, mode });
     };
+  // 按兩下才做（會從收藏扣一個）
+  const vs = $('v-stick');
+  vs.textContent = t('stk.toBook');
+  vs.onclick = () => {
+    if (vs.dataset.arm !== '1') {
+      vs.dataset.arm = '1';
+      vs.textContent = t('stk.toBookConfirm');
+      return;
+    }
+    vs.dataset.arm = '';
+    prizeToSticker(e, name);
+  };
+  vs.dataset.arm = '';
+}
+
+// 收集簿的獎品 → 貼紙（使用者 2026-10-27：「轉蛋的貼紙可以貼到貼紙簿」）
+//   收藏少一個（跟送人一樣記在 cut）→ 做成一張台紙 → 馬上打開，用手指撕下來放進シール帳
+//   有去背的主體 → 沿輪廓；沒有 → 圓形（轉卡機：方形）；加工照稀有度：N、R ボンドロ、SR オーロラ、SSR ラメ
+//   key＝收集簿的那台＋獎品名：跟轉到的貼紙獎品同一張（張數累加）
+async function prizeToSticker(e, name) {
+  const it = e.items[name];
+  const load = (u) => (u ? fetch(u).then((r) => r.blob()).then((b) => createImageBitmap(b)).catch(() => null) : null);
+  const subj = await load(it.s);
+  const src = subj || (await load(it.t));
+  if (!src) return toast(t('t.badImage'));
+  const a = store.get('clatter.album') || {};
+  const ent = a[e.key];
+  if (!ent || !(ent.got[name] > 0)) return;
+  ensureBase(ent, name);
+  ent.cut[name] = (ent.cut[name] || 0) + 1;
+  recount(ent, name);
+  store.set('clatter.album', a);
+  const fin = ['drop', 'drop', 'aurora', 'glitter'][it.r] || 'drop';
+  const shape = subj ? 'cut' : e.kind === 'card' ? 'square' : 'circle';
+  const c = bakeSticker(src, { shape, fin, size: 384, seed: name.length + 3 });
+  const pk = await createPack({ kind: 'sheet', title: name, src: 'gacha' });
+  await addToPack(pk.id, c, { name, fin, shape, key: e.key + '|' + name, from: titleOf(e) });
+  closeSheet('sheet-card');
+  if (app.dataset.mode === 'album') renderAlbum();
+  toast(t('stk.toBookDone', { name }));
+  openPack(pk.id);
 }
 let trade = null;
 

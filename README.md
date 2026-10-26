@@ -77,7 +77,8 @@
 - **`web/peel.js`（`openPeel`）**：全螢幕一層、一張 canvas。
   - 鋁箔包：從左邊切口沿上面的封口往右劃，撕口跟著手指（鋸齒線、撕下的那條繞撕點往上翹），撕到 96% → 紙花、貼紙從包口飛到台紙上；放手停在撕到的地方。另有「そのまま開ける」按鈕
   - 台紙：按住貼紙（看透明度，按在貼紙上才算）往外拉 → 折線＝按下點 A 跟手指 P 的垂直平分線；P 那邊照畫、A 那邊對折線鏡射畫成白色背面（折線附近暗、尖端亮，底下有影子），翻開的地方露出灰色剪影。放手：翻不到一半彈回去、超過一半自己撕完 → 轉著飛到上面的計數 → 存進シール帳。「のこりをまとめて保存」自動一張張撕；音效 `sfx.tear`、`sfx.peelTick`、`sfx.peel`
-  - 鋁箔包圖現在是程式畫的（`drawFoilPack`：銀色＋粉彩虹光、皺褶、直條壓紋封口、V 形切口、白色圓標籤＝第一張貼紙＋「シール ×N」）——Gemini 那天的生圖次數用完了，之後可以換成 Gemini 畫的（`FOIL.seal`／`labelAt` 照圖量）
+  - 鋁箔包圖：Gemini 畫的（使用者 2026-10-27：「Gemini 額度恢復後，用 Gemini 重畫鋁箔貼紙包換上去」；画像を作成 3:4，色鉛筆風的虹色枕頭袋、上下鋸齒封口、左邊 V 形切口、空白圓標籤）`D:\ai\gemini\gacha\foil_pack.png` → `py -I tools/cut_pack.py D:/ai/gemini/gacha/foil_pack.png web/assets/tex/foil_pack.webp`（去背；量切口那一列＝`FOIL.seal` 0.245、標籤圓心半徑＝`FOIL.labelAt`）。切口在封口下面一點 → 從那條線橫著撕開（像零食袋）。標籤裡畫第一張貼紙＋「シール ×N」。圖載不到才用程式畫的 `drawFoilPack`（`FOIL_DRAWN`）
+- **シール帳上貼好的也能撕**（使用者：「這個也可以撕下來」）：按在貼紙方框的外圈（離中心超過 28%）拉＝撕、按中間拉＝移動、點邊緣＝選取；撕的畫面用 `PeelLayer`（peel.js：蓋在頁面上的 canvas，跟台紙同一套折線 `paintPeel`），超過一半自己撕完放回下面那排、不到一半彈回去。「はがす」按鈕也是從右上角撕下來的動畫
 - **パック**（sticker.js：`createPack`／`addToPack`／`markPackOpened`／`claimPackItem`，`book.packs`）：撕下來才放進シール帳（同 key → 張數 +1、重複的圖刪掉）；全部撕完那包就不見
   - 轉到貼紙獎品 → 裝進那台的鋁箔包（`g|機台`，還沒打開就一直加進同一包）→ 「シール帳で開けよう」
   - 做貼紙可以一次選好幾個（手繪素材點一下＝選／取消，照片可以一次選多張、每張裁切＋去背，最多 12）→「シートにする（N 枚）」→ 台紙馬上打開
@@ -270,7 +271,8 @@ Maya 匯入的網格帶自訂法線，蓋掉了 Blender 的銳邊 → 機身 56%
 | `web/decor.js` | 機台上的貼紙與台紙（Canvas：Gemini 背景＋文字） |
 | `web/codec.js` | 設定 ⇄ 連結（二進位打包＋deflate-raw＋base64url） |
 | `web/sticker.js` | 貼紙：`bakeSticker`（白フチ＋加工）、シール帳的存放、手繪素材清單 |
-| `web/peel.js` | 指ではがす：鋁箔包沿封口撕開、台紙上的貼紙沿折線慢慢撕下來（canvas） |
+| `web/peel.js` | 指ではがす：鋁箔包沿封口撕開、台紙上的貼紙沿折線慢慢撕下來（canvas）；`PeelLayer`＝シール帳頁面上撕 |
+| `tools/cut_pack.py` | Gemini 鋁箔包 → 去背＋量切口、標籤位置 |
 | `web/stickerbook.js` | シール帳的畫面（頁面、拖曳、旋轉縮放、下面一排） |
 | `tools/cut_stickers.py` | Gemini 手繪素材表 → 一張張去背的貼紙 |
 | `web/bgm.js` | 背景音樂：交叉淡入循環、壓低、暫停、音量 |
