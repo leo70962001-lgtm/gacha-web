@@ -3204,6 +3204,19 @@ function bindMachineStickers() {
   });
   for (const id of ['mstk-size', 'mstk-rot']) $(id).addEventListener('change', () => draftChanged());
   $('mstk-add').onclick = () => openStickerPicker();
+  // 換位置：點了以後再點機台上新的地方（手機上貼紙小、不好拖的時候用）
+  $('mstk-move').onclick = () => {
+    const x = draft.stickers?.[mstkSel];
+    if (!x) return;
+    $('stick-hint').hidden = false;
+    machine?.startStick((at) => {
+      $('stick-hint').hidden = true;
+      Object.assign(x, at);
+      sfx.stick();
+      draftChanged();
+      applyStickers(draft);
+    });
+  };
   $('stick-cancel').onclick = cancelStick;
   $('sp-make').onclick = () => {
     closeSheet('sheet-stkpick');

@@ -2028,13 +2028,28 @@ export class Machine {
 
   // 開店頁：按住貼紙拖 → 沿著機台表面移動（使用者 2026-10-27：「調整把貼紙貼到機器上後可以移動」）
   //   cb.stickerEdit()＝開店頁才是 true（買家不能動）；回傳按到的是第幾張
+  //   手機上機台很小、貼紙只有指尖大 → 沒打中的話，離貼紙中心夠近（手指 30 px、滑鼠 16 px）也算按到
   _pickSticker(e) {
     if (!this.cb.stickerEdit?.() || !this._stkMeshes?.length) return null;
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     this.raycaster.setFromCamera(this.ndc, this.camera);
     const hit = this.raycaster.intersectObjects(this._stkMeshes, false)[0];
-    return hit ? hit.object.userData.stk : null;
+    if (hit) return hit.object.userData.stk;
+    const tol = e.pointerType === 'touch' || e.pointerType === 'pen' ? 30 : 16;
+    let best = null;
+    let bd = Infinity;
+    for (const [si, s] of (this._stkList || []).entries()) {
+      if (s.k !== this.kind) continue;
+      const c = this._stickerScreen(si);
+      if (!c) continue;
+      const d = Math.hypot(e.clientX - c.x, e.clientY - c.y);
+      if (d < tol && d < bd) {
+        bd = d;
+        best = si;
+      }
+    }
+    return best;
   }
   // 那張貼紙的中心在畫面上的哪裡（拖的時候手指跟中心的距離保持不變）
   _stickerScreen(si) {
@@ -2191,6 +2206,7 @@ export class Machine {
   _bindPointer() {
     const el = this.renderer.domElement;
     el.style.touchAction = 'none';
+    el.addEventListener('contextmenu', (e) => e.preventDefault()); // 手機長按不要跳選單（會打斷拖曳）
     // 陀螺儀：第一次拿到的角度當「正」，之後跟它比；慢慢回正，免得越飄越歪
     addEventListener('deviceorientation', (e) => {
       if (e.beta == null || e.gamma == null) return;
@@ -2304,10 +2320,16 @@ export class Machine {
       this.gridHover = what === 'grid' ? this.pickIdx : -1;
       el.style.cursor = { handle: 'grab', slot: 'pointer', exit: 'pointer', open: 'pointer', grid: 'pointer', gridCard: 'pointer' }[what] || 'default';
     });
-    const up = () => {
+    const up = (e) => {
       if (this.dragSticker) {
         const d = this.dragSticker;
         this.dragSticker = null;
+        // 放開的那一點也算（有的裝置最後一個 move 沒送到）
+        const at = e?.type === 'pointerup' ? this.pickSurface({ clientX: e.clientX - d.dx, clientY: e.clientY - d.dy }) : null;
+        if (at && (d.moved || Math.hypot(e.clientX - d.dx - (this._stickerScreen(d.si)?.x ?? 0), e.clientY - d.dy - (this._stickerScreen(d.si)?.y ?? 0)) > 3)) {
+          d.moved = true;
+          this.cb.onStickerMove?.(d.si, at);
+        }
         if (d.moved) this.cb.onStickerDrop?.(d.si);
       }
       if (this.dragCard) {

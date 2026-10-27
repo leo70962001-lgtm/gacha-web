@@ -332,7 +332,8 @@ export class StickerBook {
       const lx = ((e.clientX - cx) * Math.cos(rad) - (e.clientY - cy) * Math.sin(rad)) / size;
       const ly = ((e.clientX - cx) * Math.sin(rad) + (e.clientY - cy) * Math.cos(rad)) / size;
       if (Math.max(Math.abs(lx), Math.abs(ly)) > 0.28) {
-        drag = { kind: 'edge', i, b, it, st, pr, x0: e.clientX, y0: e.clientY, moved: false };
+        // 邊緣：要看第一下往哪拉才知道是撕（往貼紙裡面拉）還是移動
+        drag = { kind: 'edge', i, b, it, st, pr, cx, cy, x0: e.clientX, y0: e.clientY, moved: false };
         return;
       }
       drag = { kind: 'move', i, b, it, st, pr, ox: e.clientX - (pr.left + it.x * pr.width), oy: e.clientY - (pr.top + it.y * pr.height), x0: e.clientX, y0: e.clientY, moved: false };
@@ -347,8 +348,24 @@ export class StickerBook {
       if (!drag) return;
       const { it } = drag;
       if (drag.kind === 'edge') {
-        // 從邊緣拉動了 → 開始撕
-        if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) return;
+        const dx = e.clientX - drag.x0;
+        const dy = e.clientY - drag.y0;
+        if (Math.hypot(dx, dy) < 6) return;
+        // 往外或往旁邊拉 → 移動（手機上手指常常按在邊上，不要一碰就撕）
+        if (dx * (drag.cx - drag.x0) + dy * (drag.cy - drag.y0) <= 0) {
+          const pr = drag.pr;
+          Object.assign(drag, { kind: 'move', ox: drag.x0 - (pr.left + it.x * pr.width), oy: drag.y0 - (pr.top + it.y * pr.height), moved: true });
+          if (this.sel !== drag.i) {
+            this.sel = drag.i;
+            const i = drag.i;
+            this.render().then(() => {
+              if (drag) drag.st = this.$page.querySelector(`.sb-st[data-i="${i}"]`) || drag.st;
+            });
+          }
+        }
+      }
+      if (drag.kind === 'edge') {
+        // 從邊緣往貼紙裡面拉 → 開始撕
         const im = drag.st.querySelector('img');
         if (!im?.complete) return;
         const L = this._layerFor(drag.st, it, im);
