@@ -96,6 +96,7 @@
 - **シール帳**（`web/stickerbook.js`，收集簿的「シール帳」分頁）：台紙 6 種（點點、方眼、格紋、粉彩、クリア、夜空）、最多 30 頁；下面一排拖到頁面上就貼；點貼好的 → 拖動、右下圓鈕轉＋縮放、「はがす」放回去、「一番上へ」；點下面那張 → 貼到這頁／マシンに貼る／ガチャに入れる／1枚すてる。寬畫面貼紙那排在頁面右邊。第一次打開送 4 張手繪貼紙。音效 `sfx.stick`／`sfx.peel`
 - **貼到機台**：開店頁「マシンのシール」（最多 8 張）→ 選貼紙 → 點機台（`machine.startStick` → `pickSurface`）。`machine.setStickers()` 用 DecalGeometry 往附近每個零件都投一次（印刷面板在機身前面一點點 → 貼紙跨過去也看得到），每片掛在那個零件底下；位置存「零件編號＋零件座標的點、法線」。大小、角度滑桿。連結 `sk`：[圖長度, 格式, 加工, 機台種類, 零件, 點, 法線, 大小, 角度]（160 px 透明 webp 接在卡背圖後面）→ 買家也看得到
 - **貼好的可以移動**（使用者 2026-10-27：「調整把貼紙貼到機器上後可以移動」）：開店頁按住機台上的貼紙拖 → 沿著表面跟著手指走（`machine._pickSticker` 打貼紙的網格、`pickSurface` 找新位置；手指跟貼紙中心的距離保持住），放開才存；按到就選它（大小、角度滑桿調這張）。拖貼紙時不轉機台；買家那邊（`cb.stickerEdit()` 只有開店頁是 true）拖不動
+- **大張不會被切掉**（使用者 2026-10-27：「貼紙切掉了」，手機截圖：大張貼在透明窗上，超出窗邊的部分被切掉）：透明窗比機身凸出 4.75 cm，以前投影只有前後各 4 cm → 超出窗邊、落到後面框上的部分投不到。現在深度照大小（`clamp(s×1.2, 0.1, 0.3)`），`facing()` 只留法線跟貼紙方向內積 > 0.3 的三角形（不會印到玻璃背面、垂直的側壁）。測過：窗左邊緣（玻璃＋機身框）、窗上緣（玻璃＋上蓋＋上蓋標籤）都完整。舞台加 `user-select: none`（手機長按不會選到提示字）
 - **手機上移動**（使用者 2026-10-27：「手機的部分沒法移動確認一下」）：手機上整台機台只有 330 px 高、貼紙只有指尖大 → 沒打中貼紙時，離貼紙中心手指 30 px／滑鼠 16 px 內也算按到；放開的那一點也用來定位置（拖出機台外就停在最後一個還在機台上的位置）；canvas 擋掉長按選單；選中的貼紙多一個「換位置（點機台新的地方）」按鈕。シール帳：按在邊緣時看第一下往哪拉——往貼紙裡面拉＝撕，往外／旁邊＝移動（手機上手指常按在邊上）
 - **放進轉蛋**：獎品列「シールにしない／シール：〇〇」；連結的獎品列第 10 欄＝加工代號（＋`b`＝圖本身已經是做好的貼紙）。轉到 → `grantSticker` 用照片＋去背遮罩做成貼紙放進買家的シール帳。シール帳的「ガチャに入れる」→ 變成現在這台的獎品（透明底，`encodeImg(c, true)` 不退成 jpeg）
 - **手繪素材**：Gemini（画像を作成 16:9）一張 12 格素材表 `D:\ai\gemini\gacha\sticker_sheet.png`（扭蛋、貓、狗、草莓、愛心、星星、彩虹、飯糰、杯子蛋糕、兔子、櫻花、金幣；色鉛筆線＋水彩）→ `py -I tools/cut_stickers.py D:/ai/gemini/gacha/sticker_sheet.png web/assets/stickers`（背景＝從四邊連過來的白，主體裡的白不挖；膨脹分塊；照列、行排序；`sticker_sheet_check.png` 檢查）→ `assets/stickers/s01–s12.webp`
@@ -140,6 +141,21 @@
 - **素材（Gemini 先畫）**：一張 16:9 的素材表 `D:\ai\gemini\gacha\album_sheet.png`（粉紅絎縫卡冊封面＋扭蛋徽章、楓木層板、薄荷色扭蛋壁紙）→ `py -I tools/cut_album_sheet.py D:/ai/gemini/gacha/album_sheet.png web/assets/tex` → `binder.webp`（白底去掉）、`shelf_row.webp`（層板九宮格拉長、放在 160 px 高透明圖的底部）、`wall.webp`（位移一半＋接縫淡入，無縫）
 - **卡片冊**（`Binder`）：像真的集換式卡冊 — 闔著只看得到封面（點了翻開）→ 封面內側是目錄（每台轉卡機：進度、翻到那頁、再去轉）→ 內頁一頁 9 格透明卡套（3×3，卡套有開口跟斜斜的反光），每台轉卡機從新的一頁開始、第一頁有索引標籤；還沒收到的格子畫虛線＋No.＋？；收到的卡依稀有度有小小的閃（R ホロ、SR 斜格、SSR 亮粉＋金框）。寬的畫面（≥ 700 px）兩頁攤開、中間三個鐵環；手機一次一頁、鐵環在左邊。翻頁＝那張紙繞著書背轉 180°（Web Animations），箭頭、左右滑、鍵盤 ←→ 都能翻。頁寬由 JS 依容器寬算（`--pw`）；容器要 `min-width: 0`，不然會被書撐寬
 - **轉蛋收藏**（`renderShelf`）：每台轉蛋機一個展示櫃（壁紙＋一列一塊木板），獎品站在打開的扭蛋殼裡（上蓋往左後掀開）；有去背的獎品是站在殼裡的公仔（用 `st` 把頭頂以上的空白切掉），沒有的是圓徽章；還沒轉到的是關著的灰扭蛋＋？；SR/SSR 後面有光；點了都打開 3D 大卡
+
+## 收藏者會員卡（Apple Wallet，2026-10-28）
+
+使用者：「嘗試加入這個」（每人一張收藏者會員卡 → 選一張收到的卡面當主題 → 後端重新簽 `.pkpass` → 更新同一張 Wallet 卡；卡上有會員號、QR、積分）。
+
+- **收集簿 → 會員卡 分頁**（`web/member.js` 的 `MemberCard`）：左邊是跟 Wallet 上一樣擺法的預覽（iOS 27 Poster Generic：上面 logo＋積分、中間大張卡面、下面名字＋主題卡、最下面一條放金幣、收集數、QR），右邊是等級進度、名字、主題卡（收集簿裡有的獎品，卡片冊的先、稀有的先）、「加入 Apple Wallet」、「存成圖片」（卡面＋字＋QR 一張 PNG，不用 iPhone 也能用）
+- **卡號＝錢包 id（好友碼）**，QR＝邀請連結 `#f.<碼>`（掃了就是加好友）。**積分**照收集簿算：每個獎品 N 10、R 30、SR 100、SSR 300；300 白銀、1000 黃金、3000 彩虹（`POINTS`／`TIERS`，伺服器卡背的說明也是這組數字）。名字＝好友那邊的名字（`trade_me`），在會員卡頁改也是改那個
+- **卡面圖**在網頁用 canvas 畫（`drawArtwork`：主題色＋模糊的照片當底、稀有度色的光＋放射線、中間一張框好的卡，有去背的話頭衝出框，SSR 亮粉）→ `artwork@2x.png`（716×896＝358×448 pt）＋同一張的 `background@2x.png`（Poster 用哪個檔名查不到確定的，兩個都放）、`thumbnail@2x.png`（舊版 iOS 的 generic 用）、`icon`、`logo`、`primaryLogo`。圖組代號＝主題卡＋畫法版本的雜湊，伺服器沒有才傳圖
+- **伺服器**：`supabase/08_member.sql`（`member_cards`、`pass_devices`、`pass_regs`、`pass_tickets`、`pass_log`、私有桶 `passes`）＋ Edge Function `supabase/functions/wallet/index.ts`（Deno；node-forge 簽 PKCS#7 detached、SHA-256、帶 Apple WWDR G4 中繼憑證（第一次用時從 apple.com 拿）；fflate 打包）。`pass.json` 同時放 `posterGeneric`（iOS 27）跟 `generic`（舊版）。路由：網頁用 `/status`、`/card`（要錢包鑰匙）、`/ticket`→`/get/<票>`（10 分鐘，Safari 打開就跳「加入 Apple Wallet」）；Apple 的更新服務 `/v1/devices/…/registrations/…`、`/v1/passes/…`（`If-Modified-Since` → 304）、`/v1/log`。`/card` 內容有變 → 推播給有裝這張卡的 iPhone（APNs 金鑰 `APNS_KEY_ID`＋`APNS_P8` 優先，沒有就用 Pass 憑證走 mTLS），iPhone 自己來拿新版。已經加進 Wallet 的人：轉到東西、換主題、改名字、錢包餘額變了 → 4 秒後自動送 `/card`（`touch()`）
+- **本機測過**（Node，自簽的假憑證）：openssl `smime -verify` 驗過簽名；模擬資料庫跑過整套路由（鑰匙錯 401、要圖 → 傳圖、換票下載、登記 201／200、查更新、304、改內容 → 推播、取消登記）。**還沒做**：在 Supabase 跑 08 SQL、部署 function（要關掉 JWT 驗證：iPhone 帶的是 `ApplePass` 標頭）、Apple 憑證；真的 iPhone 還沒試過
+- **要開通 Apple Wallet**（Apple 開發者帳號，一年 US$99）：
+  1. `node tools/wallet-cert.mjs csr` → `D:\ai\wallet-cert\pass.csr`（私鑰也在那裡，不在 repo 裡）
+  2. Apple 開發者網站 → Identifiers → ＋ Pass Type IDs（例如 `pass.io.github.leo70962001.clatter`）→ Certificates → ＋ Pass Type ID Certificate → 上傳 pass.csr → 下載 pass.cer 放進同一個資料夾
+  3. `node tools/wallet-cert.mjs secrets` → `secrets.env`（PASS_TYPE_ID、PASS_TEAM_ID、PASS_CERT、PASS_KEY）→ 貼到 Supabase → Edge Functions → Secrets
+- **iOS 27 才有的東西沒放**：Featured Actions（官方範例的鍵名不一致，放錯可能整張卡加不進去 → 連結先放卡背）。優惠券、合作店家權益還沒做
 
 ## 卡背可以編輯（2026-10-26）
 
@@ -282,6 +298,10 @@ Maya 匯入的網格帶自訂法線，蓋掉了 Blender 的銳邊 → 機身 56%
 | `tools/make_bgm.py` | Gemini 的 mp3 → `web/assets/bgm/`（音量一致、96 kbps） |
 | `web/sfx.js` | WebAudio 合成音效 |
 | `supabase/07_browse.sql` | 逛機台：`machines.listed／meta／listed_at`、`set_listed`、`browse_machines` |
+| `web/member.js` | 收藏者會員卡：積分／等級、主題卡、Wallet 卡面圖、預覽、存成圖片、同步 |
+| `supabase/08_member.sql` | 會員卡：`member_cards`、Wallet 裝置登記、下載票、`passes` 桶 |
+| `supabase/functions/wallet/index.ts` | Edge Function：簽 `.pkpass`、Apple Wallet 更新服務、推播 |
+| `tools/wallet-cert.mjs` | Apple Pass 憑證：做 CSR、檢查 pass.cer、寫 Supabase 秘密 |
 | `web/i18n.js` | 中／日／英文字串、語言切換（HTML 用 `data-i18n`） |
 
 ## 量測值（three.js 座標：Y 上、+Z 朝正面，公尺）

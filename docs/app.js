@@ -16,6 +16,7 @@ import { Trade } from './trade.js';
 import { AlbumEdit, recount, ensureBase, titleOf } from './albumedit.js';
 import { copyText } from './copy.js';
 import { mountNowPlaying } from './nowplaying.js';
+import { MemberCard } from './member.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
 function nowPlaying(box, m, o) {
   const p = mountNowPlaying(box, m, o);
@@ -29,7 +30,7 @@ function nowPlaying(box, m, o) {
   };
   return p;
 }
-import { setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
+import { tradeMe, setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -1254,6 +1255,7 @@ function loadWallet() {
 function renderWalletUi() {
   $('wallet-card').hidden = !wallet;
   if (!wallet) return;
+  memberCard().touch();
   $('w-bal').textContent = wallet.balance.toLocaleString();
   $('w-bal2').textContent = wallet.balance.toLocaleString();
   const ul = $('w-ledger');
@@ -2762,6 +2764,7 @@ function gotOne(idx) {
   e.ts = Date.now();
   a[key] = e;
   store.set('clatter.album', a);
+  memberCard().touch();
 }
 
 // 收集簿的數量：base＝從機台轉到的（取大的）、tr＝好友交換進出（收到 +1、送出 −1）、got＝base＋tr
@@ -2829,6 +2832,29 @@ async function albumSync() {
   e.ts = Date.now();
   a[key] = e;
   store.set('clatter.album', a);
+  memberCard().touch();
+}
+
+// ---------- 收藏者會員卡（使用者 2026-10-28：Apple Wallet 會員卡，member.js＋supabase/functions/wallet） ----------
+let member = null;
+const isApple = () => /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
+function memberCard() {
+  member =
+    member ||
+    new MemberCard($('album-member'), {
+      t, toast, store, sfx,
+      lang: () => lang,
+      loadWallet,
+      wallet: () => wallet,
+      myName: () => trade?.me?.name || '',
+      setName: async (v) => {
+        await trade.ensure();
+        trade.me = await tradeMe(trade.w, v);
+      },
+      inviteUrl: (code) => `${shareBase()}#f.${code}`,
+      isIos: isApple,
+    });
+  return member;
 }
 
 // ---------- シール（使用者 2026-10-26：「增加貼子的功能 跟貼子簿 … 貼紙製作後可以貼在轉蛋機上或者放進轉蛋裡」） ----------
@@ -3306,7 +3332,7 @@ function renderAlbum() {
   tabs.textContent = '';
   const book = loadBook();
   const stkN = book.list.reduce((n, x) => n + (x.n || 1), 0);
-  for (const [k, list] of [['card', cards], ['capsule', caps], ['sticker', null], ['friends', null], ['trade', null]]) {
+  for (const [k, list] of [['card', cards], ['capsule', caps], ['sticker', null], ['member', null], ['friends', null], ['trade', null]]) {
     const b = document.createElement('button');
     b.className = 'chip';
     b.setAttribute('role', 'tab');
@@ -3315,6 +3341,7 @@ function renderAlbum() {
       k === 'trade' ? t('album.trade') + (trade?.list.in.length ? ` (${trade.list.in.length})` : '')
       : k === 'friends' ? `${t('album.friends')} (${trade?.friends.length || 0})`
       : k === 'sticker' ? `${t('album.stickers')} (${stkN})`
+      : k === 'member' ? t('album.member')
       : `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${list.length})`;
     b.onclick = () => {
       albumTab = k;
@@ -3322,6 +3349,22 @@ function renderAlbum() {
       renderAlbum();
     };
     tabs.append(b);
+  }
+  // 會員卡（member.js）
+  $('album-member').hidden = albumTab !== 'member';
+  if (albumTab === 'member') {
+    albumEditing = false;
+    $('album-edit').hidden = $('album-edit-hint').hidden = true;
+    $('album-empty').hidden = $('album-binder').hidden = $('album-shelf').hidden = $('album-trade').hidden = $('album-stickers').hidden = true;
+    $('album-sum').textContent = memberCard().summary();
+    memberCard().render();
+    // 名字在好友那邊存著：還沒拿到就拿一次再畫
+    if (!trade?.me && cloudReady())
+      trade
+        ?.ensure()
+        .then(() => albumTab === 'member' && app.dataset.mode === 'album' && memberCard().render())
+        .catch(() => {});
+    return;
   }
   // シール帳（stickerbook.js）
   $('album-stickers').hidden = albumTab !== 'sticker';
