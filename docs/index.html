@@ -213,6 +213,42 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .btn.mb-wallet { display: inline-flex; align-items: center; gap: 8px; background: #000; color: #fff; border-color: #000; }
 .btn.mb-wallet svg { width: 20px; height: 20px; }
 .mb-note { margin: 0; font-size: 12px; color: var(--muted); }
+/* 把卡帶出去（cardpack.js）：App 主題開關、素材格子、開場動畫 */
+.mb-pack { grid-column: 1 / -1; width: min(100%, 1000px); padding: 16px; display: grid; gap: 10px; min-width: 0; }
+.mb-pack h3 { margin: 0; font-size: 16px; }
+.mb-pack > .mb-hint { margin: 0; }
+.pk-theme { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: space-between; }
+.pk-theme label { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+.pk-theme input { width: 18px; height: 18px; accent-color: var(--accent); }
+.pk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 10px; }
+.pk-tile { display: flex; gap: 10px; padding: 10px; border: 2px solid var(--line); border-radius: 14px; background: var(--surface-2); min-width: 0; }
+.pk-prev { flex: none; width: 96px; height: 150px; display: grid; place-items: center; position: relative; }
+.pk-prev canvas { max-width: 96px; max-height: 150px; border-radius: 10px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2); }
+.pk-prev.check canvas { box-shadow: none; border-radius: 0; background: repeating-conic-gradient(#d9dee6 0 25%, #fff 0 50%) 0 0 / 12px 12px; }
+.pk-prev .pk-fan { position: absolute; max-height: 126px; }
+.pk-prev .pk-fan:nth-child(1) { transform: rotate(-9deg) translateX(-14px); }
+.pk-prev .pk-fan:nth-child(3) { transform: rotate(9deg) translateX(14px); }
+.pk-meta { display: grid; align-content: start; gap: 3px; min-width: 0; }
+.pk-meta b { font-size: 14px; }
+.pk-meta small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.pk-meta p { margin: 2px 0 6px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.pk-meta .btn { justify-self: start; padding: 5px 14px; font-size: 13px; }
+.card-splash { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; overflow: hidden; cursor: pointer; background: radial-gradient(circle at 50% 42%, hsl(var(--sh) 72% 60%), hsl(var(--sh) 60% 16%) 72%); transition: opacity 0.5s ease; -webkit-user-select: none; user-select: none; }
+.cs-rays { position: absolute; left: 50%; top: 42%; width: 170vmax; height: 170vmax; translate: -50% -50%; background: repeating-conic-gradient(rgba(255, 255, 255, 0.16) 0 5deg, transparent 5deg 15deg); -webkit-mask: radial-gradient(circle, #000 12%, transparent 55%); mask: radial-gradient(circle, #000 12%, transparent 55%); animation: csSpin 14s linear infinite; }
+.cs-rays.r3 { background: repeating-conic-gradient(rgba(255, 240, 180, 0.3) 0 5deg, transparent 5deg 15deg); }
+.cs-card { position: relative; width: min(62vw, 300px); margin-top: -8vh; filter: drop-shadow(0 20px 30px rgba(0, 0, 0, 0.45)); animation: csIn 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.cs-name { position: absolute; bottom: 21%; margin: 0; color: #fff; font-family: var(--font-num); font-size: 24px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45); animation: csFade 0.6s 0.8s both; }
+.cs-tap { position: absolute; bottom: 12%; margin: 0; color: #fff; font-weight: 800; letter-spacing: 0.12em; animation: csFade 0.6s 1.1s both, csBlink 1.3s 1.7s ease-in-out infinite; }
+.card-splash.burst .cs-card { animation: csBurst 0.7s ease-in forwards; }
+.card-splash.burst::after { content: ""; position: absolute; inset: 0; background: #fff; animation: csFlash 0.7s ease-out forwards; }
+.card-splash.out { opacity: 0; pointer-events: none; transition-delay: 0.2s; }
+@keyframes csIn { from { transform: translateY(45vh) rotateY(540deg) scale(0.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes csBurst { to { transform: scale(1.5); opacity: 0; filter: brightness(2.5); } }
+@keyframes csFlash { from { opacity: 0.9; } to { opacity: 0; } }
+@keyframes csSpin { to { rotate: 360deg; } }
+@keyframes csFade { from { opacity: 0; transform: translateY(8px); } }
+@keyframes csBlink { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .cs-card, .cs-rays, .cs-tap, .cs-name { animation: none; } }
 /* 收集簿（使用者 2026-10-25：「分卡片冊跟轉蛋收集品 卡片冊做成像冊子一樣」，binder.js） */
 .album-tabs .chip[aria-selected="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .album-empty { padding: 22px; text-align: center; color: var(--muted); }

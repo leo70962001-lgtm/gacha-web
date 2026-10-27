@@ -150,12 +150,22 @@
 - **卡號＝錢包 id（好友碼）**，QR＝邀請連結 `#f.<碼>`（掃了就是加好友）。**積分**照收集簿算：每個獎品 N 10、R 30、SR 100、SSR 300；300 白銀、1000 黃金、3000 彩虹（`POINTS`／`TIERS`，伺服器卡背的說明也是這組數字）。名字＝好友那邊的名字（`trade_me`），在會員卡頁改也是改那個
 - **卡面圖**在網頁用 canvas 畫（`drawArtwork`：主題色＋模糊的照片當底、稀有度色的光＋放射線、中間一張框好的卡，有去背的話頭衝出框，SSR 亮粉）→ `artwork@2x.png`（716×896＝358×448 pt）＋同一張的 `background@2x.png`（Poster 用哪個檔名查不到確定的，兩個都放）、`thumbnail@2x.png`（舊版 iOS 的 generic 用）、`icon`、`logo`、`primaryLogo`。圖組代號＝主題卡＋畫法版本的雜湊，伺服器沒有才傳圖
 - **伺服器**：`supabase/08_member.sql`（`member_cards`、`pass_devices`、`pass_regs`、`pass_tickets`、`pass_log`、私有桶 `passes`）＋ Edge Function `supabase/functions/wallet/index.ts`（Deno；node-forge 簽 PKCS#7 detached、SHA-256、帶 Apple WWDR G4 中繼憑證（第一次用時從 apple.com 拿）；fflate 打包）。`pass.json` 同時放 `posterGeneric`（iOS 27）跟 `generic`（舊版）。路由：網頁用 `/status`、`/card`（要錢包鑰匙）、`/ticket`→`/get/<票>`（10 分鐘，Safari 打開就跳「加入 Apple Wallet」）；Apple 的更新服務 `/v1/devices/…/registrations/…`、`/v1/passes/…`（`If-Modified-Since` → 304）、`/v1/log`。`/card` 內容有變 → 推播給有裝這張卡的 iPhone（APNs 金鑰 `APNS_KEY_ID`＋`APNS_P8` 優先，沒有就用 Pass 憑證走 mTLS），iPhone 自己來拿新版。已經加進 Wallet 的人：轉到東西、換主題、改名字、錢包餘額變了 → 4 秒後自動送 `/card`（`touch()`）
-- **本機測過**（Node，自簽的假憑證）：openssl `smime -verify` 驗過簽名；模擬資料庫跑過整套路由（鑰匙錯 401、要圖 → 傳圖、換票下載、登記 201／200、查更新、304、改內容 → 推播、取消登記）。**2026-10-28 上線**（使用者同意後）：08 SQL 在 SQL Editor 跑過；function `wallet` 用後台編輯器部署（原始碼從 raw.githubusercontent.com 的 commit 網址抓進 monaco → Deploy），Settings 的「Verify JWT with legacy secret」已關。實測：`/status` 不用金鑰、錯的錢包鑰匙 401、測試錢包 PSZ1bF0Jj5 送 `/card` → 要圖 → 8 張圖進 `passes` 桶、同內容再送 `changed: false`（jsonb 鍵順序會變 → 排好再比）、金幣變了 `changed: true`。**還沒有**：Apple 憑證（`/ticket` 回 503 → 頁面顯示準備中）、真的 iPhone
+- **本機測過**（Node，自簽的假憑證）：openssl `smime -verify` 驗過簽名；模擬資料庫跑過整套路由（鑰匙錯 401、要圖 → 傳圖、換票下載、登記 201／200、查更新、304、改內容 → 推播、取消登記）。**2026-10-28 上線**（使用者同意後）：08 SQL 在 SQL Editor 跑過；function `wallet` 用後台編輯器部署（原始碼從 raw.githubusercontent.com 的 commit 網址抓進 monaco → Deploy），Settings 的「Verify JWT with legacy secret」已關。實測：`/status` 不用金鑰、錯的錢包鑰匙 401、測試錢包 PSZ1bF0Jj5 送 `/card` → 要圖 → 8 張圖進 `passes` 桶、同內容再送 `changed: false`（jsonb 鍵順序會變 → 排好再比）、金幣變了 `changed: true`。**還沒有**：Apple 憑證（`/ticket` 回 503 → 頁面顯示準備中）、真的 iPhone。**2026-10-28 暫停**（使用者：「Pause the Apple Wallet part for now」）：私鑰＋申請檔已做好（`D:\ai\wallet-cert\pass.key`、`pass.csr`），但瀏覽器面板裡登入的 Apple 帳號沒有有效的 Developer Program 會員（帳號頁直接跳報名表、Certificates 頁是空的），所以還沒有 Pass Type ID／pass.cer。會員卡預覽、存成圖片照常
 - **要開通 Apple Wallet**（Apple 開發者帳號，一年 US$99）：
   1. `node tools/wallet-cert.mjs csr` → `D:\ai\wallet-cert\pass.csr`（私鑰也在那裡，不在 repo 裡）
   2. Apple 開發者網站 → Identifiers → ＋ Pass Type IDs（例如 `pass.io.github.leo70962001.clatter`）→ Certificates → ＋ Pass Type ID Certificate → 上傳 pass.csr → 下載 pass.cer 放進同一個資料夾
   3. `node tools/wallet-cert.mjs secrets` → `secrets.env`（PASS_TYPE_ID、PASS_TEAM_ID、PASS_CERT、PASS_KEY）→ 貼到 Supabase → Edge Functions → Secrets
 - **iOS 27 才有的東西沒放**：Featured Actions（官方範例的鍵名不一致，放錯可能整張卡加不進去 → 連結先放卡背）。優惠券、合作店家權益還沒做
+
+## 把卡帶出去（2026-10-28）
+
+使用者貼了一張「落地位置／實際效果／主要限制」的表＋「嘗試加入這個」。會員卡分頁下面多一塊「把卡帶出去」（`web/cardpack.js`），全部用主題卡畫：
+
+- **App 內主題**（開關，`clatter.member.appTheme`）：卡的色相 → `--accent`／`--bg`／`--stage`／`--floor`（亮暗兩套；主色上是白字 → 調暗到亮度 ≤ 0.19，跟原本的紅一樣看得清楚），品牌圓點跟著變色；開場動畫（卡轉進來＋放射光＋「點一下開始」，點了才有音效 `sfx.reveal(稀有度)`，5 秒沒點就安靜淡出；每個分頁階段一次，從轉蛋／邀請連結進來不播）；分頁圖示（favicon＋apple-touch-icon 換成主題卡）。主題的 `<style>` 要放在 body 最後面（artifact 格式的樣式在 body 裡）
+- **素材**（`PACK`，每種一格：預覽、尺寸、怎麼設定、按鈕）：鎖定畫面桌布（這台手機的實際像素，卡放低讓出時鐘）、主畫面桌布（不放卡）、全部的卡一組桌布（最多 24 張，照片隨機顯示用）、聯絡人海報（去背主體放大）、Apple Watch 照片錶面 410×502、頭像 640²、小紅書 1080×1440（名字、等級、積分、加好友 QR）、Discord 橫幅 1360×480（最好的 5 張排扇形）、貼圖（`bakeSticker` 透明 PNG）、App 圖示 1024²
+- **存檔**：手機（`pointer: coarse` 且 `navigator.canShare({files})`）第一次按＝做圖、按鈕變「存到照片／分享」、再按才叫 `navigator.share`（分享要在點的當下叫，做圖會等太久）；電腦直接下載，很多張用 fflate（jsDelivr ESM）打成 zip
+- **做不到的（表上的限制，照實寫在每一格）**：換桌布、聯絡人海報、各 App 頭像都要使用者自己按；已安裝的 App 圖示改不了（要原生 App 先放進去）；iMessage 貼圖包、`.watchface` 要原生 App
+- 測過：電腦／手機寬度的版面、10 種都做得出來（單張 18 KB–1 MB，7 張桌布 zip）、主題色＋開場（點一下有聲音、5 秒自己收）、手機的兩步分享（用假的 `navigator.share` 測）。真的 iPhone 上存照片、設桌布還沒試
 
 ## 卡背可以編輯（2026-10-26）
 
@@ -299,6 +309,7 @@ Maya 匯入的網格帶自訂法線，蓋掉了 Blender 的銳邊 → 機身 56%
 | `web/sfx.js` | WebAudio 合成音效 |
 | `supabase/07_browse.sql` | 逛機台：`machines.listed／meta／listed_at`、`set_listed`、`browse_machines` |
 | `web/member.js` | 收藏者會員卡：積分／等級、主題卡、Wallet 卡面圖、預覽、存成圖片、同步 |
+| `web/cardpack.js` | 把卡帶出去：App 主題（顏色、開場、圖示）、桌布／錶面／頭像／分享圖／貼圖素材、分享或 zip |
 | `supabase/08_member.sql` | 會員卡：`member_cards`、Wallet 裝置登記、下載票、`passes` 桶 |
 | `supabase/functions/wallet/index.ts` | Edge Function：簽 `.pkpass`、Apple Wallet 更新服務、推播 |
 | `tools/wallet-cert.mjs` | Apple Pass 憑證：做 CSR、檢查 pass.cer、寫 Supabase 秘密 |

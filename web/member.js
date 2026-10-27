@@ -6,6 +6,7 @@
 import { CLOUD } from './cloud.js';
 import { finOf } from './codec.js';
 import { titleOf } from './albumedit.js';
+import { PACK, makeFiles, canShareFiles, shareFiles, downloadFiles, packInfo } from './cardpack.js';
 
 export const WALLET_FN = CLOUD.url + '/functions/v1/wallet';
 // 每個獎品幾分（照稀有度）、升級門檻（伺服器卡背的說明寫的是同一組數字）
@@ -55,7 +56,7 @@ export function ownedFaces(album) {
 
 // ---------- 畫卡面 ----------
 const imgCache = new Map();
-function loadImg(src) {
+export function loadImg(src) {
   if (!src) return Promise.resolve(null);
   if (imgCache.has(src)) return imgCache.get(src);
   const p = new Promise((res) => {
@@ -68,22 +69,22 @@ function loadImg(src) {
   imgCache.set(src, p);
   return p;
 }
-const canvas = (w, h) => {
+export const canvas = (w, h) => {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
   return c;
 };
-function cover(g, im, x, y, w, h) {
+export function cover(g, im, x, y, w, h) {
   const s = Math.max(w / im.width, h / im.height);
   g.drawImage(im, x + (w - im.width * s) / 2, y + (h - im.height * s) / 2, im.width * s, im.height * s);
 }
-function rrect(g, x, y, w, h, r) {
+export function rrect(g, x, y, w, h, r) {
   g.beginPath();
   g.roundRect(x, y, w, h, r);
 }
 // 照片的平均色（主題色）：太灰的拉一點彩度
-function avgColor(im) {
+export function avgColor(im) {
   const c = canvas(16, 16);
   const g = c.getContext('2d', { willReadFrequently: true });
   g.drawImage(im, 0, 0, 16, 16);
@@ -99,8 +100,8 @@ function avgColor(im) {
   const n = d.length / 4;
   return [r / n, gg / n, b / n];
 }
-const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
-const rgb = (c) => `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+export const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+export const rgb = (c) => `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
 // 主題色 → 卡的底色（深）、字（白）、標籤（稀有度的淺色）
 export async function themeColors(face) {
   const im = await loadImg(face?.b || face?.t);
@@ -109,7 +110,7 @@ export async function themeColors(face) {
 }
 
 // 四角星
-function star(g, x, y, r) {
+export function star(g, x, y, r) {
   g.beginPath();
   g.moveTo(x, y - r);
   g.quadraticCurveTo(x, y, x + r, y);
@@ -119,14 +120,14 @@ function star(g, x, y, r) {
   g.fill();
 }
 // 偽亂數（同一張卡每次畫都一樣）
-function rng(seed) {
+export function rng(seed) {
   let s = seed >>> 0 || 1;
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
-const hashStr = (s) => [...s].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+export const hashStr = (s) => [...s].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
 
 // 一張卡（框＋照片＋去背主體衝出框）畫在 (cx, cy)，寬 w；回傳框的範圍
-async function drawFace(g, face, cx, cy, w, opt = {}) {
+export async function drawFace(g, face, cx, cy, w, opt = {}) {
   const [t, s, b] = await Promise.all([loadImg(face.t), loadImg(face.s), loadImg(face.b)]);
   const r = face.r | 0;
   const round = face.kind !== 'card';
@@ -214,7 +215,8 @@ async function drawFace(g, face, cx, cy, w, opt = {}) {
 }
 
 // Wallet 的 Poster 卡面（artwork）：主題色＋模糊的照片當底、中間一張大卡、星星；上面放 logo／積分、下面放名字、QR，所以卡放中間偏上
-export async function drawArtwork(face, W = 716, H = 896) {
+// opt：cy＝卡的中心在多高（0–1）、cw＝卡寬（佔畫面寬幾成）— 桌布、分享圖也用這張，卡擺的位置不一樣
+export async function drawArtwork(face, W = 716, H = 896, opt = {}) {
   const c = canvas(W, H);
   const g = c.getContext('2d');
   const r = face?.r | 0;
@@ -236,7 +238,7 @@ export async function drawArtwork(face, W = 716, H = 896) {
   }
   // 中間的光（稀有度色）＋放射線
   const cx = W / 2;
-  const cy = H * 0.42;
+  const cy = H * (opt.cy ?? 0.42);
   const glow = g.createRadialGradient(cx, cy, 0, cx, cy, W * 0.7);
   glow.addColorStop(0, RC[r][0] + 'cc');
   glow.addColorStop(0.45, RC[r][1] + '33');
@@ -276,7 +278,7 @@ export async function drawArtwork(face, W = 716, H = 896) {
     g.arc(x, y, W * 0.004, 0, Math.PI * 2);
     g.fill();
   }
-  if (face) await drawFace(g, face, cx, cy, face.kind === 'card' ? W * 0.48 : W * 0.52);
+  if (face) await drawFace(g, face, cx, cy, W * (opt.cw ?? (face.kind === 'card' ? 0.48 : 0.52)));
   // 星星
   for (let i = 0; i < 6 + r * 4; i++) {
     const a = rand() * Math.PI * 2;
@@ -293,7 +295,7 @@ async function drawThumb(face, S = 180) {
   if (face) await drawFace(c.getContext('2d'), face, S / 2, S / 2 + S * 0.02, face.kind === 'card' ? S * 0.62 : S * 0.86, { plain: true });
   return c;
 }
-async function appIcon(S, round = 0.22) {
+export async function appIcon(S, round = 0.22) {
   const c = canvas(S, S);
   const g = c.getContext('2d');
   const im = await loadImg(new URL('./assets/icons/icon-192.png', import.meta.url).href);
@@ -305,7 +307,7 @@ async function appIcon(S, round = 0.22) {
   return c;
 }
 // iOS 27 卡面左上的 logo（30 pt 高）：App 圖示＋Clatter
-async function drawPrimaryLogo(H = 60) {
+export async function drawPrimaryLogo(H = 60) {
   await document.fonts?.load?.(`700 ${H}px "Dela Gothic One"`).catch(() => {});
   const font = `${Math.round(H * 0.56)}px "Dela Gothic One", "Huninn", system-ui, sans-serif`;
   const m = canvas(1, 1).getContext('2d');
@@ -391,7 +393,7 @@ async function qrMatrix(text) {
   const n = q.getModuleCount();
   return { n, dark: (x, y) => q.isDark(y, x) };
 }
-async function drawQr(c, text, size) {
+export async function drawQr(c, text, size) {
   const m = await qrMatrix(text);
   const q = 2; // 白邊
   const cell = Math.floor(size / (m.n + q * 2));
@@ -412,8 +414,8 @@ const el = (tag, cls, text) => {
   if (text != null) x.textContent = text;
   return x;
 };
-const fmtNo = (id) => (id ? id.slice(0, 5) + ' ' + id.slice(5) : '— —');
-const nf = (n) => (n == null ? '—' : Number(n).toLocaleString());
+export const fmtNo = (id) => (id ? id.slice(0, 5) + ' ' + id.slice(5) : '— —');
+export const nf = (n) => (n == null ? '—' : Number(n).toLocaleString());
 
 export class MemberCard {
   // d＝{ t, toast, store, sfx, lang(), loadWallet(), wallet(), myName(), setName(v), inviteUrl(code), isIos() }
@@ -543,6 +545,7 @@ export class MemberCard {
         this.d.sfx?.tap?.();
         this.render();
         this.touch(true);
+        if (this.st.appTheme) this.d.onTheme(f, true);
       };
       grid.append(b);
     }
@@ -561,7 +564,7 @@ export class MemberCard {
     const note = el('p', 'mb-note');
     this.note = note;
     side.append(tier, nameF, th, acts, note);
-    wrap.append(stage, side);
+    wrap.append(stage, side, this.packSection(faces, face));
     root.append(wrap);
     // 卡面圖、QR（非同步）
     const key = (face?.id || '') + '|' + ART_VERSION;
@@ -578,6 +581,110 @@ export class MemberCard {
     else qrBox.hidden = true;
     this.tiltPass(pass);
     this.showStatus();
+  }
+
+  // 把卡帶出去（cardpack.js）：App 主題開關＋每種素材一格（預覽、尺寸、怎麼設定、存檔）
+  packSection(faces, face) {
+    const { t } = this.d;
+    const box = el('section', 'mb-pack card-box');
+    box.append(el('h3', null, t('pk.title')), el('p', 'mb-hint', face ? t('pk.lede', { name: face.name }) : t('mb.noFaces')));
+    const row = el('div', 'pk-theme');
+    const lab = el('label');
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = !!this.st.appTheme;
+    cb.disabled = !face;
+    cb.onchange = () => {
+      this.st = { ...this.st, appTheme: cb.checked };
+      this.d.onTheme(face, cb.checked, cb.checked);
+    };
+    lab.append(cb, el('span', null, t('pk.appTheme')));
+    const pv = el('button', 'btn ghost', t('pk.preview'));
+    pv.type = 'button';
+    pv.disabled = !face;
+    pv.onclick = () => this.d.onTheme(face, !!this.st.appTheme, true);
+    row.append(lab, pv);
+    box.append(row, el('p', 'mb-hint', t('pk.appThemeHint')));
+    if (!face) return box;
+    const info = packInfo(this.album(), faces, this.d);
+    const grid = el('div', 'pk-grid');
+    const previews = [];
+    for (const spec of PACK) {
+      const tile = el('div', 'pk-tile');
+      const [W, H] = spec.size();
+      const pvBox = el('div', 'pk-prev' + (spec.id === 'sticker' ? ' check' : ''));
+      tile.append(pvBox);
+      const meta = el('div', 'pk-meta');
+      meta.append(el('b', null, t('pk.' + spec.id)), el('small', null, spec.many ? t('pk.manySize', { n: Math.min(24, faces.length), w: W, h: H }) : `${W}×${H}`), el('p', null, t('pk.' + spec.id + '.hint')));
+      const btn = el('button', 'btn', t('pk.make'));
+      btn.type = 'button';
+      btn.onclick = () => this.packSave(spec, face, info, btn);
+      meta.append(btn);
+      tile.append(meta);
+      grid.append(tile);
+      previews.push([spec, pvBox, W, H]);
+    }
+    box.append(grid);
+    // 預覽小圖：一張一張畫（同一套畫法、縮小尺寸），不要一次卡住畫面
+    const key = (this.prevKey = face.id + '|' + faces.length);
+    (async () => {
+      await new Promise((r) => setTimeout(r, 0)); // 等 render() 把這格放進頁面
+      for (const [spec, pvBox, W, H] of previews) {
+        if (this.prevKey !== key || !box.isConnected) return;
+        const k = Math.min(1, 150 / H, 220 / W);
+        const w = Math.max(24, Math.round(W * k * 2));
+        const h = Math.max(24, Math.round(H * k * 2));
+        try {
+          if (spec.many) {
+            for (const f of faces.slice(0, 3).reverse()) {
+              const c = await spec.draw(f, info, w, h);
+              c.className = 'pk-fan';
+              pvBox.append(c);
+            }
+          } else {
+            const c = await spec.draw(face, info, w, h);
+            pvBox.append(c);
+          }
+        } catch (e) {
+          console.warn(e);
+        }
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    })();
+    return box;
+  }
+
+  // 第一次按＝做檔案；手機做好以後按鈕變「存到照片」，再按一次開分享選單（分享要在點的當下叫）；電腦直接下載
+  async packSave(spec, face, info, btn) {
+    const { t } = this.d;
+    if (btn._files) {
+      const files = btn._files;
+      try {
+        await shareFiles(files);
+      } catch (e) {
+        if (e.name !== 'AbortError') downloadFiles(files, `clatter-${spec.id}.zip`);
+      }
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const files = await makeFiles(spec, face, info, (i, n) => (btn.textContent = n > 1 ? t('pk.makingN', { i: i + 1, n }) : t('pk.making')));
+      if (canShareFiles(files)) {
+        btn._files = files;
+        btn.textContent = t('pk.share');
+        btn.classList.add('primary');
+      } else {
+        await downloadFiles(files, `clatter-${spec.id}.zip`);
+        btn.textContent = t('pk.saved');
+        setTimeout(() => btn.isConnected && (btn.textContent = t('pk.make')), 2500);
+      }
+    } catch (e) {
+      console.warn(e);
+      this.d.toast(t('pk.failed'));
+      btn.textContent = t('pk.make');
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   // 預覽卡跟著游標斜一點＋反光

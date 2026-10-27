@@ -17,6 +17,7 @@ import { AlbumEdit, recount, ensureBase, titleOf } from './albumedit.js';
 import { copyText } from './copy.js';
 import { mountNowPlaying } from './nowplaying.js';
 import { MemberCard } from './member.js';
+import { applyAppTheme, cardSplash } from './cardpack.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
 function nowPlaying(box, m, o) {
   const p = mountNowPlaying(box, m, o);
@@ -2853,8 +2854,29 @@ function memberCard() {
       },
       inviteUrl: (code) => `${shareBase()}#f.${code}`,
       isIos: isApple,
+      // App 主題跟著主題卡（顏色、分頁圖示）；preview＝順便播一次開場動畫
+      onTheme: (face, on, preview) => {
+        applyAppTheme(face, on);
+        if (preview && face) cardSplash(face, { t, sfx, unlock });
+      },
     });
   return member;
+}
+// 開 App：主題有開 → 套顏色；一般打開（不是轉蛋／邀請連結）每個分頁階段播一次開場動畫
+function bootCardTheme() {
+  const st = store.get('clatter.member') || {};
+  if (!st.appTheme) return;
+  const face = memberCard().face();
+  if (!face) return;
+  applyAppTheme(face, true);
+  if (/^#(g1|s\.|f\.)/.test(location.hash)) return;
+  try {
+    if (sessionStorage.getItem('clatter.splash')) return;
+    sessionStorage.setItem('clatter.splash', '1');
+  } catch {
+    return;
+  }
+  cardSplash(face, { t, sfx, unlock });
 }
 
 // ---------- シール（使用者 2026-10-26：「增加貼子的功能 跟貼子簿 … 貼紙製作後可以貼在轉蛋機上或者放進轉蛋裡」） ----------
@@ -3995,6 +4017,7 @@ async function boot() {
     },
   });
   trade.poll();
+  bootCardTheme();
   setupPwa();
   fitBar();
   resHolo = new Holo($('r-tilt'), $('result-card'));

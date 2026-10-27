@@ -32,8 +32,18 @@ if (cmd === 'csr') {
   console.log('憑證申請檔：' + CSR);
   console.log('下一步：Apple 開發者網站 → Certificates → ＋ → Pass Type ID Certificate → 上傳這個檔 → 下載 pass.cer 放進 ' + DIR);
 } else if (cmd === 'secrets') {
-  const cerName = fs.readdirSync(DIR).find((f) => /\.cer$/i.test(f));
-  if (!cerName) throw new Error(`${DIR} 裡面沒有 .cer（Apple 下載的 pass.cer）`);
+  let cerName = fs.readdirSync(DIR).find((f) => /\.cer$/i.test(f));
+  // 還沒放進來 → 去「下載」資料夾找最新的 pass*.cer 複製過來
+  if (!cerName) {
+    const dl = path.join(process.env.USERPROFILE || '', 'Downloads');
+    const found = fs.existsSync(dl)
+      ? fs.readdirSync(dl).filter((f) => /^pass.*\.cer$/i.test(f)).map((f) => ({ f, t: fs.statSync(path.join(dl, f)).mtimeMs })).sort((a, b) => b.t - a.t)[0]
+      : null;
+    if (!found) throw new Error(`${DIR} 跟 ${dl} 都沒有 pass.cer（Apple 下載的憑證）`);
+    fs.copyFileSync(path.join(dl, found.f), path.join(DIR, 'pass.cer'));
+    console.log('從下載資料夾拿了 ' + found.f);
+    cerName = 'pass.cer';
+  }
   const cert = new X509Certificate(fs.readFileSync(path.join(DIR, cerName)));
   const keyPem = fs.readFileSync(KEY, 'utf8');
   if (!cert.checkPrivateKey(createPrivateKey(keyPem))) throw new Error('pass.cer 跟 pass.key 不是一對（是不是用了別的 .csr？）');
