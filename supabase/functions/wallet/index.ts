@@ -352,7 +352,9 @@ export async function handle(req: Request): Promise<Response> {
           await storagePut(`${b.id}/${img}/${f}`, u8);
         }
       }
-      const same = JSON.stringify(card.data) === JSON.stringify(data) && (!img || img === card.img);
+      // jsonb 存進去鍵的順序會變 → 排好再比
+      const canon = (o: any) => JSON.stringify(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
+      const same = canon(card.data) === canon(data) && (!img || img === card.img);
       if (!same) {
         const patch: Record<string, unknown> = { data, updated_at: new Date().toISOString() };
         if (img) patch.img = img;

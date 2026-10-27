@@ -364,7 +364,8 @@ async function call(path, body) {
 }
 let statusP = null;
 export function walletStatus() {
-  statusP = statusP || call('/status').catch(() => ({ enabled: false, offline: true }));
+  // 連不上不記住（下次再問）；問到了就記著
+  statusP = statusP || call('/status').catch(() => ((statusP = null), { enabled: false, offline: true }));
   return statusP;
 }
 // 存會員卡（伺服器沒有這組圖才傳圖）
