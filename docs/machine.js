@@ -126,6 +126,32 @@ function hullGeometry(geo) {
   return m;
 }
 
+// DecalGeometry 的結果只留「面向貼紙」的三角形（法線跟貼紙方向的內積 > min）：投得深的時候不會印到背面、垂直的側壁
+function facing(geo, n, min) {
+  const pos = geo.getAttribute('position');
+  const nor = geo.getAttribute('normal');
+  const uv = geo.getAttribute('uv');
+  const P = [];
+  const N = [];
+  const U = [];
+  for (let i = 0; i + 2 < pos.count; i += 3) {
+    let d = 0;
+    for (let k = 0; k < 3; k++) d += nor.getX(i + k) * n.x + nor.getY(i + k) * n.y + nor.getZ(i + k) * n.z;
+    if (d / 3 < min) continue;
+    for (let k = 0; k < 3; k++) {
+      P.push(pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k));
+      N.push(nor.getX(i + k), nor.getY(i + k), nor.getZ(i + k));
+      U.push(uv.getX(i + k), uv.getY(i + k));
+    }
+  }
+  if (!P.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+  return g;
+}
+
 // 貼紙可以貼的零件（順序固定：存的時候記編號）：模型的網格（描邊、貼紙本身除外）＋印刷的面板
 function stickables(scene, decals) {
   const list = [];
@@ -2002,17 +2028,18 @@ export class Machine {
       o.position.copy(p);
       o.lookAt(p.clone().add(n));
       o.rotateZ((-(s.r || 0) * Math.PI) / 180);
-      const size = new THREE.Vector3(s.s, s.s, Math.min(0.08, s.s * 0.8));
+      // 投影的深度：透明窗比機身凸出 4.75 cm → 大張貼在窗上、超出窗邊的部分要投得到後面的框（使用者 2026-10-27：「貼紙切掉了」）
+      //   深一點（貼紙越大越深，最多前後各 15 cm），但只留面向貼紙的面（facing），不會印到玻璃背面、側壁
+      const size = new THREE.Vector3(s.s, s.s, THREE.MathUtils.clamp(s.s * 1.2, 0.1, 0.3));
       for (const mesh of targets) {
         if (!mesh.visible || !mesh.geometry) continue;
         if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
         sphere.copy(mesh.geometry.boundingSphere).applyMatrix4(mesh.matrixWorld);
         if (sphere.distanceToPoint(p) > s.s) continue; // 太遠的零件不用投
-        const geo = new DecalGeometry(mesh, p, o.rotation, size);
-        if (!geo.getAttribute('position')?.count) {
-          geo.dispose();
-          continue;
-        }
+        const raw = new DecalGeometry(mesh, p, o.rotation, size);
+        const geo = raw.getAttribute('position')?.count ? facing(raw, n, 0.3) : null;
+        raw.dispose();
+        if (!geo) continue;
         geo.applyMatrix4(mesh.matrixWorld.clone().invert());
         const mat = new THREE.MeshToonMaterial({ map: tex, gradientMap: this.ramp, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
         const d = new THREE.Mesh(geo, mat);

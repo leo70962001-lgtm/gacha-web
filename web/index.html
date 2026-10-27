@@ -486,6 +486,8 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .stage { position: relative; min-height: 0; overflow: hidden; background: var(--stage); }
 .stage canvas.gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .stage-tip { position: absolute; left: var(--gutter-l); bottom: 14px; font-size: 13px; color: var(--muted); background: color-mix(in srgb, var(--surface) 80%, transparent); padding: 4px 10px; border-radius: 999px; pointer-events: none; }
+/* 手機長按機台（拖貼紙）不要選到字、跳出放大鏡 */
+.stage { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .app[data-mode="play"] .stage-tip { display: none; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 12px; background: var(--stage); z-index: 4; font-family: var(--font-display); font-size: 18px; }
 .loading .cap { width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--stroke); background: linear-gradient(180deg, #fff 0 50%, var(--sun) 50%); animation: roll 1s linear infinite; }
