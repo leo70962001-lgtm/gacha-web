@@ -214,7 +214,11 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .btn.mb-wallet svg { width: 20px; height: 20px; }
 .mb-note { margin: 0; font-size: 12px; color: var(--muted); }
 /* 把卡帶出去（cardpack.js）：App 主題開關、素材格子、開場動畫 */
-.mb-pack { grid-column: 1 / -1; width: min(100%, 1000px); padding: 16px; display: grid; gap: 10px; min-width: 0; }
+/* 帶出去分頁：上面選主題卡、下面素材 */
+.pk-page { display: grid; gap: 14px; justify-items: center; width: 100%; min-width: 0; }
+.pk-pick { width: min(100%, 1000px); padding: 14px 16px; }
+.pk-pick .mb-faces { grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); max-height: 150px; }
+.mb-pack { width: min(100%, 1000px); padding: 16px; display: grid; gap: 10px; min-width: 0; }
 .mb-pack h3 { margin: 0; font-size: 16px; }
 .mb-pack > .mb-hint { margin: 0; }
 .pk-theme { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: space-between; }
@@ -1340,6 +1344,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         <div id="album-trade" hidden></div>
         <div id="album-stickers" hidden></div>
         <div id="album-member" hidden></div>
+        <div id="album-pack" hidden></div>
       </div>
     </section>
   </main>

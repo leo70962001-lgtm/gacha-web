@@ -445,6 +445,10 @@ export class MemberCard {
     const w = this.d.wallet();
     return { name: this.d.myName() || '', points: stats.points, tier: stats.tier, kinds: stats.kinds, pieces: stats.pieces, theme: face?.name || '', from: face?.from || '', coins: w?.balance ?? null };
   }
+  packSummary() {
+    const f = this.face();
+    return f ? this.d.t('pk.sum', { name: f.name }) : this.d.t('mb.noFaces');
+  }
   summary() {
     const s = memberStats(this.album());
     return this.d.t('mb.sum', { tier: this.d.t('mb.tier' + s.tier), p: nf(s.points) });
@@ -528,28 +532,7 @@ export class MemberCard {
       }
     };
     const th = el('div', 'mb-themes');
-    th.append(el('h3', null, t('mb.theme')), el('p', 'mb-hint', faces.length ? t('mb.themeHint') : t('mb.noFaces')));
-    const grid = el('div', 'mb-faces');
-    for (const f of faces.slice(0, 60)) {
-      const b = el('button', 'mb-face r' + f.r + (f.kind === 'card' ? '' : ' round'));
-      b.type = 'button';
-      b.setAttribute('aria-pressed', String(f.id === face?.id));
-      b.title = `${f.name} · ${f.from}`;
-      const im = el('img');
-      im.src = f.t;
-      im.alt = f.name;
-      im.loading = 'lazy';
-      b.append(im);
-      b.onclick = () => {
-        this.st = { ...this.st, theme: f.id };
-        this.d.sfx?.tap?.();
-        this.render();
-        this.touch(true);
-        if (this.st.appTheme) this.d.onTheme(f, true);
-      };
-      grid.append(b);
-    }
-    th.append(grid);
+    th.append(el('h3', null, t('mb.theme')), el('p', 'mb-hint', faces.length ? t('mb.themeHint') : t('mb.noFaces')), this.faceGrid(faces, face, () => this.render()));
     const acts = el('div', 'mb-acts');
     const add = el('button', 'btn mb-wallet');
     add.type = 'button';
@@ -564,7 +547,7 @@ export class MemberCard {
     const note = el('p', 'mb-note');
     this.note = note;
     side.append(tier, nameF, th, acts, note);
-    wrap.append(stage, side, this.packSection(faces, face));
+    wrap.append(stage, side);
     root.append(wrap);
     // 卡面圖、QR（非同步）
     const key = (face?.id || '') + '|' + ART_VERSION;
@@ -581,6 +564,44 @@ export class MemberCard {
     else qrBox.hidden = true;
     this.tiltPass(pass);
     this.showStatus();
+  }
+
+  // 主題卡的格子（會員卡、帶出去兩頁共用同一張主題卡）；換了 → again() 重畫那一頁
+  faceGrid(faces, face, again) {
+    const grid = el('div', 'mb-faces');
+    for (const f of faces.slice(0, 60)) {
+      const b = el('button', 'mb-face r' + f.r + (f.kind === 'card' ? '' : ' round'));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(f.id === face?.id));
+      b.title = `${f.name} · ${f.from}`;
+      const im = el('img');
+      im.src = f.t;
+      im.alt = f.name;
+      im.loading = 'lazy';
+      b.append(im);
+      b.onclick = () => {
+        this.st = { ...this.st, theme: f.id };
+        this.d.sfx?.tap?.();
+        again();
+        this.touch(true);
+        if (this.st.appTheme) this.d.onTheme(f, true);
+      };
+      grid.append(b);
+    }
+    return grid;
+  }
+
+  // 「帶出去」分頁（使用者 2026-10-28：「這個跟會員證分開增加一頁」）：上面選主題卡、下面 App 主題＋素材
+  renderPack(root) {
+    const { t } = this.d;
+    const faces = this.faces();
+    const face = this.face(faces);
+    root.textContent = '';
+    const wrap = el('div', 'pk-page');
+    const pick = el('div', 'mb-themes card-box pk-pick');
+    pick.append(el('h3', null, t('mb.theme')), el('p', 'mb-hint', faces.length ? t('pk.pickHint') : t('mb.noFaces')), this.faceGrid(faces, face, () => this.renderPack(root)));
+    wrap.append(pick, this.packSection(faces, face));
+    root.append(wrap);
   }
 
   // 把卡帶出去（cardpack.js）：App 主題開關＋每種素材一格（預覽、尺寸、怎麼設定、存檔）

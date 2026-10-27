@@ -3354,7 +3354,7 @@ function renderAlbum() {
   tabs.textContent = '';
   const book = loadBook();
   const stkN = book.list.reduce((n, x) => n + (x.n || 1), 0);
-  for (const [k, list] of [['card', cards], ['capsule', caps], ['sticker', null], ['member', null], ['friends', null], ['trade', null]]) {
+  for (const [k, list] of [['card', cards], ['capsule', caps], ['sticker', null], ['member', null], ['pack', null], ['friends', null], ['trade', null]]) {
     const b = document.createElement('button');
     b.className = 'chip';
     b.setAttribute('role', 'tab');
@@ -3364,6 +3364,7 @@ function renderAlbum() {
       : k === 'friends' ? `${t('album.friends')} (${trade?.friends.length || 0})`
       : k === 'sticker' ? `${t('album.stickers')} (${stkN})`
       : k === 'member' ? t('album.member')
+      : k === 'pack' ? t('album.pack')
       : `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${list.length})`;
     b.onclick = () => {
       albumTab = k;
@@ -3372,8 +3373,17 @@ function renderAlbum() {
     };
     tabs.append(b);
   }
-  // 會員卡（member.js）
+  // 會員卡（member.js）、帶出去（同一張主題卡，cardpack.js 的素材）
   $('album-member').hidden = albumTab !== 'member';
+  $('album-pack').hidden = albumTab !== 'pack';
+  if (albumTab === 'pack') {
+    albumEditing = false;
+    $('album-edit').hidden = $('album-edit-hint').hidden = true;
+    $('album-empty').hidden = $('album-binder').hidden = $('album-shelf').hidden = $('album-trade').hidden = $('album-stickers').hidden = true;
+    $('album-sum').textContent = memberCard().packSummary();
+    memberCard().renderPack($('album-pack'));
+    return;
+  }
   if (albumTab === 'member') {
     albumEditing = false;
     $('album-edit').hidden = $('album-edit-hint').hidden = true;
