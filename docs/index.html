@@ -713,7 +713,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .mstk-adj { display: grid; gap: 6px; }
 .stick-hint { position: absolute; z-index: 6; left: 50%; top: 12px; transform: translateX(-50%); width: max-content; display: flex; gap: 10px; align-items: center; padding: 8px 8px 8px 16px; border-radius: 999px; background: var(--ink); color: var(--surface); font-weight: 800; font-size: 14px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); max-width: calc(100% - 24px); }
 .stick-hint span { min-width: 0; line-height: 1.35; }
-.stick-hint .btn { flex: none; padding: 5px 12px; font-size: 13px; box-shadow: none; white-space: nowrap; }
+.stick-hint .btn { flex: none; padding: 5px 12px; font-size: 13px; box-shadow: none; white-space: nowrap; color: var(--ink); background: var(--surface); }
 .sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; max-height: 50vh; overflow: auto; padding: 4px; }
 .sp-tile { aspect-ratio: 1; border: 2px solid var(--line); border-radius: 14px; background: var(--surface-2); padding: 6px; cursor: pointer; }
 .sp-tile img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.2)); }

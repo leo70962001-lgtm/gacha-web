@@ -1971,6 +1971,7 @@ export class Machine {
   // list：[{ k 機台種類, m 零件編號, p, n, s 大小（公尺）, r 角度（度）, bmp 貼紙圖 }]；跟上次一樣就不重做
   setStickers(list = []) {
     if (!this.loaded) return;
+    this._stkList = list;
     const sig = this.kind + '|' + list.map((s) => [s.k, s.m, ...s.p, ...s.n, s.s, s.r, s.bmp ? s.bmp.width : 0, s.id].join(',')).join('|');
     if (sig === this._stkSig) return;
     this._stkSig = sig;
@@ -1984,7 +1985,7 @@ export class Machine {
     this.root.updateMatrixWorld(true);
     this._stkTex = this._stkTex || new WeakMap();
     const sphere = new THREE.Sphere();
-    for (const s of list) {
+    for (const [si, s] of list.entries()) {
       const anchor = s.k === this.kind && targets[s.m];
       if (!anchor || !s.bmp) continue;
       let tex = this._stkTex.get(s.bmp);
@@ -2016,12 +2017,32 @@ export class Machine {
         const mat = new THREE.MeshToonMaterial({ map: tex, gradientMap: this.ramp, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
         const d = new THREE.Mesh(geo, mat);
         d.name = 'sticker';
+        d.userData.stk = si; // 第幾張（拖曳移動用）
         d.renderOrder = mesh.material?.transparent ? (mesh.renderOrder || 0) + 1 : 4;
         d.receiveShadow = true;
         mesh.add(d);
         this._stkMeshes.push(d);
       }
     }
+  }
+
+  // 開店頁：按住貼紙拖 → 沿著機台表面移動（使用者 2026-10-27：「調整把貼紙貼到機器上後可以移動」）
+  //   cb.stickerEdit()＝開店頁才是 true（買家不能動）；回傳按到的是第幾張
+  _pickSticker(e) {
+    if (!this.cb.stickerEdit?.() || !this._stkMeshes?.length) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hit = this.raycaster.intersectObjects(this._stkMeshes, false)[0];
+    return hit ? hit.object.userData.stk : null;
+  }
+  // 那張貼紙的中心在畫面上的哪裡（拖的時候手指跟中心的距離保持不變）
+  _stickerScreen(si) {
+    const s = this._stkList?.[si];
+    const anchor = s && this.stickTargets?.[this.kind]?.[s.m];
+    if (!anchor) return null;
+    this.root.updateMatrixWorld(true);
+    return this._toScreen(anchor.localToWorld(new THREE.Vector3(...s.p)));
   }
 
   // 貼貼紙模式：點到機台 → fn(位置)；點空白一樣拖曳轉機台看側面
@@ -2196,6 +2217,15 @@ export class Machine {
           return fn(at);
         }
       }
+      // 開店頁：按到貼紙 → 拖著移動（不轉機台）
+      const si = this._pickSticker(e);
+      if (si != null) {
+        el.setPointerCapture(e.pointerId);
+        const c = this._stickerScreen(si) || { x: e.clientX, y: e.clientY };
+        this.dragSticker = { si, dx: e.clientX - c.x, dy: e.clientY - c.y, moved: false };
+        this.cb.onStickerPick?.(si);
+        return;
+      }
       const what = this._pick(e);
       if (what === 'handle') {
         if (!this.handleEnabled || this.turning) {
@@ -2228,6 +2258,15 @@ export class Machine {
       // 游標位置（翻開的卡片跟著微微傾斜）
       const rr = el.getBoundingClientRect();
       if (!this.gyro) this.ptr = { x: ((e.clientX - rr.left) / rr.width) * 2 - 1, y: -((e.clientY - rr.top) / rr.height) * 2 + 1 };
+      if (this.dragSticker) {
+        const d = this.dragSticker;
+        const at = this.pickSurface({ clientX: e.clientX - d.dx, clientY: e.clientY - d.dy });
+        if (at) {
+          d.moved = true;
+          this.cb.onStickerMove?.(d.si, at);
+        }
+        return;
+      }
       if (this.dragCard) {
         const d = this.dragCard;
         d.dx = e.clientX - d.x0;
@@ -2257,11 +2296,20 @@ export class Machine {
         return;
       }
       if (this.stickMode) return;
+      if (this._pickSticker(e) != null) {
+        el.style.cursor = 'move';
+        return;
+      }
       const what = this._pick(e);
       this.gridHover = what === 'grid' ? this.pickIdx : -1;
       el.style.cursor = { handle: 'grab', slot: 'pointer', exit: 'pointer', open: 'pointer', grid: 'pointer', gridCard: 'pointer' }[what] || 'default';
     });
     const up = () => {
+      if (this.dragSticker) {
+        const d = this.dragSticker;
+        this.dragSticker = null;
+        if (d.moved) this.cb.onStickerDrop?.(d.si);
+      }
       if (this.dragCard) {
         const d = this.dragCard;
         this.dragCard = null;

@@ -3182,12 +3182,14 @@ function renderMachineStickers() {
     $('mstk-rot').value = sel.r || 0;
   }
 }
+// 改了貼紙的位置、大小、角度 → 下一格畫面重貼一次（拖的時候不要每個事件都重算）
+let stkRaf = 0;
+function stkLive() {
+  cancelAnimationFrame(stkRaf);
+  stkRaf = requestAnimationFrame(() => applyStickers(draft));
+}
 function bindMachineStickers() {
-  let raf = 0;
-  const live = () => {
-    cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => applyStickers(draft));
-  };
+  const live = stkLive;
   $('mstk-size').addEventListener('input', () => {
     const x = draft.stickers?.[mstkSel];
     if (!x) return;
@@ -4007,6 +4009,23 @@ async function boot() {
   addEventListener('pointerdown', () => unlock(), { once: true });
 
   machine = new Machine($('stage'), {
+    // 開店頁：按到機台上的貼紙 → 選它（大小、角度滑桿調這張）；拖 → 沿著表面移動
+    stickerEdit: () => app.dataset.mode === 'create',
+    onStickerPick: (si) => {
+      if (app.dataset.mode !== 'create') return;
+      mstkSel = si;
+      renderMachineStickers();
+    },
+    onStickerMove: (si, at) => {
+      const x = draft.stickers?.[si];
+      if (!x || app.dataset.mode !== 'create') return;
+      Object.assign(x, at);
+      stkLive();
+    },
+    onStickerDrop: () => {
+      sfx.stick();
+      draftChanged();
+    },
     onSlot: (x, y) => {
       unlock();
       if (play?.phase === 'coin') insertCoin();
