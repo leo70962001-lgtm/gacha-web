@@ -121,14 +121,20 @@ export async function walletSales(w) {
 // 買家投完幣 → 伺服器照「剩下的數量」抽 n 顆、從買家錢包扣錢、加進機台主人的錢包
 //   → { picks: [獎品 key], remaining: { key: 剩幾個 }, balance: 買家餘額 }
 // 錢不夠 → 丟 e.insufficient（err.balance＝目前餘額），什麼都不扣
-export async function pullCloud(id, n, wallet) {
-  const r = await req('/rest/v1/rpc/pull', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_id: id, p_n: n, p_wallet: wallet.id, p_wallet_key: wallet.key }),
-  });
+// meta＝{ c 國碼, d 裝置, s 從哪裡來 }（機台的數據後台用，09_players.sql）；伺服器還沒更新（找不到這個參數的函式）→ 不帶再叫一次
+export async function pullCloud(id, n, wallet, meta = null) {
+  const base = { p_id: id, p_n: n, p_wallet: wallet.id, p_wallet_key: wallet.key };
+  const call = (body) => req('/rest/v1/rpc/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let r = await call(meta ? { ...base, p_country: meta.c || null, p_device: meta.d || null, p_src: meta.s || null } : base);
+  let err = null;
   if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
+    err = await r.json().catch(() => ({}));
+    if (meta && err.code === 'PGRST202') {
+      r = await call(base);
+      err = r.ok ? null : await r.json().catch(() => ({}));
+    }
+  }
+  if (!r.ok) {
     if (err.message === 'insufficient') {
       const e = new Error('e.insufficient');
       e.balance = parseInt(err.details, 10);
@@ -217,6 +223,21 @@ export const tradeAccept = (w, id, back) => rpc('trade_accept', { ...cred(w), p_
 export const tradeDecline = (w, id) => rpc('trade_decline', { ...cred(w), p_trade: id });
 export const tradeCancel = (w, id) => rpc('trade_cancel', { ...cred(w), p_trade: id });
 export const tradeDone = (w, id) => rpc('trade_done', { ...cred(w), p_trade: id });
+
+// ---------- 機台的數據後台（supabase/09_players.sql） ----------
+// 開店的人帶機台鑰匙 → 誰轉過、國家／裝置／來源分布、最近 2000 筆；伺服器還沒裝 → e.notReady
+export async function machineStats(cred) {
+  const r = await req('/rest/v1/rpc/machine_stats', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: cred.id, p_key: cred.key }),
+  }, 20000);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.code === 'PGRST202' ? 'e.notReady' : err.code === '42501' ? 'e.locked' : 'e.network');
+  }
+  return r.json();
+}
 
 // ---------- 逛機台（supabase/07_browse.sql） ----------
 // 店家自己公開（要機台的修改鑰匙）；meta＝列表用的小摘要（名稱、店名、種類、價錢、封面小圖…）

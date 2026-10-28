@@ -214,6 +214,73 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .btn.mb-wallet { display: inline-flex; align-items: center; gap: 8px; background: #000; color: #fff; border-color: #000; }
 .btn.mb-wallet svg { width: 20px; height: 20px; }
 .mb-note { margin: 0; font-size: 12px; color: var(--muted); }
+/* 機台的數據後台（stats.js）：單一系列＝藍（dataviz 預設色 #2a78d6／暗 #3987e5），熱圖＝同一個藍由淺到深 */
+.sheet-card.stats-card { width: min(100%, 1000px); }
+.st-root { --viz: #2a78d6; display: grid; gap: 12px; min-width: 0; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .st-root { --viz: #3987e5; } }
+:root[data-theme="dark"] .st-root { --viz: #3987e5; }
+.st-top { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; }
+.st-top .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.st-body { display: grid; gap: 12px; min-width: 0; }
+.st-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.st-kpi { padding: 12px 14px; display: grid; gap: 2px; box-shadow: 2px 2px 0 var(--stroke); }
+.st-kpi small { color: var(--muted); font-weight: 700; font-size: 12px; }
+.st-kpi b { font-family: var(--font-num); font-weight: 400; font-size: 28px; color: var(--ink); }
+.st-delta { font-size: 12px; font-weight: 700; color: var(--muted); }
+.st-delta.up { color: var(--gain); }
+.st-delta.down { color: var(--accent); }
+.st-card { padding: 14px 16px; display: grid; gap: 10px; align-content: start; position: relative; min-width: 0; box-shadow: 2px 2px 0 var(--stroke); }
+.st-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.st-h h3 { margin: 0; font-size: 15px; }
+.st-h small, .st-note { color: var(--muted); font-size: 12px; }
+.st-note { margin: 0; }
+.st-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.st-cols { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 2px; height: 160px; align-items: end; border-bottom: 1.5px solid var(--line); }
+.st-cols.mini { height: 56px; }
+.st-col { height: 100%; display: flex; align-items: flex-end; cursor: default; outline: none; }
+.st-colf { display: block; width: 100%; max-width: 24px; margin: 0 auto; background: var(--viz); border-radius: 4px 4px 0 0; min-height: 0; }
+.st-col:hover .st-colf, .st-col:focus .st-colf { filter: brightness(1.15); }
+.st-axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+.st-ymax { position: absolute; right: 16px; top: 14px; color: var(--muted); font-size: 11px; }
+.st-live { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; align-items: end; }
+.st-live .st-big { font-family: var(--font-num); font-weight: 400; font-size: 34px; grid-row: 1; }
+.st-live small { grid-column: 1; color: var(--muted); font-size: 12px; }
+.st-live .st-cols { grid-column: 2; grid-row: 1 / 3; }
+.st-card h4 { margin: 4px 0 0; font-size: 13px; }
+.st-feed, .st-top10 { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.st-top10 { counter-reset: r; }
+.st-feed li, .st-top10 li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 13px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.st-feed b, .st-top10 b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-feed small, .st-top10 small { color: var(--muted); }
+.st-flag { font-size: 18px; line-height: 1; }
+.st-bars { display: grid; gap: 6px; }
+.st-bar { display: grid; grid-template-columns: minmax(96px, 42%) minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13px; outline: none; }
+.st-bar.muted { opacity: 0.6; }
+.st-bl { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-ico { font-style: normal; }
+.st-track { height: 12px; background: var(--surface-2); border-radius: 0 4px 4px 0; overflow: hidden; }
+.st-fill { display: block; height: 100%; background: var(--viz); border-radius: 0 4px 4px 0; }
+.st-bar:hover .st-fill, .st-bar:focus .st-fill { filter: brightness(1.15); }
+.st-bv { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.st-prizes .st-bl img { width: 26px; height: 26px; object-fit: cover; border-radius: 6px; flex: none; }
+.st-rk { font-style: normal; font-weight: 900; font-size: 10px; padding: 1px 5px; border-radius: 999px; color: #fff; background: var(--r-n); flex: none; }
+.st-rk.r1 { background: var(--r-r); }
+.st-rk.r2 { background: var(--r-sr); }
+.st-rk.r3 { background: var(--r-ssr); }
+.st-split { display: flex; gap: 2px; height: 18px; border-radius: 4px; overflow: hidden; }
+.st-sa { background: var(--viz); }
+.st-sb { background: color-mix(in oklab, var(--viz) 35%, var(--surface-2)); }
+.st-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; }
+.st-legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.st-la::before { background: var(--viz); }
+.st-lb::before { background: color-mix(in oklab, var(--viz) 35%, var(--surface-2)); }
+.st-heat { display: grid; grid-template-columns: 34px repeat(24, minmax(0, 1fr)); gap: 2px; font-size: 10px; color: var(--muted); }
+.st-hh { text-align: left; }
+.st-hd { display: flex; align-items: center; }
+.st-hc { aspect-ratio: 1; border-radius: 3px; background: color-mix(in oklab, var(--viz) calc(var(--k) * 100%), var(--surface-2)); outline: none; }
+.st-hc:hover, .st-hc:focus { box-shadow: 0 0 0 2px var(--ink); }
+.st-tip { position: fixed; z-index: 120; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px; font-weight: 700; padding: 5px 9px; border-radius: 8px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); }
+.st-tip[hidden] { display: none; }
 /* カード工房（cardstudio.js） */
 .add-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .studio-page { max-width: 1060px; }
@@ -1383,6 +1450,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
                 <button class="btn" id="try" data-i18n="try">用買家畫面試玩</button>
                 <button class="btn ghost" id="new-link" hidden data-i18n="link.newBtn">改用新連結</button>
                 <button class="btn ghost" id="restock" hidden data-i18n="stock.restock">補貨（被轉走的補回來）</button>
+                <button class="btn" id="btn-stats" hidden data-i18n="st.open">📊 數據</button>
               </div>
               <p class="meta-line" id="link-meta"></p>
               <label class="list-toggle" id="list-wrap" hidden><input type="checkbox" id="list-on"><span><b data-i18n="browse.publish">公開到「逛機台」</b><small data-i18n="browse.publishHint">大家都能在逛機台找到這台、直接來轉（隨時可以取消）</small></span></label>
@@ -1614,6 +1682,14 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 </div>
 
 <!-- 做貼紙：照片 → 裁切 → 去背 → 形狀、加工、名字（app.js 的 openStickerMaker；裁切對話框要蓋在它上面 → 放在它前面） -->
+<!-- 機台的數據後台（stats.js）：概覽／觀眾／獎品 -->
+<div class="sheet" id="sheet-stats" hidden>
+  <div class="sheet-card stats-card" role="dialog" aria-modal="true" aria-labelledby="st-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="st-title"></h2>
+    <div class="st-root" id="st-root"></div>
+  </div>
+</div>
 <!-- 從作品冊挑卡片當轉卡機的獎品（使用者 2026-10-28：「所以卡片的景品去製作的卡片簿選」） -->
 <div class="sheet" id="sheet-workpick" hidden>
   <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="wp-title">

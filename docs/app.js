@@ -17,6 +17,8 @@ import { AlbumEdit, recount, ensureBase, titleOf } from './albumedit.js';
 import { copyText } from './copy.js';
 import { mountNowPlaying } from './nowplaying.js';
 import { MemberCard } from './member.js';
+import { guessCountry, deviceType } from './geo.js';
+import { MachineStats } from './stats.js';
 import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT } from './cardstudio.js';
 import { applyAppTheme, cardSplash } from './cardpack.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
@@ -32,7 +34,7 @@ function nowPlaying(box, m, o) {
   };
   return p;
 }
-import { tradeMe, setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
+import { machineStats, tradeMe, setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -1139,6 +1141,7 @@ function bindForm() {
   };
   $('try').onclick = async () => {
     if (!linkToken) linkToken = await encodeConfig(draft);
+    playSrc = 'shop';
     await enterPlay(linkToken);
   };
 }
@@ -1345,6 +1348,7 @@ function showLinkStatus(s) {
   $('link-out').hidden = false;
   $('new-link').hidden = !s.short;
   $('restock').hidden = !s.short;
+  $('btn-stats').hidden = !(s.short && draft.cloud);
   $('list-wrap').hidden = !(s.short && draft.cloud);
   $('list-on').checked = !!draft.listed;
   renderCover();
@@ -1460,6 +1464,8 @@ function playKey() {
   return 'clatter.play.' + play.id;
 }
 
+// 玩家從哪裡進來轉的（機台的數據後台「從哪裡來」）：browse 逛機台／link 連結／album 收集簿／shop 我的商店、自己試玩
+let playSrc = 'other';
 async function enterPlay(token) {
   let cfg;
   const link = token;
@@ -1702,7 +1708,7 @@ async function pullFromCloud(n) {
   let res;
   try {
     const w = wallet || (await loadWallet());
-    res = await pullCloud(play.cloud, n, w);
+    res = await pullCloud(play.cloud, n, w, { c: guessCountry(), d: deviceType(), s: playSrc });
   } catch (e) {
     if (e.message === 'e.insufficient') {
       if (wallet && Number.isFinite(e.balance)) wallet.balance = e.balance;
@@ -2654,6 +2660,7 @@ async function renderShop() {
       setMode('create');
     });
     btn(t('shop.play'), 'sun', async () => {
+      playSrc = 'shop';
       if (id) return enterPlay('s.' + id);
       await switchMachine(uid);
       enterPlay('draft');
@@ -2663,6 +2670,7 @@ async function renderShop() {
         const url = shareBase() + '#s.' + id;
         toast((await copyText(url)) ? t('t.copied') : url);
       });
+    if (id && cloudReady()) btn(t('st.open'), '', () => openStats(d));
     btn(t('shop.dup'), '', () => dupMachine(uid));
     const del = btn(t('shop.del'), 'ghost', () => {
       // 按兩下才刪（第一下變成「確定拿掉？」）
@@ -2920,6 +2928,22 @@ async function addStudioCard({ design, card, music, target, qty, edit }) {
   if (music.k === 'file' && music.file) await attachFile(idx, music.file);
   sfx.stick?.();
   toast(t(old ? 'cs.updated' : 'cs.added', { name: it.name, m: draft.name || t('defaultMachine') }));
+}
+
+// ---------- 機台的數據後台（使用者 2026-10-28：「可以知道有誰轉過自己的轉蛋跟國家分布」「參考 YouTube 的後台」，stats.js） ----------
+//   d＝那台的草稿（目前這台是記憶體裡的；我的商店的其他台是存起來的，照片是 base64）
+function openStats(d) {
+  if (!d?.cloud) return;
+  $('st-title').textContent = t('st.title', { name: d.name || t('defaultMachine') });
+  const thumb = (it, i) => (it.img?.b64 ? `data:${it.img.mime};base64,${it.img.b64}` : d === draft ? thumbOf(draft, i).url : '');
+  new MachineStats($('st-root'), {
+    t,
+    lang: () => lang,
+    load: () => machineStats(d.cloud),
+    pulled: () => pulledCounts(d.cloud.id),
+    items: () => d.items.map((it, i) => ({ key: itemKey(it), name: it.name, r: it.rarity | 0, qty: it.qty | 0, thumb: thumb(it, i) })),
+  }).open();
+  openSheet('sheet-stats', $('sheet-stats').querySelector('[data-close]'));
 }
 
 // ---------- 收藏者會員卡（使用者 2026-10-28：Apple Wallet 會員卡，member.js＋supabase/functions/wallet） ----------
@@ -3750,7 +3774,7 @@ function renderAlbum() {
   $('album-edit-hint').hidden = !(albumEditing && list.length);
   $('album-edit-hint').textContent = t(albumTab === 'card' ? 'album.editHintCard' : 'album.editHintCap');
   const opts = {
-    onCard: openCardView, onPlay: (link) => enterPlay(link),
+    onCard: openCardView, onPlay: (link) => ((playSrc = 'album'), enterPlay(link)),
     editing: albumEditing,
     onEditItem: (e, n) => albumEdit.item(e, n),
     onRename: (e) => albumEdit.rename(e),
@@ -4170,6 +4194,7 @@ function drawBrowse() {
       // 跟打開分享連結一樣：網址換成這台（重新整理、切回「轉轉看」都還是這台）
       history.replaceState(null, '', location.pathname + location.search + '#s.' + r.id);
       setMode('play');
+      playSrc = 'browse';
       enterPlay('s.' + r.id);
     };
     body.append(prizes, meta, go);
@@ -4306,6 +4331,7 @@ async function boot() {
   $('shop-studio').onclick = () => openStudio();
   $('tab-studio').onclick = () => setMode('studio');
   $('tab-stickers').onclick = () => setMode('stickers');
+  $('btn-stats').onclick = () => openStats(draft);
   $('pick-work').onclick = () => openWorkPicker();
   $('wp-make').onclick = () => {
     closeSheet('sheet-workpick');
@@ -4345,6 +4371,7 @@ async function boot() {
   $('tab-play').onclick = () => {
     unlock();
     const h = location.hash.slice(1);
+    playSrc = isMachineHash(h) ? 'link' : 'shop';
     enterPlay(isMachineHash(h) ? h : 'draft');
   };
   bindSound();
@@ -4461,7 +4488,10 @@ async function boot() {
   // 一打開就是「逛機台」（使用者 2026-10-28：「把逛商店放在一開始第一頁」）；轉蛋連結、邀請連結照舊，#album／#shop／#create／#studio 直接到那一頁
   const h = location.hash.slice(1);
   if (h.startsWith('f.')) openInvite(h.slice(2));
-  else if (isMachineHash(h)) await enterPlay(h);
+  else if (isMachineHash(h)) {
+    playSrc = 'link';
+    await enterPlay(h);
+  }
   else if (['album', 'shop', 'create', 'studio', 'stickers'].includes(h)) setMode(h);
   else setMode('browse');
   // 等台紙、貼紙畫好再拿掉載入畫面
@@ -4470,7 +4500,10 @@ async function boot() {
   addEventListener('hashchange', () => {
     const tok = location.hash.slice(1);
     if (tok.startsWith('f.')) openInvite(tok.slice(2));
-    else if (isMachineHash(tok)) enterPlay(tok);
+    else if (isMachineHash(tok)) {
+      playSrc = 'link';
+      enterPlay(tok);
+    }
   });
 }
 
