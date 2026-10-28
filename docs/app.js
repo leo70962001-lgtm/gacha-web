@@ -2665,12 +2665,13 @@ async function renderShop() {
       await switchMachine(uid);
       enterPlay('draft');
     });
+    // 數據每台都放（使用者 2026-10-28：「加在這裡不然很不好找」）；還沒連結的那台打開是「先產生連結」的說明
+    btn(t('st.open'), 'stats', () => openStats(d, uid));
     if (id)
       btn(t('copy'), '', async () => {
         const url = shareBase() + '#s.' + id;
         toast((await copyText(url)) ? t('t.copied') : url);
       });
-    if (id && cloudReady()) btn(t('st.open'), '', () => openStats(d));
     btn(t('shop.dup'), '', () => dupMachine(uid));
     const del = btn(t('shop.del'), 'ghost', () => {
       // 按兩下才刪（第一下變成「確定拿掉？」）
@@ -2932,9 +2933,36 @@ async function addStudioCard({ design, card, music, target, qty, edit }) {
 
 // ---------- 機台的數據後台（使用者 2026-10-28：「可以知道有誰轉過自己的轉蛋跟國家分布」「參考 YouTube 的後台」，stats.js） ----------
 //   d＝那台的草稿（目前這台是記憶體裡的；我的商店的其他台是存起來的，照片是 base64）
-function openStats(d) {
-  if (!d?.cloud) return;
+//   uid＝我的商店那張卡的機台（還沒產生連結 → 說明＋「去產生連結」帶到那台的步驟 3）
+function openStats(d, uid = shop.cur) {
+  if (!d) return;
   $('st-title').textContent = t('st.title', { name: d.name || t('defaultMachine') });
+  if (!d.cloud) {
+    const root = $('st-root');
+    root.textContent = '';
+    const box = document.createElement('div');
+    box.className = 'st-nolink card-box';
+    const p = document.createElement('p');
+    p.textContent = t('st.noLink');
+    const go = document.createElement('button');
+    go.className = 'btn primary';
+    go.textContent = t('st.makeLink');
+    go.onclick = async () => {
+      closeSheet('sheet-stats');
+      await switchMachine(uid);
+      setMode('create');
+      const mk = $('make-link');
+      mk.scrollIntoView({ block: 'center' }); // 換了頁面，直接跳過去
+      mk.focus({ preventScroll: true });
+      mk.classList.remove('nudge');
+      void mk.offsetWidth;
+      mk.classList.add('nudge');
+    };
+    box.append(p, go);
+    root.append(box);
+    openSheet('sheet-stats', go);
+    return;
+  }
   const thumb = (it, i) => (it.img?.b64 ? `data:${it.img.mime};base64,${it.img.b64}` : d === draft ? thumbOf(draft, i).url : '');
   new MachineStats($('st-root'), {
     t,
