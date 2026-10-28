@@ -82,9 +82,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); min-height: 0; }
 .app[data-mode="play"] main { grid-template-columns: minmax(0, 1fr); }
 /* 我的商店、收集簿：整頁（機台舞台、開店表單都收起來） */
-.app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main { grid-template-columns: minmax(0, 1fr); }
-.app[data-mode="shop"] .stage, .app[data-mode="shop"] .panel, .app[data-mode="album"] .stage, .app[data-mode="album"] .panel, .app[data-mode="browse"] .stage, .app[data-mode="browse"] .panel { display: none; }
-.app[data-mode="shop"] #page-shop, .app[data-mode="album"] #page-album, .app[data-mode="browse"] #page-browse { display: block; }
+.app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main, .app[data-mode="studio"] main { grid-template-columns: minmax(0, 1fr); }
+.app[data-mode="shop"] .stage, .app[data-mode="shop"] .panel, .app[data-mode="album"] .stage, .app[data-mode="album"] .panel, .app[data-mode="browse"] .stage, .app[data-mode="browse"] .panel, .app[data-mode="studio"] .stage, .app[data-mode="studio"] .panel { display: none; }
+.app[data-mode="shop"] #page-shop, .app[data-mode="album"] #page-album, .app[data-mode="browse"] #page-browse, .app[data-mode="studio"] #page-studio { display: block; }
 .page { display: none; overflow-y: auto; background: var(--stage); min-height: 0; }
 .page-inner { max-width: 980px; margin: 0 auto; padding: 22px var(--gutter-r) 48px var(--gutter-l); display: grid; gap: 18px; }
 .page-head h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; }
@@ -216,7 +216,8 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .mb-note { margin: 0; font-size: 12px; color: var(--muted); }
 /* カード工房（cardstudio.js） */
 .add-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.sheet-card.studio { width: min(100%, 980px); }
+.studio-page { max-width: 1060px; }
+.studio-card { padding: 18px; }
 .studio-body { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 @media (min-width: 760px) { .studio-body { grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); align-items: start; } .cs-left { position: sticky; top: 0; } }
 .cs-left { display: grid; justify-items: center; }
@@ -244,10 +245,10 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .cs-music .cs-in { flex: 1; min-width: 160px; }
 .cs-ok { color: var(--muted); }
 .cs-play { padding: 5px 12px; }
-.cs-acts { display: flex; gap: 8px; flex-wrap: wrap; position: sticky; bottom: -20px; padding: 10px 0; background: var(--surface); }
+.cs-acts { display: flex; gap: 8px; flex-wrap: wrap; position: sticky; bottom: 0; padding: 10px 0; background: var(--surface); }
 /* 手機：卡的預覽縮小、黏在上面（往下改欄位時還看得到卡），按鈕排一列 */
 @media (max-width: 759px) {
-  .cs-left { position: sticky; top: -20px; z-index: 2; background: var(--surface); padding: 4px 0 8px; box-shadow: 0 8px 10px -8px rgba(0, 0, 0, 0.25); }
+  .cs-left { position: sticky; top: 0; z-index: 2; background: var(--surface); padding: 4px 0 8px; box-shadow: 0 8px 10px -8px rgba(0, 0, 0, 0.25); }
   .cs-preview { width: min(48vw, 190px); }
   .cs-acts .btn { padding: 8px 12px; font-size: 13px; }
 }
@@ -1090,7 +1091,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 
 @media (max-width: 860px) {
   main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(240px, 44%) minmax(0, 1fr); }
-  .app[data-mode="play"] main, .app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main { grid-template-rows: minmax(0, 1fr); }
+  .app[data-mode="play"] main, .app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main, .app[data-mode="studio"] main { grid-template-rows: minmax(0, 1fr); }
   .panel { border-left: 0; border-top: 2px solid var(--stroke); }
 }
 @media (max-width: 640px) {
@@ -1177,6 +1178,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <button id="tab-browse" role="tab" aria-selected="true" class="tab-ico" data-i18n-aria="tab.browse" aria-label="逛機台"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg><span data-i18n="tab.browse">逛機台</span></button>
       <button id="tab-create" role="tab" aria-selected="false" data-i18n="tab.create">開店設定</button>
       <button id="tab-play" role="tab" aria-selected="false" data-i18n="tab.play">轉轉看</button>
+      <button id="tab-studio" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.studio" aria-label="卡片工房"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="11" height="15" rx="2" transform="rotate(-8 8.5 12.5)"/><rect x="10" y="4" width="11" height="15" rx="2"/><path d="M13 8h5M13 11.5h5"/></svg><span data-i18n="tab.studio">卡片工房</span></button>
       <button id="tab-shop" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.shop" aria-label="我的商店"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 0 1-5.3 1.9A3 3 0 0 1 12 14a3 3 0 0 1-2.7-1.1A3 3 0 0 1 4 11z"/><path d="M6 14v6h12v-6"/><path d="M10 20v-4h4v4"/></svg><span data-i18n="tab.shop">我的商店</span></button>
       <button id="tab-album" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.album" aria-label="收集簿"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="15" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h4M12 12h4"/></svg><span data-i18n="tab.album">收集簿</span><b class="tab-badge" id="album-badge" hidden></b></button>
     </nav>
@@ -1349,6 +1351,16 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     </aside>
     <!-- 我的商店：我開的每一台機台 -->
     <!-- 逛機台：大家公開的機台（supabase/07_browse.sql） -->
+    <!-- カード工房（cardstudio.js）：對戰卡風格的卡片編輯，做好放進轉卡機（使用者 2026-10-28：「把卡片製作拆開到出來」→ 獨立一頁） -->
+    <section class="page" id="page-studio" hidden aria-labelledby="cs-title">
+      <div class="page-inner studio-page">
+        <header class="page-head">
+          <h1 id="cs-title" data-i18n="cs.title">卡片工房</h1>
+          <p class="lede" data-i18n="cs.lede"></p>
+        </header>
+        <div class="card-box studio-card"><div class="studio-body"></div></div>
+      </div>
+    </section>
     <section class="page" id="page-browse" hidden aria-labelledby="browse-title">
       <div class="page-inner">
         <header class="page-head">
@@ -1550,16 +1562,6 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 </div>
 
 <!-- 裁切對話框：逛機台的封面、獎品照片共用（拖曳調位置、滑桿／滾輪調大小；比例跟著輸出，app.js 的 openCrop） -->
-<!-- カード工房（cardstudio.js）：對戰卡風格的卡片編輯，做好放進轉卡機 -->
-<div class="sheet" id="sheet-studio" hidden>
-  <div class="sheet-card studio" role="dialog" aria-modal="true" aria-labelledby="cs-title">
-    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
-    <h2 id="cs-title" data-i18n="cs.title">カード工房</h2>
-    <p class="hint-text" data-i18n="cs.lede"></p>
-    <div class="studio-body"></div>
-  </div>
-</div>
-
 <div class="sheet" id="sheet-cover" hidden>
   <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="cv-title">
     <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>

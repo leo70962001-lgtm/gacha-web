@@ -2398,7 +2398,14 @@ function setMode(mode) {
   $('tab-shop').setAttribute('aria-selected', String(mode === 'shop'));
   $('tab-album').setAttribute('aria-selected', String(mode === 'album'));
   $('tab-browse').setAttribute('aria-selected', String(mode === 'browse'));
+  $('tab-studio').setAttribute('aria-selected', String(mode === 'studio'));
   $('page-browse').hidden = mode !== 'browse';
+  // カード工房（cardstudio.js）：第一次來才畫，之後保留做到一半的；離開時試聽停掉
+  $('page-studio').hidden = mode !== 'studio';
+  if (mode === 'studio') {
+    if (!studio?.built) cardStudio().open();
+    else studio.refreshTargets();
+  } else studio?.close();
   if (mode === 'browse') renderBrowse();
   $('page-shop').hidden = mode !== 'shop'; // 樣式表有 [hidden]{display:none} → 用屬性切換
   $('page-album').hidden = mode !== 'album';
@@ -2854,7 +2861,7 @@ let studio = null;
 function cardStudio() {
   studio =
     studio ||
-    new CardStudio($('sheet-studio'), {
+    new CardStudio($('page-studio'), {
       t, toast, sfx, openCrop, parseMediaUrl, mediaLabel,
       lang: () => lang,
       bgmUrl: (id) => asset(`bgm/${id}.mp3`),
@@ -2868,11 +2875,12 @@ function cardStudio() {
     });
   return studio;
 }
-// i＝改機台上的第幾張（沒給＝做新的）
+// i＝改機台上的第幾張（沒給＝做新的／接著上次的）
 function openStudio(i = -1) {
   const it = draft.items[i];
+  setMode('studio');
   if (it?.design) cardStudio().open(it.design, { uid: shop.cur, itemUid: it.uid, qty: it.qty, music: it.media ? { k: 'keep' } : { k: 'none' } });
-  else cardStudio().open();
+  else if (studio?.edit) cardStudio().open();
 }
 // 做好的卡放進轉卡機：整張卡面＝獎品照片（framed），設計留在草稿裡可以再改；音樂＝獎品的影音
 async function addStudioCard({ design, card, music, target, qty, edit }) {
@@ -4074,7 +4082,7 @@ async function boot() {
   $('shop-new').onclick = newMachine;
   $('open-studio').onclick = () => openStudio();
   $('shop-studio').onclick = () => openStudio();
-  $('sheet-studio').querySelector('[data-close]').addEventListener('click', () => cardStudio().close());
+  $('tab-studio').onclick = () => setMode('studio');
   $('mach-sel').onchange = () => switchMachine($('mach-sel').value);
   $('mach-new').onclick = newMachine;
   $('mach-dup').onclick = () => dupMachine(shop.cur);
@@ -4221,11 +4229,11 @@ async function boot() {
     console.error(e);
     return;
   }
-  // 一打開就是「逛機台」（使用者 2026-10-28：「把逛商店放在一開始第一頁」）；轉蛋連結、邀請連結照舊，#album／#shop／#create 直接到那一頁
+  // 一打開就是「逛機台」（使用者 2026-10-28：「把逛商店放在一開始第一頁」）；轉蛋連結、邀請連結照舊，#album／#shop／#create／#studio 直接到那一頁
   const h = location.hash.slice(1);
   if (h.startsWith('f.')) openInvite(h.slice(2));
   else if (isMachineHash(h)) await enterPlay(h);
-  else if (['album', 'shop', 'create'].includes(h)) setMode(h);
+  else if (['album', 'shop', 'create', 'studio'].includes(h)) setMode(h);
   else setMode('browse');
   // 等台紙、貼紙畫好再拿掉載入畫面
   await new Promise((r) => setTimeout(r, 200));

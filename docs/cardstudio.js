@@ -462,10 +462,11 @@ export const BGM_IDS = ['shop', 'arcade', 'sakura', 'night', 'festival', 'dream'
 
 // d＝{ t, lang(), toast, sfx, openCrop, targets() → [{ uid, label, cur }], onAdd(design, artCanvas, cardBlob, music, target, qty), parseMediaUrl, bgmUrl(id) }
 export class CardStudio {
-  constructor(sheet, d) {
-    this.sheet = sheet;
+  // root＝工房那一頁（使用者 2026-10-28：「把卡片製作拆開到出來」→ 從對話框改成上方列的一個分頁）
+  constructor(root, d) {
+    this.root = root;
     this.d = d;
-    this.box = sheet.querySelector('.studio-body');
+    this.box = root.querySelector('.studio-body');
     this.music = { k: 'none' };
     this.edit = null; // 正在改機台上的哪一張（{ uid, itemUid }），null＝新的一張
   }
@@ -484,12 +485,25 @@ export class CardStudio {
     if (this.ds.art?.b64) this.art = await createImageBitmap(new Blob([Uint8Array.from(atob(this.ds.art.b64), (c) => c.charCodeAt(0))], { type: this.ds.art.mime })).catch(() => null);
     await studioFonts();
     this.build();
-    this.sheet.hidden = false;
-    this.d.sfx?.open?.();
+    this.built = true;
   }
+  // 離開工房那頁：試聽停掉；放進機台以後下一張就是新的
   close() {
-    this.sheet.hidden = true;
     this.audio?.pause();
+    // 改的是機台上那張 → 下次來重畫成「做新的」（按鈕、放進哪台都換回來）
+    if (this.edit) {
+      this.edit = null;
+      this.built = false;
+    }
+  }
+  // 回到工房：機台可能多了、改了種類 → 重列「放進哪台」
+  refreshTargets() {
+    const sel = this.targetSel;
+    if (!sel?.isConnected) return;
+    const keep = sel.value;
+    sel.textContent = '';
+    for (const x of this.d.targets()) sel.append(new Option(x.label, x.uid, false, x.uid === keep || (!keep && x.cur)));
+    sel.append(new Option(this.d.t('cs.newMachine'), '__new', false, keep === '__new'));
   }
   saveLocal() {
     try {
@@ -692,6 +706,7 @@ export class CardStudio {
     const add = group(t('cs.addTo'));
     const trow = el('div', 'cs-row');
     const sel = el('select', 'cs-in');
+    this.targetSel = sel;
     for (const x of this.d.targets()) sel.append(new Option(x.label, x.uid, false, this.edit ? x.uid === this.edit.uid : x.cur));
     sel.append(new Option(t('cs.newMachine'), '__new'));
     const qty = el('input', 'cs-in cs-qty');
