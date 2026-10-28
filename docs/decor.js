@@ -385,6 +385,7 @@ export function drawPrizeCard(item, thumb, isNew) {
 // 卡片正面（59 × 86 mm 的比例）：轉卡機以圖為主 → 全圖卡（圖片鋪滿整張卡，外面一圈細稀有度框）
 // 分三層給 3D 照片效果用（cardkit.js 的 shader）：
 //   frame＝框＋稀有度章＋星星＋名字帶（窗的地方透明）、photo＝鋪滿窗的圖、depth＝從圖估出來的深度（白＝前、黑＝後）
+import { framedDepth } from './cardstudio.js';
 export const CARD_PX = { w: 512, h: 746 };
 export const CARD_WIN = { x: 18, y: 18, w: 476, h: 710 }; // 圖片窗（px）
 const STARS = [1, 2, 3, 4];
@@ -398,7 +399,9 @@ export function drawCardLayers(item, thumb, rarity = item.rarity, mask = null) {
   const pg = photo.getContext('2d');
   pg.fillStyle = '#fffaf2';
   pg.fillRect(0, 0, ww, wh);
-  if (thumb) drawCover(pg, thumb, 0, 0, ww, wh);
+  // カード工房的卡：整張卡面塞進窗（比例差 2%，直接拉）
+  if (thumb && item.framed) pg.drawImage(thumb, 0, 0, ww, wh);
+  else if (thumb) drawCover(pg, thumb, 0, 0, ww, wh);
   // 框層
   const frame = canvas(W, H);
   const g = frame.getContext('2d');
@@ -419,9 +422,9 @@ export function drawCardLayers(item, thumb, rarity = item.rarity, mask = null) {
   return {
     frame,
     photo,
-    bg: mask ? inpaintBehind(photo, mask) : null,
-    over: drawCardOver(item, rarity),
-    depth: mask ? depthFromMask(mask, ww, wh) : estimateDepth(photo),
+    bg: mask && !item.framed ? inpaintBehind(photo, mask) : null,
+    over: item.framed ? canvas(W, H) : drawCardOver(item, rarity),
+    depth: item.framed ? framedDepth() : mask ? depthFromMask(mask, ww, wh) : estimateDepth(photo),
   };
 }
 

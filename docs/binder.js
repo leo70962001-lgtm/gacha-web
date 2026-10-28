@@ -230,7 +230,7 @@ export class Binder {
       return m;
     }
     const fx = finOf(e.fin, it.r); // 店家選的表面加工
-    const b = el('button', `pk got r${it.r} fx-${fx}`);
+    const b = el('button', `pk got r${it.r} fx-${fx}${it.y ? ' framed' : ''}`); // framed＝カード工房的卡（圖本身就有名字）
     b.type = 'button';
     b.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
     const card = el('span', 'pk-card');

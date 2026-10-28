@@ -17,6 +17,7 @@ import { AlbumEdit, recount, ensureBase, titleOf } from './albumedit.js';
 import { copyText } from './copy.js';
 import { mountNowPlaying } from './nowplaying.js';
 import { MemberCard } from './member.js';
+import { CardStudio, BGM_IDS } from './cardstudio.js';
 import { applyAppTheme, cardSplash } from './cardpack.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
 function nowPlaying(box, m, o) {
@@ -237,6 +238,8 @@ function loadDraft(uid = shop.cur) {
     media: draftMedia(it.media),
     uid: typeof it.uid === 'string' ? it.uid : null,
     sticker: it.sticker && STICKER_FINS.includes(it.sticker.fin) ? { fin: it.sticker.fin, baked: !!it.sticker.baked } : null,
+    framed: !!(it.framed && it.img),
+    design: it.framed && it.design && typeof it.design === 'object' ? it.design : null,
   }));
   ensureUids(d);
   if (!THEME_KEYS.includes(d.theme)) d.theme = 'red';
@@ -339,6 +342,7 @@ function renderItems() {
     img.alt = '';
     img.src = thumbOf(draft, i).url;
     th.append(img);
+    if (it.framed) th.classList.add('framed');
     const name = document.createElement('input');
     name.className = 'name';
     name.value = it.name;
@@ -407,6 +411,13 @@ function renderItems() {
     for (const f of STICKER_FINS) ss.append(new Option(t('stk.asSticker', { f: t('stk.f.' + f) }), f));
     ss.value = it.sticker?.fin || '';
     mrow.append(ss);
+    if (it.framed && it.design) {
+      const eb = document.createElement('button');
+      eb.type = 'button';
+      eb.className = 'media-btn studio-edit';
+      eb.textContent = t('cs.editCard');
+      mrow.append(eb);
+    }
     li.append(th, name, del, meta, mrow);
     ul.append(li);
   });
@@ -1042,6 +1053,8 @@ function bindForm() {
     if (e.target.closest('.del')) {
       draft.items.splice(+li.dataset.i, 1);
       draftChanged(true);
+    } else if (e.target.closest('.studio-edit') || (e.target.closest('.thumb') && draft.items[+li.dataset.i].design)) {
+      openStudio(+li.dataset.i);
     } else if (e.target.closest('.thumb')) {
       fileFor = +li.dataset.i;
       $('file').value = '';
@@ -1793,7 +1806,7 @@ function showResult(idx, first, view = false) {
   resultPlayer?.stop();
   // 獎品＝3D 閃卡（寶可夢卡的閃法，holo.js）：轉卡機是卡片、轉蛋機是方形的壓克力牌；有去背的話做好大張的就換上
   const isCard = play.cfg.kind === 'card';
-  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, fin: finOf(play.cfg.fin, it.rarity), shape: isCard ? 'card' : 'square', name: it.name, tag: isCard };
+  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, fin: finOf(play.cfg.fin, it.rarity), shape: isCard ? 'card' : 'square', name: it.name, tag: isCard, framed: !!it.framed };
   // 有音樂／影片：獎品改成「正在播放」卡（使用者 2026-10-26：「有音樂或動畫的設計改成這樣的設計」，nowplaying.js），封面還是 3D 閃卡（「立體的功能要留著」）
   const hasMedia = !!it.media;
   $('r-prize').hidden = $('r-name').hidden = hasMedia;
@@ -2822,7 +2835,7 @@ async function albumSync() {
     const it = play.cfg.items[i];
     const nm = it.name;
     const th = thumbs[i];
-    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null };
+    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: 1 } : {}) };
     const n = play.got[i] || 0;
     const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0) + (e.cut[nm] || 0))); // 舊資料沒有 base：用 got 推回去
     if (base) e.base[nm] = base;
@@ -2834,6 +2847,63 @@ async function albumSync() {
   a[key] = e;
   store.set('clatter.album', a);
   memberCard().touch();
+}
+
+// ---------- カード工房（使用者 2026-10-28：「追加一個卡片 編輯 以遊戲王的卡牌型式為主…做完後可以追加到抽卡機裡」，cardstudio.js） ----------
+let studio = null;
+function cardStudio() {
+  studio =
+    studio ||
+    new CardStudio($('sheet-studio'), {
+      t, toast, sfx, openCrop, parseMediaUrl, mediaLabel,
+      lang: () => lang,
+      bgmUrl: (id) => asset(`bgm/${id}.mp3`),
+      // 可以放進去的機台：轉卡機（目前的用記憶體裡的草稿）
+      targets: () =>
+        shop.list
+          .map((uid, i) => ({ uid, i, d: uid === shop.cur ? draft : store.get(draftKey(uid)) }))
+          .filter((x) => x.d?.kind === 'card')
+          .map((x) => ({ uid: x.uid, label: switchLabel(x.i, x.d), cur: x.uid === shop.cur })),
+      onAdd: addStudioCard,
+    });
+  return studio;
+}
+// i＝改機台上的第幾張（沒給＝做新的）
+function openStudio(i = -1) {
+  const it = draft.items[i];
+  if (it?.design) cardStudio().open(it.design, { uid: shop.cur, itemUid: it.uid, qty: it.qty, music: it.media ? { k: 'keep' } : { k: 'none' } });
+  else cardStudio().open();
+}
+// 做好的卡放進轉卡機：整張卡面＝獎品照片（framed），設計留在草稿裡可以再改；音樂＝獎品的影音
+async function addStudioCard({ design, card, music, target, qty, edit }) {
+  if (target === '__new') {
+    await newMachine();
+    draft.items = []; // 新機台的範例獎品不要
+  } else if (target !== shop.cur) await switchMachine(target);
+  const blob = await new Promise((r) => card.toBlob(r, 'image/webp', 0.88));
+  const bytes = new Uint8Array(await (blob || (await new Promise((r) => card.toBlob(r, 'image/jpeg', 0.9)))).arrayBuffer());
+  const img = { bytes, mime: blob?.type === 'image/webp' ? 'image/webp' : 'image/jpeg' };
+  let idx = edit ? draft.items.findIndex((x) => x.uid === edit.itemUid) : -1;
+  if (idx < 0 && draft.items.length >= LIMITS.items) return toast(t('cs.full'));
+  const old = idx >= 0 ? draft.items[idx] : null;
+  const it = { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask: null, noMask: true, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: true, design };
+  if (music.k === 'none') it.media = null;
+  else if (music.k === 'preset') it.media = parseMediaUrl(`${PUBLIC_URL}assets/bgm/${BGM_IDS.includes(music.id) ? music.id : BGM_IDS[0]}.mp3`);
+  else if (music.k === 'url') it.media = parseMediaUrl(music.url) || it.media;
+  if (old) {
+    if (music.k !== 'keep' && music.k !== 'file' && old.media?.k === 'file' && old.media !== it.media) await removeLocal(old.media);
+    draft.items[idx] = it;
+  } else {
+    draft.items.push(it);
+    idx = draft.items.length - 1;
+  }
+  setMode('create');
+  draftChanged(true);
+  // 新開的機台是轉蛋機 → 換成轉卡機（跟按「カードガチャ」一樣：卡背、預覽、機台模型都換）
+  if (draft.kind !== 'card') [...$('kinds').children].find((b) => b.dataset.kind === 'card')?.click();
+  if (music.k === 'file' && music.file) await attachFile(idx, music.file);
+  sfx.stick?.();
+  toast(t(old ? 'cs.updated' : 'cs.added', { name: it.name, m: draft.name || t('defaultMachine') }));
 }
 
 // ---------- 收藏者會員卡（使用者 2026-10-28：Apple Wallet 會員卡，member.js＋supabase/functions/wallet） ----------
@@ -3475,7 +3545,7 @@ function openCardView(e, name) {
   cardPlayer?.stop();
   const md = it.md && mediaFromLink(it.md);
   $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
-  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name };
+  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: !!it.y };
   cardPlayer = md ? nowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
   if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）
@@ -4002,6 +4072,9 @@ async function boot() {
   $('browse-q').oninput = () => drawBrowse();
   $('browse-more').onclick = () => loadBrowse(false);
   $('shop-new').onclick = newMachine;
+  $('open-studio').onclick = () => openStudio();
+  $('shop-studio').onclick = () => openStudio();
+  $('sheet-studio').querySelector('[data-close]').addEventListener('click', () => cardStudio().close());
   $('mach-sel').onchange = () => switchMachine($('mach-sel').value);
   $('mach-new').onclick = newMachine;
   $('mach-dup').onclick = () => dupMachine(shop.cur);

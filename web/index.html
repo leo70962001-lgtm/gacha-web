@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&display=swap">
 <style>
 /* 版面：左邊是轉蛋機舞台（three.js），右邊是開店表單；玩家模式舞台全滿，UI 浮在上面。
    風格＝卡通描線（toon）：深藍粗線、硬邊陰影，跟 Gemini 貼紙同一套線條 */
@@ -213,6 +214,54 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .btn.mb-wallet { display: inline-flex; align-items: center; gap: 8px; background: #000; color: #fff; border-color: #000; }
 .btn.mb-wallet svg { width: 20px; height: 20px; }
 .mb-note { margin: 0; font-size: 12px; color: var(--muted); }
+/* カード工房（cardstudio.js） */
+.add-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.sheet-card.studio { width: min(100%, 980px); }
+.studio-body { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+@media (min-width: 760px) { .studio-body { grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); align-items: start; } .cs-left { position: sticky; top: 0; } }
+.cs-left { display: grid; justify-items: center; }
+.cs-preview { width: min(100%, 360px); height: auto; border-radius: 14px; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3); background: #222; }
+.cs-right { display: grid; gap: 12px; min-width: 0; }
+.cs-group { display: grid; gap: 6px; min-width: 0; }
+.cs-group[hidden] { display: none; }
+.cs-label { font-weight: 800; font-size: 13px; }
+.cs-chips { gap: 5px; }
+.cs-chips .chip[aria-pressed="true"], .cs-arrows .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.cs-in { width: 100%; box-sizing: border-box; padding: 7px 10px; border: 2px solid var(--stroke); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; }
+textarea.cs-in { resize: vertical; min-height: 90px; }
+.cs-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cs-row .cs-in { flex: 1; min-width: 110px; }
+.cs-row input[type="color"] { width: 44px; height: 32px; padding: 0; border: 2px solid var(--stroke); border-radius: 8px; background: none; }
+.cs-check { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.cs-stat { display: flex; align-items: center; gap: 6px; font-weight: 800; }
+.cs-stat .cs-in { width: 90px; flex: none; }
+.cs-stat[hidden] { display: none; }
+.cs-qty { flex: none !important; width: 80px !important; min-width: 0 !important; }
+.cs-arrows { display: grid; grid-template-columns: repeat(3, 44px); gap: 5px; }
+.cs-arrows .chip { height: 34px; font-size: 16px; padding: 0; }
+.cs-link { display: grid; place-items: center; font-weight: 900; font-size: 11px; color: var(--muted); }
+.cs-music { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cs-music .cs-in { flex: 1; min-width: 160px; }
+.cs-ok { color: var(--muted); }
+.cs-play { padding: 5px 12px; }
+.cs-acts { display: flex; gap: 8px; flex-wrap: wrap; position: sticky; bottom: -20px; padding: 10px 0; background: var(--surface); }
+/* 手機：卡的預覽縮小、黏在上面（往下改欄位時還看得到卡），按鈕排一列 */
+@media (max-width: 759px) {
+  .cs-left { position: sticky; top: -20px; z-index: 2; background: var(--surface); padding: 4px 0 8px; box-shadow: 0 8px 10px -8px rgba(0, 0, 0, 0.25); }
+  .cs-preview { width: min(48vw, 190px); }
+  .cs-acts .btn { padding: 8px 12px; font-size: 13px; }
+}
+.item .thumb.framed img { object-fit: contain; background: #1c2340; }
+/* カード工房的卡：圖本身就有框 → 不再加稀有度框、名字牌，照片鋪滿整張 */
+.tilt.framed .t-back { inset: 0; transform: none; }
+.tilt.framed .t-frame { border: 0; box-shadow: 0 0 0 2px #1c2340; }
+.tilt.framed .t-photo { background-size: 100% 100%; }
+.pk.framed .pk-name { display: none; } /* 卡冊：卡自己有名字 */
+.pk.framed .pk-card { background-size: 100% 100%; }
+.tilt.framed .t-fshine { display: none !important; } /* 框的反光圈：卡自己有框，不要再一圈彩虹 */
+/* 閃只在卡圖上（像真的對戰卡的ホロ），名字、效果欄不上彩虹色；卡圖在卡上的位置＝cardstudio.js 的 ART（70,158,450 / 590×860） */
+.tilt.framed .t-tint { -webkit-mask: linear-gradient(#000 0 0) 50% 38.6% / 76.3% 52.3% no-repeat; mask: linear-gradient(#000 0 0) 50% 38.6% / 76.3% 52.3% no-repeat; }
+.tilt.framed .t-shine { -webkit-mask: var(--spot), linear-gradient(#000 0 0) 50% 38.6% / 76.3% 52.3% no-repeat; -webkit-mask-composite: source-in; mask: var(--spot), linear-gradient(#000 0 0) 50% 38.6% / 76.3% 52.3% no-repeat; mask-composite: intersect; }
 /* 把卡帶出去（cardpack.js）：App 主題開關、素材格子、開場動畫 */
 /* 帶出去分頁：上面選主題卡、下面素材 */
 .pk-page { display: grid; gap: 14px; justify-items: center; width: 100%; min-width: 0; }
@@ -1209,7 +1258,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
           <li class="step">
             <header><span class="num">1</span><h2 data-i18n="step1">放進獎品</h2><span class="aside" id="items-sum"></span></header>
             <ul class="items" id="items"></ul>
-            <button class="btn ghost" id="add-item" data-i18n="addItem">＋ 新增獎品</button>
+            <div class="row add-row"><button class="btn ghost" id="add-item" data-i18n="addItem">＋ 新增獎品</button><button class="btn ghost" id="open-studio" data-i18n="cs.open">🃏 カード工房で作る</button></div>
             <p class="hint-text" data-i18n="itemsHint"></p>
           </li>
           <li class="step">
@@ -1323,7 +1372,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         </header>
         <div class="shop-sum" id="shop-sum"></div>
         <div class="shop-list" id="shop-list"></div>
-        <button class="btn primary big" id="shop-new" data-i18n="shop.new">＋ 開一台新機台</button>
+        <div class="row add-row"><button class="btn primary big" id="shop-new" data-i18n="shop.new">＋ 開一台新機台</button><button class="btn big" id="shop-studio" data-i18n="cs.open">🃏 カード工房で作る</button></div>
       </div>
     </section>
     <!-- 收集簿：我轉到的所有獎品（每台機台一頁） -->
@@ -1501,6 +1550,16 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 </div>
 
 <!-- 裁切對話框：逛機台的封面、獎品照片共用（拖曳調位置、滑桿／滾輪調大小；比例跟著輸出，app.js 的 openCrop） -->
+<!-- カード工房（cardstudio.js）：對戰卡風格的卡片編輯，做好放進轉卡機 -->
+<div class="sheet" id="sheet-studio" hidden>
+  <div class="sheet-card studio" role="dialog" aria-modal="true" aria-labelledby="cs-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="cs-title" data-i18n="cs.title">カード工房</h2>
+    <p class="hint-text" data-i18n="cs.lede"></p>
+    <div class="studio-body"></div>
+  </div>
+</div>
+
 <div class="sheet" id="sheet-cover" hidden>
   <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="cv-title">
     <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>

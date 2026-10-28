@@ -36,7 +36,7 @@ export async function encodeConfig(cfg) {
     s: cfg.shop,
     t: cfg.theme,
     p: [cfg.price.coins, cfg.price.unit, cfg.price.cur],
-    // 每列：[名稱, 稀有度, 數量, 圖片長度, 圖片格式, 影音連結, 獎品 id, 遮罩長度, 遮罩格式, 貼紙]（後面沒有就省略）
+    // 每列：[名稱, 稀有度, 數量, 圖片長度, 圖片格式, 影音連結, 獎品 id, 遮罩長度, 遮罩格式, 貼紙, 整張卡面 y]（後面沒有就省略）
     //   貼紙（使用者 2026-10-26）：加工代號（d ボンドロ…）＋「b」＝照片本身已經是做好的貼紙；轉到就放進買家的シール帳
     //   遮罩＝主體去背（seg.js），位元組接在同一個獎品的照片後面
     i: cfg.items.map((it) => {
@@ -63,6 +63,12 @@ export async function encodeConfig(cfg) {
         const pad = [0, '', null, '', 0, ''];
         while (row.length < 9) row.push(pad[row.length - 3]);
         row.push(finCode(it.sticker.fin) + (it.sticker.baked ? 'b' : ''));
+      }
+      // カード工房做的卡（使用者 2026-10-28）：照片本身就是完整的卡面 → 機台、結果卡、收集簿不再加框跟名字牌
+      if (it.framed && it.img) {
+        const pad = [0, '', null, '', 0, '', ''];
+        while (row.length < 10) row.push(pad[row.length - 3]);
+        row.push('y');
       }
       return row;
     }),
@@ -138,7 +144,7 @@ export async function decodeConfig(token) {
   }
   let off = j.__off;
   const items = (Array.isArray(j.i) ? j.i : []).slice(0, LIMITS.items).map((r) => {
-    const [name, rarity, qty, len, fmt, media, uid, mlen, mfmt, stk] = Array.isArray(r) ? r : [];
+    const [name, rarity, qty, len, fmt, media, uid, mlen, mfmt, stk, yc] = Array.isArray(r) ? r : [];
     let img = null;
     let mask = null;
     if (Number.isInteger(len) && len > 0 && off + len <= buf.length) {
@@ -158,6 +164,7 @@ export async function decodeConfig(token) {
       uid: typeof uid === 'string' && /^[0-9A-Za-z]{4,12}$/.test(uid) ? uid : null,
       mask,
       sticker: typeof stk === 'string' && finFromCode(stk[0]) ? { fin: finFromCode(stk[0]), baked: stk[1] === 'b' } : null,
+      framed: yc === 'y' && !!img,
     };
   });
   if (!items.length) throw new Error('e.empty');

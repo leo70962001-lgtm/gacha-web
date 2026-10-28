@@ -74,7 +74,8 @@ export class Holo {
     const fx = d.fin || ['none', 'holo', 'texture', 'gold'][d.r] || 'none';
     el.className = `tilt r${d.r} fx-${fx} ${d.shape === 'card' ? '' : d.shape}`;
     el.classList.toggle('pop', !!d.s);
-    el.classList.toggle('no-tag', d.tag === false);
+    el.classList.toggle('no-tag', d.tag === false || !!d.framed);
+    el.classList.toggle('framed', !!d.framed); // カード工房的卡：圖本身就有框
     el.style.setProperty('--rc', `var(--r-${R})`);
     this.$('.t-photo').style.backgroundImage = `url("${d.s ? d.b || d.t : d.t}")`;
     this.$('.t-simg').style.backgroundImage = d.s ? `url("${d.s}")` : 'none';
