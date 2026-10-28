@@ -424,7 +424,7 @@ export function drawCardLayers(item, thumb, rarity = item.rarity, mask = null) {
     photo,
     bg: mask && !item.framed ? inpaintBehind(photo, mask) : null,
     over: item.framed ? canvas(W, H) : drawCardOver(item, rarity),
-    depth: item.framed ? framedDepth() : mask ? depthFromMask(mask, ww, wh) : estimateDepth(photo),
+    depth: item.framed ? framedDepth(item.framed) : mask ? depthFromMask(mask, ww, wh) : estimateDepth(photo),
   };
 }
 

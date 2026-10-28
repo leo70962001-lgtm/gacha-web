@@ -8,7 +8,7 @@ import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
 import { cutout } from './seg.js';
 import { Holo } from './holo.js';
-import { bakeSticker, hasAlpha, loadBook, saveBook, stickerBlob, stickerUrl, createPack, addToPack, markPackOpened, claimPackItem, STICKER_FINS, STICKER_SHAPES, PRESETS, presetFile } from './sticker.js';
+import { addSticker, bakeSticker, hasAlpha, loadBook, saveBook, stickerBlob, stickerUrl, createPack, addToPack, markPackOpened, claimPackItem, STICKER_FINS, STICKER_SHAPES, PRESETS, presetFile } from './sticker.js';
 import { openPeel, drawFoilPack, FOIL, FOIL_DRAWN } from './peel.js';
 import { StickerBook } from './stickerbook.js';
 import { Binder, renderShelf } from './binder.js';
@@ -17,7 +17,7 @@ import { AlbumEdit, recount, ensureBase, titleOf } from './albumedit.js';
 import { copyText } from './copy.js';
 import { mountNowPlaying } from './nowplaying.js';
 import { MemberCard } from './member.js';
-import { CardStudio, BGM_IDS } from './cardstudio.js';
+import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT } from './cardstudio.js';
 import { applyAppTheme, cardSplash } from './cardpack.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
 function nowPlaying(box, m, o) {
@@ -238,7 +238,7 @@ function loadDraft(uid = shop.cur) {
     media: draftMedia(it.media),
     uid: typeof it.uid === 'string' ? it.uid : null,
     sticker: it.sticker && STICKER_FINS.includes(it.sticker.fin) ? { fin: it.sticker.fin, baked: !!it.sticker.baked } : null,
-    framed: !!(it.framed && it.img),
+    framed: it.framed && it.img ? (it.framed === 'monster' ? 'monster' : 'duel') : false, // 舊草稿 true＝遊戲王風
     design: it.framed && it.design && typeof it.design === 'object' ? it.design : null,
   }));
   ensureUids(d);
@@ -423,6 +423,7 @@ function renderItems() {
   });
   $('items-sum').textContent = t('itemsSum', { n: draft.items.length, q: total });
   $('add-item').disabled = draft.items.length >= LIMITS.items;
+  $('pick-work').hidden = draft.kind !== 'card';
 }
 
 function pct(x) {
@@ -972,6 +973,7 @@ async function applyBg(bg) {
 
 
 function draftChanged(redrawItems = false) {
+  $('pick-work').hidden = draft.kind !== 'card'; // 換機台種類也要跟著藏／出現
   if (redrawItems) renderItems();
   else {
     const total = draft.items.reduce((a, b) => a + b.qty, 0);
@@ -1806,7 +1808,7 @@ function showResult(idx, first, view = false) {
   resultPlayer?.stop();
   // 獎品＝3D 閃卡（寶可夢卡的閃法，holo.js）：轉卡機是卡片、轉蛋機是方形的壓克力牌；有去背的話做好大張的就換上
   const isCard = play.cfg.kind === 'card';
-  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, fin: finOf(play.cfg.fin, it.rarity), shape: isCard ? 'card' : 'square', name: it.name, tag: isCard, framed: !!it.framed };
+  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, fin: finOf(play.cfg.fin, it.rarity), shape: isCard ? 'card' : 'square', name: it.name, tag: isCard, framed: it.framed || false };
   // 有音樂／影片：獎品改成「正在播放」卡（使用者 2026-10-26：「有音樂或動畫的設計改成這樣的設計」，nowplaying.js），封面還是 3D 閃卡（「立體的功能要留著」）
   const hasMedia = !!it.media;
   $('r-prize').hidden = $('r-name').hidden = hasMedia;
@@ -2399,6 +2401,12 @@ function setMode(mode) {
   $('tab-album').setAttribute('aria-selected', String(mode === 'album'));
   $('tab-browse').setAttribute('aria-selected', String(mode === 'browse'));
   $('tab-studio').setAttribute('aria-selected', String(mode === 'studio'));
+  $('tab-stickers').setAttribute('aria-selected', String(mode === 'stickers'));
+  $('page-stickers').hidden = mode !== 'stickers';
+  if (mode === 'stickers') {
+    renderMaker();
+    renderMyStickers();
+  }
   $('page-browse').hidden = mode !== 'browse';
   // カード工房（cardstudio.js）：第一次來才畫，之後保留做到一半的；離開時試聽停掉
   $('page-studio').hidden = mode !== 'studio';
@@ -2842,7 +2850,7 @@ async function albumSync() {
     const it = play.cfg.items[i];
     const nm = it.name;
     const th = thumbs[i];
-    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: 1 } : {}) };
+    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : 1 } : {}) };
     const n = play.got[i] || 0;
     const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0) + (e.cut[nm] || 0))); // 舊資料沒有 base：用 got 推回去
     if (base) e.base[nm] = base;
@@ -2894,7 +2902,7 @@ async function addStudioCard({ design, card, music, target, qty, edit }) {
   let idx = edit ? draft.items.findIndex((x) => x.uid === edit.itemUid) : -1;
   if (idx < 0 && draft.items.length >= LIMITS.items) return toast(t('cs.full'));
   const old = idx >= 0 ? draft.items[idx] : null;
-  const it = { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask: null, noMask: true, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: true, design };
+  const it = { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask: null, noMask: true, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: design.style === 'monster' ? 'monster' : 'duel', design };
   if (music.k === 'none') it.media = null;
   else if (music.k === 'preset') it.media = parseMediaUrl(`${PUBLIC_URL}assets/bgm/${BGM_IDS.includes(music.id) ? music.id : BGM_IDS[0]}.mp3`);
   else if (music.k === 'url') it.media = parseMediaUrl(music.url) || it.media;
@@ -2977,14 +2985,16 @@ function renderAlbumTabsOnly() {
 // 做貼紙（可以一次做好幾張，使用者 2026-10-27：CapLog「複数のステッカーつくれる」）：
 //   手繪素材點一下＝選／取消（可以選好幾個）、「用照片做」＝裁切＋自動去背，一張一張加進來；形狀、加工整批一樣
 //   「シートにする」→ 做成一張台紙 → 馬上打開（peel.js）：一張一張用手指慢慢撕下來才會放進シール帳
-const mk = { srcs: [], shape: 'cut', fin: 'drop', then: null };
+const mk = { srcs: [], shape: 'cut', fin: 'drop', pack: store.get('clatter.stkPack') || 'sheet', then: null };
+// 做好的貼紙的包裝（使用者 2026-10-28：「做好的貼紙可以選包裝」）：鋁箔袋（撕開）／台紙（直接撕貼紙）／不包裝（直接進貼紙簿）
+const STK_PACKS = ['foil', 'sheet', 'none'];
 function openStickerMaker(then) {
   mk.then = then || null;
   mk.srcs = [];
   mk.shape = 'cut';
   $('sk-name').value = '';
-  renderMaker();
-  openSheet('sheet-sticker', $('sk-pick'));
+  setMode('stickers');
+  $('sk-pick').focus();
 }
 // 手繪素材 → 做貼紙的原圖（已經去背 → 沿輪廓）
 const presetImgs = new Map();
@@ -3087,7 +3097,7 @@ async function onStickerFiles(files) {
     if (!c) continue;
     const s = { src: c, mask: null, preset: -1, name: f.name.replace(/\.[^.]+$/, '').slice(0, 24) || t('stk.defaultName'), alpha: hasAlpha(c) };
     mk.srcs.push(s);
-    if ($('sheet-sticker').hidden) openSheet('sheet-sticker', $('sk-save'));
+    if (app.dataset.mode !== 'stickers') setMode('stickers');
     renderMaker();
     if (s.alpha) continue; // 已經去背的圖（PNG）→ 直接用它的透明
     s.cutting = true;
@@ -3100,6 +3110,25 @@ async function onStickerFiles(files) {
 const canCut = (s) => s.alpha || !!s.mask;
 const shapeOf = (s) => (mk.shape === 'cut' && !canCut(s) ? 'circle' : mk.shape);
 function renderMaker() {
+  const pb = $('sk-packs');
+  if (!pb.childElementCount)
+    for (const v of STK_PACKS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.dataset.v = v;
+      b.setAttribute('role', 'radio');
+      b.onclick = () => {
+        mk.pack = v;
+        store.set('clatter.stkPack', v);
+        renderMaker();
+      };
+      pb.append(b);
+    }
+  for (const b of pb.children) {
+    b.textContent = t('stk.pk.' + b.dataset.v);
+    b.setAttribute('aria-checked', String(b.dataset.v === mk.pack));
+  }
   const box = $('sk-shapes');
   if (!box.childElementCount) {
     for (const v of STICKER_SHAPES) {
@@ -3194,19 +3223,41 @@ function bindMaker() {
     const list = mk.srcs.slice();
     if (!list.length) return;
     $('sk-save').disabled = true;
-    const pk = await createPack({ kind: 'sheet', title: t('peel.sheetTitle'), src: 'made' });
+    const kind = STK_PACKS.includes(mk.pack) ? mk.pack : 'sheet';
+    const then = mk.then;
+    mk.then = null;
+    // 不包裝：直接放進貼紙簿
+    if (kind === 'none') {
+      let first = null;
+      for (const [i, s] of list.entries()) {
+        const name = list.length === 1 ? $('sk-name').value.trim() || s.name : s.name;
+        const st = await addSticker(bakeSticker(s.src, { mask: s.mask, shape: shapeOf(s), fin: mk.fin, size: 512, seed: i + 1 }), { name, fin: mk.fin, shape: shapeOf(s) });
+        first = first || st;
+      }
+      mk.srcs = [];
+      $('sk-save').disabled = false;
+      sfx.stick?.();
+      renderMaker();
+      refreshStickerBook();
+      renderMyStickers();
+      toast(t('stk.savedDirect', { n: list.length }));
+      if (first) then?.(first);
+      return;
+    }
+    const pk = await createPack({ kind, title: t(kind === 'foil' ? 'peel.foilTitle' : 'peel.sheetTitle'), src: 'made' });
     for (const [i, s] of list.entries()) {
       const name = list.length === 1 ? $('sk-name').value.trim() || s.name : s.name;
       await addToPack(pk.id, bakeSticker(s.src, { mask: s.mask, shape: shapeOf(s), fin: mk.fin, size: 512, seed: i + 1 }), { name, fin: mk.fin, shape: shapeOf(s) });
     }
     mk.srcs = [];
-    closeSheet('sheet-sticker');
+    renderMaker();
     sfx.pop();
     refreshStickerBook();
-    const then = mk.then;
-    mk.then = null;
-    // 做好的那張台紙直接打開：一張一張撕下來
-    openPack(pk.id, (saved) => saved.length && then?.(saved[0]));
+    // 做好的包裝直接打開：鋁箔袋先撕開、台紙一張一張撕下來
+    openPack(pk.id, (saved) => {
+      renderMyStickers();
+      if (saved.length) then?.(saved[0]);
+    });
   };
 }
 
@@ -3349,7 +3400,83 @@ function bindMachineStickers() {
     openStickerMaker((st) => stickToMachine(st));
   };
 }
-async function openStickerPicker() {
+// 貼紙工房上面那一格：貼紙簿裡做好的貼紙，每張可以放進轉蛋、貼到機台
+async function renderMyStickers() {
+  const box = $('my-stickers');
+  const b = loadBook();
+  box.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'works-head';
+  const h = document.createElement('h2');
+  h.textContent = t('stk.mine');
+  const n = document.createElement('small');
+  n.textContent = t('stk.mineN', { n: b.list.length, p: b.packs.filter((x) => x.items.some((i) => !i.saved)).length });
+  head.append(h, n);
+  box.append(head);
+  const grid = document.createElement('div');
+  grid.className = 'my-stk-grid';
+  for (const x of b.list.slice().sort((p, q) => (q.ts || 0) - (p.ts || 0))) {
+    const cell = document.createElement('div');
+    cell.className = 'my-stk';
+    const im = document.createElement('img');
+    im.alt = x.name;
+    im.src = (await stickerUrl(x.id)) || '';
+    const nm = document.createElement('b');
+    nm.textContent = x.name + (x.n > 1 ? ` ×${x.n}` : '');
+    const acts = document.createElement('div');
+    acts.className = 'work-acts';
+    const g = document.createElement('button');
+    g.type = 'button';
+    g.className = 'btn sun';
+    g.textContent = t('stk.toGacha');
+    g.onclick = () => stickerToGacha(x);
+    const m = document.createElement('button');
+    m.type = 'button';
+    m.className = 'btn';
+    m.textContent = t('stk.toMachine');
+    m.onclick = () => stickToMachine(x);
+    acts.append(g, m);
+    cell.append(im, nm, acts);
+    grid.append(cell);
+  }
+  if (!b.list.length) {
+    const e = document.createElement('p');
+    e.className = 'hint-text';
+    e.textContent = t('stk.pickEmpty');
+    box.append(e);
+  } else box.append(grid);
+}
+// 從作品冊挑卡片放進目前這台轉卡機（使用者 2026-10-28：「所以卡片的景品去製作的卡片簿選」）
+async function openWorkPicker() {
+  const grid = $('wp-grid');
+  grid.textContent = '';
+  let works = [];
+  try {
+    works = await listWorks();
+  } catch {}
+  $('wp-empty').hidden = !!works.length;
+  for (const w of works) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sp-tile';
+    btn.title = w.d?.name || '';
+    const im = document.createElement('img');
+    im.src = w.thumb;
+    im.alt = w.d?.name || '';
+    btn.append(im);
+    btn.onclick = async () => {
+      closeSheet('sheet-workpick');
+      const art = w.d?.art?.b64 ? await createImageBitmap(new Blob([Uint8Array.from(atob(w.d.art.b64), (c) => c.charCodeAt(0))], { type: w.d.art.mime })).catch(() => null) : null;
+      await studioFonts();
+      await addStudioCard({ design: { ...w.d, wid: w.id }, card: drawDesignCard(w.d, art, CARD_OUT[0], lang), music: w.m || { k: 'none' }, target: shop.cur, qty: 3, edit: null });
+    };
+    grid.append(btn);
+  }
+  openSheet('sheet-workpick', grid.querySelector('button') || $('wp-make'));
+}
+// 挑貼紙：預設＝貼到機台；onPick 換掉＝放進轉蛋當獎品
+async function openStickerPicker(onPick = stickToMachine, title = t('stk.pickTitle')) {
+  $('sp-title').textContent = title;
   const grid = $('sp-grid');
   grid.textContent = '';
   const b = loadBook();
@@ -3365,7 +3492,7 @@ async function openStickerPicker() {
     btn.append(im);
     btn.onclick = () => {
       closeSheet('sheet-stkpick');
-      stickToMachine(x);
+      onPick(x);
     };
     grid.append(btn);
   }
@@ -3553,7 +3680,7 @@ function openCardView(e, name) {
   cardPlayer?.stop();
   const md = it.md && mediaFromLink(it.md);
   $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
-  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: !!it.y };
+  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: it.y === 'm' ? 'monster' : it.y ? 'duel' : false };
   cardPlayer = md ? nowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
   if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）
@@ -4083,6 +4210,13 @@ async function boot() {
   $('open-studio').onclick = () => openStudio();
   $('shop-studio').onclick = () => openStudio();
   $('tab-studio').onclick = () => setMode('studio');
+  $('tab-stickers').onclick = () => setMode('stickers');
+  $('pick-work').onclick = () => openWorkPicker();
+  $('wp-make').onclick = () => {
+    closeSheet('sheet-workpick');
+    openStudio();
+  };
+  $('pick-stk').onclick = () => openStickerPicker(stickerToGacha, t('stk.pickPrizeTitle'));
   $('mach-sel').onchange = () => switchMachine($('mach-sel').value);
   $('mach-new').onclick = newMachine;
   $('mach-dup').onclick = () => dupMachine(shop.cur);
@@ -4233,7 +4367,7 @@ async function boot() {
   const h = location.hash.slice(1);
   if (h.startsWith('f.')) openInvite(h.slice(2));
   else if (isMachineHash(h)) await enterPlay(h);
-  else if (['album', 'shop', 'create', 'studio'].includes(h)) setMode(h);
+  else if (['album', 'shop', 'create', 'studio', 'stickers'].includes(h)) setMode(h);
   else setMode('browse');
   // 等台紙、貼紙畫好再拿掉載入畫面
   await new Promise((r) => setTimeout(r, 200));

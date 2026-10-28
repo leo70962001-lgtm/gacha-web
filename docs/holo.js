@@ -76,6 +76,7 @@ export class Holo {
     el.classList.toggle('pop', !!d.s);
     el.classList.toggle('no-tag', d.tag === false || !!d.framed);
     el.classList.toggle('framed', !!d.framed); // カード工房的卡：圖本身就有框
+    el.classList.toggle('fm', d.framed === 'monster'); // 寶可夢風：卡圖是橫的（閃的範圍不一樣）
     el.style.setProperty('--rc', `var(--r-${R})`);
     this.$('.t-photo').style.backgroundImage = `url("${d.s ? d.b || d.t : d.t}")`;
     this.$('.t-simg').style.backgroundImage = d.s ? `url("${d.s}")` : 'none';

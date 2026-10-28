@@ -82,9 +82,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); min-height: 0; }
 .app[data-mode="play"] main { grid-template-columns: minmax(0, 1fr); }
 /* 我的商店、收集簿：整頁（機台舞台、開店表單都收起來） */
-.app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main, .app[data-mode="studio"] main { grid-template-columns: minmax(0, 1fr); }
-.app[data-mode="shop"] .stage, .app[data-mode="shop"] .panel, .app[data-mode="album"] .stage, .app[data-mode="album"] .panel, .app[data-mode="browse"] .stage, .app[data-mode="browse"] .panel, .app[data-mode="studio"] .stage, .app[data-mode="studio"] .panel { display: none; }
-.app[data-mode="shop"] #page-shop, .app[data-mode="album"] #page-album, .app[data-mode="browse"] #page-browse, .app[data-mode="studio"] #page-studio { display: block; }
+.app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main, .app[data-mode="studio"] main, .app[data-mode="stickers"] main { grid-template-columns: minmax(0, 1fr); }
+.app[data-mode="shop"] .stage, .app[data-mode="shop"] .panel, .app[data-mode="album"] .stage, .app[data-mode="album"] .panel, .app[data-mode="browse"] .stage, .app[data-mode="browse"] .panel, .app[data-mode="studio"] .stage, .app[data-mode="studio"] .panel, .app[data-mode="stickers"] .stage, .app[data-mode="stickers"] .panel { display: none; }
+.app[data-mode="shop"] #page-shop, .app[data-mode="album"] #page-album, .app[data-mode="browse"] #page-browse, .app[data-mode="studio"] #page-studio, .app[data-mode="stickers"] #page-stickers { display: block; }
 .page { display: none; overflow-y: auto; background: var(--stage); min-height: 0; }
 .page-inner { max-width: 980px; margin: 0 auto; padding: 22px var(--gutter-r) 48px var(--gutter-l); display: grid; gap: 18px; }
 .page-head h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; }
@@ -217,7 +217,37 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 /* カード工房（cardstudio.js） */
 .add-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .studio-page { max-width: 1060px; }
-.studio-card { padding: 18px; }
+.studio-card { padding: 18px; scroll-margin-top: 10px; }
+/* 作品冊：做好的卡（IndexedDB），每張可以編輯、放進機台、刪除 */
+.works-box { padding: 14px 16px; display: grid; gap: 10px; }
+.works-head { display: flex; align-items: baseline; gap: 10px; }
+.works-head h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 20px; }
+.works-head small { color: var(--muted); }
+.works-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(150px, 44%), 1fr)); gap: 10px; }
+@media (max-width: 430px) { .work-new { min-height: 140px; } .work-acts .btn { padding: 3px 7px; font-size: 11px; } }
+.work { display: grid; gap: 4px; align-content: start; padding: 8px; border: 2px solid var(--line); border-radius: 14px; background: var(--surface-2); min-width: 0; }
+.work.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.work img { width: 100%; aspect-ratio: 590 / 860; object-fit: cover; border-radius: 8px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2); }
+.work b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.work small { color: var(--muted); font-size: 11px; }
+.work-acts { display: flex; flex-wrap: wrap; gap: 4px; }
+.work-acts .btn { padding: 4px 9px; font-size: 12px; box-shadow: 2px 2px 0 var(--stroke); }
+.work-put { display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr) 64px; }
+.work-put[hidden] { display: none; }
+.work-put .btn { grid-column: 1 / -1; padding: 5px; font-size: 12px; }
+.work-put .cs-qty { width: 64px !important; }
+.work-new { place-items: center; align-content: center; min-height: 200px; border-style: dashed; cursor: pointer; color: var(--muted); font: inherit; }
+.work-plus { font-size: 34px; line-height: 1; }
+.wp-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.wp-grid .sp-tile img { aspect-ratio: 590 / 860; object-fit: cover; border-radius: 6px; }
+.stk-studio { padding: 18px; display: grid; gap: 12px; }
+.stk-studio h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 20px; }
+.stk-studio .sk-stage { max-width: 520px; }
+.my-stk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.my-stk { display: grid; gap: 4px; justify-items: center; padding: 8px; border: 2px solid var(--line); border-radius: 14px; background: var(--surface-2); min-width: 0; }
+.my-stk img { width: 84px; height: 84px; object-fit: contain; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25)); }
+.my-stk b { font-size: 12px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.my-stk .work-acts { justify-content: center; }
 .studio-body { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 @media (min-width: 760px) { .studio-body { grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); align-items: start; } .cs-left { position: sticky; top: 0; } }
 .cs-left { display: grid; justify-items: center; }
@@ -241,6 +271,20 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .cs-arrows { display: grid; grid-template-columns: repeat(3, 44px); gap: 5px; }
 .cs-arrows .chip { height: 34px; font-size: 16px; padding: 0; }
 .cs-link { display: grid; place-items: center; font-weight: 900; font-size: 11px; color: var(--muted); }
+.cs-styles .chip { font-size: 13px; padding: 5px 14px; }
+.cs-sub { display: grid; gap: 6px; padding: 8px; border: 2px dashed var(--line); border-radius: 12px; }
+.cs-sub[hidden] { display: none; }
+.cs-short { flex: none !important; width: 90px !important; min-width: 0 !important; }
+.cs-cost { display: grid; gap: 6px; }
+.cs-cost-cur { display: flex; gap: 3px; align-items: center; min-height: 24px; }
+.cs-cost-cur canvas { width: 22px; height: 22px; }
+.cs-cost-cur small { color: var(--muted); }
+.cs-cost-pick { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.cs-ebtn { padding: 0; border: 0; background: none; cursor: pointer; border-radius: 50%; line-height: 0; }
+.cs-ebtn canvas { width: 26px; height: 26px; }
+.cs-ebtn:hover canvas, .cs-ebtn:focus-visible canvas { transform: scale(1.15); }
+.cs-stat select.cs-in { width: auto; flex: none; }
+.cs-stat input[type="range"] { width: 90px; }
 .cs-music { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cs-music .cs-in { flex: 1; min-width: 160px; }
 .cs-ok { color: var(--muted); }
@@ -259,6 +303,9 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .tilt.framed .t-photo { background-size: 100% 100%; }
 .pk.framed .pk-name { display: none; } /* 卡冊：卡自己有名字 */
 .pk.framed .pk-card { background-size: 100% 100%; }
+/* 寶可夢風：卡圖是橫的（cardstudio.js 的 ART_M：48,108,494×336 / 590×860） */
+.tilt.framed.fm .t-tint { -webkit-mask: linear-gradient(#000 0 0) 50% 20.6% / 83.7% 39.1% no-repeat; mask: linear-gradient(#000 0 0) 50% 20.6% / 83.7% 39.1% no-repeat; }
+.tilt.framed.fm .t-shine { -webkit-mask: var(--spot), linear-gradient(#000 0 0) 50% 20.6% / 83.7% 39.1% no-repeat; -webkit-mask-composite: source-in; mask: var(--spot), linear-gradient(#000 0 0) 50% 20.6% / 83.7% 39.1% no-repeat; mask-composite: intersect; }
 .tilt.framed .t-fshine { display: none !important; } /* 框的反光圈：卡自己有框，不要再一圈彩虹 */
 /* 閃只在卡圖上（像真的對戰卡的ホロ），名字、效果欄不上彩虹色；卡圖在卡上的位置＝cardstudio.js 的 ART（70,158,450 / 590×860） */
 .tilt.framed .t-tint { -webkit-mask: linear-gradient(#000 0 0) 50% 38.6% / 76.3% 52.3% no-repeat; mask: linear-gradient(#000 0 0) 50% 38.6% / 76.3% 52.3% no-repeat; }
@@ -1091,7 +1138,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 
 @media (max-width: 860px) {
   main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(240px, 44%) minmax(0, 1fr); }
-  .app[data-mode="play"] main, .app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main, .app[data-mode="studio"] main { grid-template-rows: minmax(0, 1fr); }
+  .app[data-mode="play"] main, .app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main, .app[data-mode="studio"] main, .app[data-mode="stickers"] main { grid-template-rows: minmax(0, 1fr); }
   .panel { border-left: 0; border-top: 2px solid var(--stroke); }
 }
 @media (max-width: 640px) {
@@ -1176,9 +1223,10 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     <div class="brand"><span class="mark" aria-hidden="true"></span><span class="brand-name"><b>Clatter</b><span class="full" data-i18n="brand.suffix"> 轉蛋鋪</span></span></div>
     <nav class="modes" role="tablist" data-i18n-aria="mode.label" aria-label="模式">
       <button id="tab-browse" role="tab" aria-selected="true" class="tab-ico" data-i18n-aria="tab.browse" aria-label="逛機台"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg><span data-i18n="tab.browse">逛機台</span></button>
-      <button id="tab-create" role="tab" aria-selected="false" data-i18n="tab.create">開店設定</button>
-      <button id="tab-play" role="tab" aria-selected="false" data-i18n="tab.play">轉轉看</button>
+      <button id="tab-create" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.create" aria-label="開店設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg><span data-i18n="tab.create">開店設定</span></button>
+      <button id="tab-play" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.play" aria-label="轉轉看"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg><span data-i18n="tab.play">轉轉看</span></button>
       <button id="tab-studio" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.studio" aria-label="卡片工房"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="11" height="15" rx="2" transform="rotate(-8 8.5 12.5)"/><rect x="10" y="4" width="11" height="15" rx="2"/><path d="M13 8h5M13 11.5h5"/></svg><span data-i18n="tab.studio">卡片工房</span></button>
+      <button id="tab-stickers" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.stickers" aria-label="貼紙工房"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14v9l-6 7H5z"/><path d="M19 13h-6v7"/><circle cx="10" cy="10" r="2"/></svg><span data-i18n="tab.stickers">貼紙工房</span></button>
       <button id="tab-shop" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.shop" aria-label="我的商店"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 0 1-5.3 1.9A3 3 0 0 1 12 14a3 3 0 0 1-2.7-1.1A3 3 0 0 1 4 11z"/><path d="M6 14v6h12v-6"/><path d="M10 20v-4h4v4"/></svg><span data-i18n="tab.shop">我的商店</span></button>
       <button id="tab-album" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.album" aria-label="收集簿"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="15" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h4M12 12h4"/></svg><span data-i18n="tab.album">收集簿</span><b class="tab-badge" id="album-badge" hidden></b></button>
     </nav>
@@ -1260,7 +1308,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
           <li class="step">
             <header><span class="num">1</span><h2 data-i18n="step1">放進獎品</h2><span class="aside" id="items-sum"></span></header>
             <ul class="items" id="items"></ul>
-            <div class="row add-row"><button class="btn ghost" id="add-item" data-i18n="addItem">＋ 新增獎品</button><button class="btn ghost" id="open-studio" data-i18n="cs.open">🃏 カード工房で作る</button></div>
+            <div class="row add-row"><button class="btn ghost" id="add-item" data-i18n="addItem">＋ 新增獎品</button><button class="btn ghost" id="open-studio" data-i18n="cs.open">🃏 カード工房で作る</button><button class="btn ghost" id="pick-work" data-i18n="cs.pickWork">🗂 作品冊から選ぶ</button><button class="btn ghost" id="pick-stk" data-i18n="stk.pickPrize">🏷 シール帳から選ぶ</button></div>
             <p class="hint-text" data-i18n="itemsHint"></p>
           </li>
           <li class="step">
@@ -1351,6 +1399,27 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     </aside>
     <!-- 我的商店：我開的每一台機台 -->
     <!-- 逛機台：大家公開的機台（supabase/07_browse.sql） -->
+    <!-- 貼紙工房（使用者 2026-10-28：「貼紙也」「依樣拆出來」「做好的貼紙可以選包裝」）：原本的「做貼紙」對話框拆成一整頁，上面是做好的貼紙 -->
+    <section class="page" id="page-stickers" hidden aria-labelledby="sk-title">
+      <div class="page-inner studio-page">
+        <header class="page-head">
+          <h1 id="sk-title" data-i18n="stk.studioTitle">貼紙工房</h1>
+          <p class="lede" data-i18n="stk.studioLede"></p>
+        </header>
+        <div class="card-box works-box" id="my-stickers"></div>
+        <div class="card-box stk-card stk-studio">
+          <h2 data-i18n="stk.makeTitle">做貼紙</h2>
+          <div class="sk-stage paper-dot" id="sk-stage"><p class="sk-empty" id="sk-empty" data-i18n="stk.pickSrc">選一個手繪素材，或用照片做</p><p class="sk-busy" id="sk-busy" hidden data-i18n="stk.cutting">去背中…</p></div>
+          <button type="button" class="btn sun" id="sk-pick">用照片做</button>
+          <div class="field"><span data-i18n="stk.presets">手繪素材</span><div class="sk-presets" id="sk-presets"></div></div>
+          <div class="field"><span data-i18n="stk.shape">形狀</span><div class="chips" id="sk-shapes" role="radiogroup"></div></div>
+          <div class="field"><span data-i18n="stk.fin">加工</span><div class="chips" id="sk-fins" role="radiogroup"></div></div>
+          <div class="field"><span data-i18n="stk.pack">包裝</span><div class="chips" id="sk-packs" role="radiogroup"></div></div>
+          <div class="field"><label for="sk-name" data-i18n="stk.name">名字</label><input id="sk-name" maxlength="24"></div>
+          <button class="btn primary big" id="sk-save" data-i18n="stk.save">放進貼紙簿</button>
+        </div>
+      </div>
+    </section>
     <!-- カード工房（cardstudio.js）：對戰卡風格的卡片編輯，做好放進轉卡機（使用者 2026-10-28：「把卡片製作拆開到出來」→ 獨立一頁） -->
     <section class="page" id="page-studio" hidden aria-labelledby="cs-title">
       <div class="page-inner studio-page">
@@ -1358,6 +1427,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
           <h1 id="cs-title" data-i18n="cs.title">卡片工房</h1>
           <p class="lede" data-i18n="cs.lede"></p>
         </header>
+        <div class="card-box works-box"></div>
         <div class="card-box studio-card"><div class="studio-body"></div></div>
       </div>
     </section>
@@ -1537,17 +1607,14 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 </div>
 
 <!-- 做貼紙：照片 → 裁切 → 去背 → 形狀、加工、名字（app.js 的 openStickerMaker；裁切對話框要蓋在它上面 → 放在它前面） -->
-<div class="sheet" id="sheet-sticker" hidden>
-  <div class="sheet-card stk-card" role="dialog" aria-modal="true" aria-labelledby="sk-title">
+<!-- 從作品冊挑卡片當轉卡機的獎品（使用者 2026-10-28：「所以卡片的景品去製作的卡片簿選」） -->
+<div class="sheet" id="sheet-workpick" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="wp-title">
     <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
-    <h2 id="sk-title" data-i18n="stk.makeTitle">做貼紙</h2>
-    <div class="sk-stage paper-dot" id="sk-stage"><p class="sk-empty" id="sk-empty" data-i18n="stk.pickSrc">選一個手繪素材，或用照片做</p><p class="sk-busy" id="sk-busy" hidden data-i18n="stk.cutting">去背中…</p></div>
-    <button type="button" class="btn sun" id="sk-pick">用照片做</button>
-    <div class="field"><span data-i18n="stk.presets">手繪素材</span><div class="sk-presets" id="sk-presets"></div></div>
-    <div class="field"><span data-i18n="stk.shape">形狀</span><div class="chips" id="sk-shapes" role="radiogroup"></div></div>
-    <div class="field"><span data-i18n="stk.fin">加工</span><div class="chips" id="sk-fins" role="radiogroup"></div></div>
-    <div class="field"><label for="sk-name" data-i18n="stk.name">名字</label><input id="sk-name" maxlength="24"></div>
-    <button class="btn primary big" id="sk-save" data-i18n="stk.save">放進貼紙簿</button>
+    <h2 id="wp-title" data-i18n="cs.pickWorkTitle">從作品冊選卡片</h2>
+    <p class="hint-text" id="wp-empty" data-i18n="cs.pickWorkEmpty">作品冊還沒有卡片</p>
+    <div class="sp-grid wp-grid" id="wp-grid"></div>
+    <button class="btn primary" id="wp-make" data-i18n="cs.open">🃏 カード工房で作る</button>
   </div>
 </div>
 <!-- 選要貼到機台上的貼紙 -->
