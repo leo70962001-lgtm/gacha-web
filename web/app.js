@@ -19,7 +19,7 @@ import { mountNowPlaying } from './nowplaying.js';
 import { MemberCard } from './member.js';
 import { guessCountry, deviceType } from './geo.js';
 import { MachineStats } from './stats.js';
-import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT } from './cardstudio.js';
+import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT, artOf } from './cardstudio.js';
 import { applyAppTheme, cardSplash } from './cardpack.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
 function nowPlaying(box, m, o) {
@@ -3613,7 +3613,7 @@ async function openWorkPicker() {
     btn.append(im);
     btn.onclick = async () => {
       closeSheet('sheet-workpick');
-      const art = w.d?.art?.b64 ? await createImageBitmap(new Blob([Uint8Array.from(atob(w.d.art.b64), (c) => c.charCodeAt(0))], { type: w.d.art.mime })).catch(() => null) : null;
+      const art = await artOf(w.d); // 卡圖＋框用的自己的圖
       await studioFonts();
       await addStudioCard({ design: { ...w.d, wid: w.id }, card: drawDesignCard(w.d, art, CARD_OUT[0], lang), music: w.m || { k: 'none' }, target: shop.cur, qty: 3, edit: null });
     };

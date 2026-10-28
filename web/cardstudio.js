@@ -68,10 +68,12 @@ function rr(g, x, y, w, h, r) {
   g.beginPath();
   g.roundRect(x, y, w, h, r);
 }
-function shade(hex, k) {
-  const n = parseInt(hex.slice(1), 16);
+// '#rrggbb' 或 'rgb(r, g, b)' → [r, g, b]（自訂框色算出來的是 rgb()，再拿去調亮暗也要讀得懂）
+const rgbOf = (c) => (c.startsWith('#') ? [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)) : (c.match(/\d+/g) || [0, 0, 0]).slice(0, 3).map(Number));
+function shade(c, k) {
   const f = (v) => Math.max(0, Math.min(255, Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k)));
-  return `rgb(${f(n >> 16)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
+  const [r, g, b] = rgbOf(c);
+  return `rgb(${f(r)}, ${f(g)}, ${f(b)})`;
 }
 function seeded(seed) {
   let s = seed >>> 0 || 7;
@@ -227,7 +229,12 @@ function stIcon(g, x, y, s, icon, col) {
 function nameFill(g, d, x, y, w) {
   let st = d.nameStyle;
   if (!st || st === 'auto') st = ['', 'silver', 'gold', 'rainbow'][d.rarity | 0] || '';
-  if (!st || st === 'black' || st === 'white') return st === 'white' ? '#fff' : st === 'black' ? '#111' : TYPES[d.type].name;
+  if (st === 'white') return '#fff';
+  if (st === 'black') return '#111';
+  if (!st) {
+    const fh = frameHex(d); // 自訂框色／自己的圖：卡名欄夠亮就黑字，不然白字
+    return fh ? (lumOf(fh) > 0.5 ? '#111' : '#fff') : TYPES[d.type].name;
+  }
   const gr = g.createLinearGradient(x, y - 40, x + w, y);
   const stops = {
     silver: ['#8d939c', '#f4f6fa', '#a7adb6', '#ffffff', '#7d838c'],
@@ -236,6 +243,183 @@ function nameFill(g, d, x, y, w) {
   }[st];
   stops.forEach((c, i) => gr.addColorStop(i / (stops.length - 1), c));
   return gr;
+}
+
+// ---------- 卡框的花紋、自己的圖（使用者 2026-10-28：「不只單色也可以加花紋或自己的圖」） ----------
+//   ds.fpat＝''（單色）／花紋／'image'；ds.fpc＝花紋的顏色（空＝照框色自動黑或白）、ds.fpa＝花紋濃淡 0.1–1
+//   ds.fimg＝{ b64, mime }、ds.ffit＝'cover'（整張鋪滿，裁成卡片的形狀）／'tile'（正方形一格一格排）、ds.fia＝圖的濃淡 0.1–1
+//   畫在卡身（外框裡面那層）上，卡名欄、卡圖、效果欄照樣蓋在上面；用自己的圖又沒自訂框色 → 卡名欄這些用圖的平均色
+export const FPATS = ['none', 'dots', 'stripes', 'check', 'stars', 'hearts', 'sakura', 'waves', 'hex', 'image'];
+const FIMG = new Map(); // fimg.b64 → { img, avg }（畫卡是同步的，圖要先解好放這裡）
+const b64Blob = (o) => new Blob([Uint8Array.from(atob(o.b64), (c) => c.charCodeAt(0))], { type: o.mime });
+export function cacheFrameImg(fimg, img) {
+  const c = canvasOf(1, 1);
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0, 1, 1);
+  const px = g.getImageData(0, 0, 1, 1).data;
+  FIMG.set(fimg.b64, { img, avg: '#' + [px[0], px[1], px[2]].map((v) => v.toString(16).padStart(2, '0')).join('') });
+}
+async function loadFrameImg(d) {
+  const f = d?.fimg;
+  if (!f?.b64 || FIMG.has(f.b64)) return;
+  try {
+    cacheFrameImg(f, await createImageBitmap(b64Blob(f)));
+  } catch {}
+}
+const frameImg = (d) => (d.fpat === 'image' && d.fimg?.b64 ? FIMG.get(d.fimg.b64) || null : null);
+// 框的顏色：自訂 → 自己的圖的平均色 → null（照卡片種類）
+const frameHex = (d) => (/^#[0-9a-f]{6}$/i.test(d.frame || '') ? d.frame : frameImg(d)?.avg || null);
+function lumOf(c) {
+  const v = rgbOf(c);
+  return (0.299 * v[0] + 0.587 * v[1] + 0.114 * v[2]) / 255;
+}
+function starP(g, x, y, r, rot) {
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = rot - Math.PI / 2 + (i * Math.PI) / 5;
+    const q = i % 2 ? r * 0.45 : r;
+    g.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q);
+  }
+  g.closePath();
+  g.fill();
+}
+function heartP(g, x, y, s) {
+  g.beginPath();
+  g.moveTo(x, y + s * 0.9);
+  g.bezierCurveTo(x - s * 1.3, y + s * 0.1, x - s * 0.8, y - s, x, y - s * 0.35);
+  g.bezierCurveTo(x + s * 0.8, y - s, x + s * 1.3, y + s * 0.1, x, y + s * 0.9);
+  g.fill();
+}
+// 櫻花：5 片有缺口的花瓣、中間挖空
+function sakuraP(g, x, y, r, rot) {
+  for (let i = 0; i < 5; i++) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot + (i * Math.PI * 2) / 5);
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.bezierCurveTo(-r * 0.6, -r * 0.35, -r * 0.5, -r * 0.95, -r * 0.15, -r);
+    g.lineTo(0, -r * 0.8);
+    g.lineTo(r * 0.15, -r);
+    g.bezierCurveTo(r * 0.5, -r * 0.95, r * 0.6, -r * 0.35, 0, 0);
+    g.fill();
+    g.restore();
+  }
+  g.save();
+  g.globalCompositeOperation = 'destination-out';
+  g.beginPath();
+  g.arc(x, y, r * 0.17, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+}
+// 花紋畫在一張透明的圖層上（w×h，從 0,0 開始），一種顏色、不透明；濃淡在貼上卡身時才調
+function drawPattern(g, key, col, w, h) {
+  g.fillStyle = g.strokeStyle = col;
+  // 一排一排，奇數排錯開半格
+  const grid = (sx, sy, fn) => {
+    for (let j = 0, y = 0; y < h + sy; j++, y += sy) for (let x = ((j % 2) * sx) / 2; x < w + sx; x += sx) fn(x, y, j);
+  };
+  switch (key) {
+    case 'dots':
+      grid(38, 19, (x, y) => {
+        g.beginPath();
+        g.arc(x, y, 6.5, 0, Math.PI * 2);
+        g.fill();
+      });
+      break;
+    case 'stripes':
+      g.lineWidth = 12;
+      for (let s = -h; s < w + h; s += 32) {
+        g.beginPath();
+        g.moveTo(s, h);
+        g.lineTo(s + h, 0);
+        g.stroke();
+      }
+      break;
+    case 'check': // ギンガム：直的、橫的帶子，交叉的地方比較濃
+      g.globalAlpha = 0.55;
+      for (let x = 0; x < w; x += 40) g.fillRect(x, 0, 20, h);
+      for (let y = 0; y < h; y += 40) g.fillRect(0, y, w, 20);
+      g.globalAlpha = 1;
+      break;
+    case 'stars':
+      grid(56, 28, (x, y, j) => starP(g, x, y, 10, j * 0.35));
+      break;
+    case 'hearts':
+      grid(54, 27, (x, y) => heartP(g, x, y, 9.5));
+      break;
+    case 'sakura':
+      grid(64, 32, (x, y, j) => sakuraP(g, x, y, 12, j * 0.6));
+      break;
+    case 'waves': {
+      // 青海波：一排排往下疊，下面的扇形把上面的蓋掉（先挖掉圓再畫同心圓）
+      const R = 26;
+      g.lineWidth = 2.6;
+      for (let j = 0, y = 0; y < h + R * 2; j++, y += R / 2) {
+        for (let x = (j % 2) * R; x < w + R * 2; x += R * 2) {
+          g.globalCompositeOperation = 'destination-out';
+          g.beginPath();
+          g.arc(x, y, R, 0, Math.PI * 2);
+          g.fill();
+          g.globalCompositeOperation = 'source-over';
+          for (const q of [R - 1.3, R * 0.72, R * 0.46, R * 0.2]) {
+            g.beginPath();
+            g.arc(x, y, q, 0, Math.PI * 2);
+            g.stroke();
+          }
+        }
+      }
+      break;
+    }
+    case 'hex': {
+      const s = 20;
+      const hh = Math.sqrt(3) * s;
+      g.lineWidth = 3;
+      for (let i = 0, x = 0; x < w + s; i++, x += 1.5 * s) {
+        for (let y = ((i % 2) * hh) / 2; y < h + hh; y += hh) {
+          g.beginPath();
+          for (let a = 0; a < 6; a++) g.lineTo(x + s * Math.cos((a * Math.PI) / 3), y + s * Math.sin((a * Math.PI) / 3));
+          g.closePath();
+          g.stroke();
+        }
+      }
+      break;
+    }
+  }
+}
+// 卡身（x,y,w,h,r）鋪上自己的圖、花紋；回傳 true＝有鋪（遊戲王風原本的斜紋就不畫）
+function frameSkin(g, d, base, x, y, w, h, r) {
+  const fi = frameImg(d);
+  const pat = d.fpat && d.fpat !== 'image' && d.fpat !== 'none' ? d.fpat : null;
+  if (!fi && !pat) return false;
+  const amt = (v, def) => Math.max(0.1, Math.min(1, v ?? def));
+  g.save();
+  rr(g, x, y, w, h, r);
+  g.clip();
+  if (fi) {
+    const im = fi.img;
+    g.globalAlpha = amt(d.fia, 1);
+    if (d.ffit === 'tile') {
+      const tw = 118;
+      const th = (tw * im.height) / im.width;
+      for (let yy = y; yy < y + h; yy += th) for (let xx = x; xx < x + w; xx += tw) g.drawImage(im, xx, yy, tw, th);
+    } else {
+      const s = Math.max(w / im.width, h / im.height);
+      g.drawImage(im, x + (w - im.width * s) / 2, y + (h - im.height * s) / 2, im.width * s, im.height * s);
+    }
+  }
+  if (pat) {
+    const col = /^#[0-9a-f]{6}$/i.test(d.fpc || '') ? d.fpc : lumOf(base[0]) > 0.62 ? '#000000' : '#ffffff';
+    const k = g.getTransform().a; // 畫在輸出的解析度上
+    const L = canvasOf(Math.ceil(w * k), Math.ceil(h * k));
+    const lg = L.getContext('2d');
+    lg.scale(k, k);
+    drawPattern(lg, pat, col, w, h);
+    g.globalAlpha = amt(d.fpa, 0.35);
+    g.drawImage(L, x, y, w, h);
+  }
+  g.restore();
+  return true;
 }
 
 const ARROW_POS = [
@@ -252,7 +436,8 @@ export function drawDesignCard(d, art, W = W0, lang = 'zh') {
   const g = c.getContext('2d');
   g.scale(k, k);
   const ty = TYPES[d.type] ? d.type : 'effect';
-  const base = /^#[0-9a-f]{6}$/i.test(d.frame || '') ? [shade(d.frame, 0.25), shade(d.frame, -0.3)] : TYPES[ty].c;
+  const fh = frameHex(d);
+  const base = fh ? [shade(fh, 0.25), shade(fh, -0.3)] : TYPES[ty].c;
   // 外框
   const bc = { black: ['#2a2a2e', '#0b0b0d'], gold: ['#fff1b8', '#a8740e'], silver: ['#ffffff', '#8a909a'], white: ['#ffffff', '#d9d9d6'] }[d.border] || ['#2a2a2e', '#0b0b0d'];
   let gr = g.createLinearGradient(0, 0, W0, H0);
@@ -270,6 +455,7 @@ export function drawDesignCard(d, art, W = W0, lang = 'zh') {
   g.fillStyle = gr;
   rr(g, 16, 16, W0 - 32, H0 - 32, 8);
   g.fill();
+  const skin = frameSkin(g, d, base, 16, 16, W0 - 32, H0 - 32, 8); // 花紋／自己的圖
   g.save();
   rr(g, 16, 16, W0 - 32, H0 - 32, 8);
   g.clip();
@@ -278,14 +464,16 @@ export function drawDesignCard(d, art, W = W0, lang = 'zh') {
     g.fillStyle = rnd() > 0.5 ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)';
     g.fillRect(16 + rnd() * (W0 - 32), 16 + rnd() * (H0 - 32), 1 + rnd() * 3, 1 + rnd() * 3);
   }
-  g.globalAlpha = 0.06;
-  g.strokeStyle = '#fff';
-  g.lineWidth = 2;
-  for (let x = -H0; x < W0; x += 14) {
-    g.beginPath();
-    g.moveTo(x, 16);
-    g.lineTo(x + H0, H0);
-    g.stroke();
+  if (!skin) {
+    g.globalAlpha = 0.06;
+    g.strokeStyle = '#fff';
+    g.lineWidth = 2;
+    for (let x = -H0; x < W0; x += 14) {
+      g.beginPath();
+      g.moveTo(x, 16);
+      g.lineTo(x + H0, H0);
+      g.stroke();
+    }
   }
   g.restore();
   const bevel = (x, y, w, h, r, dark = false) => {
@@ -382,7 +570,7 @@ export function drawDesignCard(d, art, W = W0, lang = 'zh') {
   }
   // 卡號（卡圖右下）
   g.font = `700 18px ${SANS}`;
-  g.fillStyle = TYPES[ty].name === '#fff' && !/^#[0-9a-f]{6}$/i.test(d.frame || '') ? '#f2f2f2' : '#111';
+  g.fillStyle = (fh ? lumOf(base[1]) < 0.42 : TYPES[ty].name === '#fff') ? '#f2f2f2' : '#111';
   g.textAlign = 'right';
   g.fillText(d.set || '', ty === 'link' ? 482 : 522, 642);
   g.textAlign = 'left';
@@ -636,7 +824,8 @@ export function drawMonsterCard(d, art, W = W0, lang = 'zh') {
   g.scale(k, k);
   const ty = MTYPES[d.mtype] || MTYPES.colorless;
   const ink = ty.text || '#151515';
-  const base = /^#[0-9a-f]{6}$/i.test(d.frame || '') ? [shade(d.frame, 0.55), shade(d.frame, 0)] : ty.c;
+  const fh = frameHex(d);
+  const base = fh ? [shade(fh, 0.55), shade(fh, 0)] : ty.c;
   // 外框（黃、銀、金、黑）
   const bc = { yellow: ['#fff08a', '#e8b414'], silver: ['#ffffff', '#a6acb6'], gold: ['#fff2b8', '#b8860b'], black: ['#3a3a3e', '#0d0d0f'] }[d.mborder] || ['#fff08a', '#e8b414'];
   let gr = g.createLinearGradient(0, 0, W0, H0);
@@ -654,6 +843,7 @@ export function drawMonsterCard(d, art, W = W0, lang = 'zh') {
   g.fillStyle = gr;
   rr(g, 16, 16, W0 - 32, H0 - 32, 16);
   g.fill();
+  frameSkin(g, d, base, 16, 16, W0 - 32, H0 - 32, 16); // 花紋／自己的圖（上面照樣有斜的光紋）
   g.save();
   rr(g, 16, 16, W0 - 32, H0 - 32, 16);
   g.clip();
@@ -915,7 +1105,11 @@ export const listWorks = () => wtx('readonly', (st) => st.getAll()).then((a) => 
 const putWork = (w) => wtx('readwrite', (st) => st.put(w));
 const delWork = (id) => wtx('readwrite', (st) => st.delete(id));
 const newWid = () => 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const artOf = (d) => (d?.art?.b64 ? createImageBitmap(new Blob([Uint8Array.from(atob(d.art.b64), (c) => c.charCodeAt(0))], { type: d.art.mime })).catch(() => null) : Promise.resolve(null));
+// 卡圖（沒有＝null）；順便把框用的自己的圖解好（drawDesignCard 是同步的）
+export async function artOf(d) {
+  await loadFrameImg(d);
+  return d?.art?.b64 ? createImageBitmap(b64Blob(d.art)).catch(() => null) : null;
+}
 
 // ---------- 編輯畫面 ----------
 const el = (tag, cls, text) => {
@@ -1209,19 +1403,12 @@ export class CardStudio {
     };
     art.append(ab, file);
     };
-    if (ds.style === 'monster') this.buildMonster({ group, chips, input, set, artGroup });
-    else {
-      // 卡片種類
-      chips(group(t('cs.type')), TYPE_KEYS, () => ds.type, (k) => t('cs.t.' + k), (k) => {
-        set('type', k);
-      }).classList.add('cs-types');
-      // 外框、框色
-      const fr = group(t('cs.frame'));
-      chips(fr, BORDERS, () => ds.border, (k) => t('cs.b.' + k), (k) => set('border', k));
+    // 卡框：自訂顏色＋花紋／自己的圖（使用者 2026-10-28：「不只單色也可以加花紋或自己的圖」），兩種樣式共用
+    const frameGroup = (fr, defColor) => {
       const frow = el('div', 'cs-row');
       const fc = el('input');
       fc.type = 'color';
-      fc.value = /^#[0-9a-f]{6}$/i.test(ds.frame) ? ds.frame : TYPES[ds.type].c[1];
+      fc.value = /^#[0-9a-f]{6}$/i.test(ds.frame) ? ds.frame : defColor;
       fc.setAttribute('aria-label', t('cs.frameColor'));
       const fcl = el('label', 'cs-check');
       const fcb = el('input');
@@ -1234,7 +1421,106 @@ export class CardStudio {
         set('frame', fc.value);
       };
       frow.append(fcl, fc);
-      fr.append(frow);
+      fr.append(frow, el('div', 'cs-label cs-sublabel', t('cs.fpat')));
+      // 濃淡的拉桿（花紋、自己的圖各一個）
+      const strength = (k, def) => {
+        const row = el('label', 'cs-stat cs-str');
+        const lab = el('span');
+        const r = el('input');
+        r.type = 'range';
+        r.min = 10;
+        r.max = 100;
+        r.step = 5;
+        r.value = Math.round((ds[k] ?? def) * 100);
+        const paint = () => (lab.textContent = t('cs.fstr', { n: r.value }));
+        paint();
+        r.oninput = () => {
+          paint();
+          set(k, +r.value / 100);
+        };
+        row.append(lab, r);
+        return row;
+      };
+      // 花紋的顏色（自動＝照框色黑或白）＋濃淡
+      const patBox = el('div', 'cs-sub');
+      const prow = el('div', 'cs-row');
+      const pc = el('input');
+      pc.type = 'color';
+      pc.value = /^#[0-9a-f]{6}$/i.test(ds.fpc || '') ? ds.fpc : '#ffffff';
+      pc.setAttribute('aria-label', t('cs.fpc'));
+      pc.oninput = () => set('fpc', pc.value);
+      const pauto = el('button', 'chip', t('cs.fpcAuto'));
+      pauto.type = 'button';
+      pauto.onclick = () => set('fpc', '');
+      prow.append(el('span', 'cs-check', t('cs.fpc')), pc, pauto);
+      patBox.append(prow, strength('fpa', 0.35));
+      // 自己的圖：縮圖、換圖、鋪滿／重複排、濃淡
+      const imgBox = el('div', 'cs-sub');
+      const irow = el('div', 'cs-row');
+      const thumb = el('img', 'cs-fthumb');
+      thumb.alt = '';
+      const ib = el('button', 'btn', t('cs.fimgPick'));
+      ib.type = 'button';
+      const file = el('input');
+      file.type = 'file';
+      file.accept = 'image/*';
+      file.hidden = true;
+      const pick = () => {
+        file.value = '';
+        file.click();
+      };
+      ib.onclick = pick;
+      irow.append(thumb, ib, file);
+      imgBox.append(irow);
+      chips(imgBox, ['cover', 'tile'], () => ds.ffit || 'cover', (k) => t('cs.ffit.' + k), (k) => set('ffit', k));
+      imgBox.append(strength('fia', 1));
+      const show = () => {
+        const k = ds.fpat || 'none';
+        patBox.hidden = k === 'none' || k === 'image';
+        imgBox.hidden = k !== 'image';
+        thumb.hidden = !ds.fimg?.b64;
+        if (ds.fimg?.b64) thumb.src = `data:${ds.fimg.mime};base64,${ds.fimg.b64}`;
+      };
+      const pats = chips(fr, FPATS, () => ds.fpat || 'none', (k) => t('cs.fp.' + k), (k) => {
+        if (k === 'image' && !ds.fimg?.b64) return pick(); // 還沒有圖 → 先選圖（選好才切過去）
+        set('fpat', k === 'none' ? '' : k);
+        show();
+      });
+      pats.classList.add('cs-fpats');
+      file.onchange = async () => {
+        const f = file.files[0];
+        if (!f) return;
+        let bmp;
+        try {
+          bmp = await createImageBitmap(f);
+        } catch {
+          return this.d.toast(t('t.badImage'));
+        }
+        // 鋪滿＝裁成卡片的形狀；重複排＝裁成正方形
+        const tile = ds.ffit === 'tile';
+        const c = await this.d.openCrop({ bmp, out: tile ? [240, 240] : [590, 860], title: t(tile ? 'cs.fimgCropTile' : 'cs.fimgCrop') });
+        if (!c) return;
+        const url = c.toDataURL('image/webp', 0.85);
+        ds.fimg = { b64: url.split(',')[1], mime: url.startsWith('data:image/webp') ? 'image/webp' : 'image/png' };
+        cacheFrameImg(ds.fimg, c);
+        ds.fpat = 'image';
+        pats.querySelectorAll('.chip').forEach((x, i) => x.setAttribute('aria-pressed', String(FPATS[i] === 'image')));
+        show();
+        this.redraw();
+      };
+      fr.append(patBox, imgBox);
+      show();
+    };
+    if (ds.style === 'monster') this.buildMonster({ group, chips, input, set, artGroup, frameGroup });
+    else {
+      // 卡片種類
+      chips(group(t('cs.type')), TYPE_KEYS, () => ds.type, (k) => t('cs.t.' + k), (k) => {
+        set('type', k);
+      }).classList.add('cs-types');
+      // 外框、框色
+      const fr = group(t('cs.frame'));
+      chips(fr, BORDERS, () => ds.border, (k) => t('cs.b.' + k), (k) => set('border', k));
+      frameGroup(fr, TYPES[ds.type].c[1]);
       // 卡名＋名字顏色
       const nm = group(t('cs.name'));
       input(nm, 'name', { max: 30 });
@@ -1380,30 +1666,14 @@ export class CardStudio {
   }
 
   // 寶可夢風的欄位：屬性、外框、名字、進化、HP、卡圖、特性、招式 ×2、弱點／抵抗力／撤退、圖鑑資料
-  buildMonster({ group, chips, input, set, artGroup }) {
+  buildMonster({ group, chips, input, set, artGroup, frameGroup }) {
     const { t } = this.d;
     const ds = this.ds;
     const typeName = (k) => t('cs.mt.' + k);
     chips(group(t('cs.mtype')), MTYPE_KEYS, () => ds.mtype, typeName, (k) => set('mtype', k)).classList.add('cs-mtypes');
     const fr = group(t('cs.frame'));
     chips(fr, MBORDERS, () => ds.mborder || 'yellow', (k) => t('cs.b.' + k), (k) => set('mborder', k));
-    const frow = el('div', 'cs-row');
-    const fc = el('input');
-    fc.type = 'color';
-    fc.value = /^#[0-9a-f]{6}$/i.test(ds.frame) ? ds.frame : MTYPES[ds.mtype]?.g || '#cccccc';
-    fc.setAttribute('aria-label', t('cs.frameColor'));
-    const fcl = el('label', 'cs-check');
-    const fcb = el('input');
-    fcb.type = 'checkbox';
-    fcb.checked = !!ds.frame;
-    fcl.append(fcb, el('span', null, t('cs.frameColor')));
-    fcb.onchange = () => set('frame', fcb.checked ? fc.value : '');
-    fc.oninput = () => {
-      fcb.checked = true;
-      set('frame', fc.value);
-    };
-    frow.append(fcl, fc);
-    fr.append(frow);
+    frameGroup(fr, MTYPES[ds.mtype]?.g || '#cccccc');
     const nm = group(t('cs.name'));
     input(nm, 'name', { max: 30 });
     chips(nm, NAME_STYLES, () => ds.nameStyle || 'auto', (k) => t('cs.n.' + k), (k) => set('nameStyle', k));
