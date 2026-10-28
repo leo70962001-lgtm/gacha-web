@@ -1170,13 +1170,13 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 }
 </style>
 
-<div class="app" id="app" data-mode="create">
+<div class="app" id="app" data-mode="browse">
   <header class="bar">
     <div class="brand"><span class="mark" aria-hidden="true"></span><span class="brand-name"><b>Clatter</b><span class="full" data-i18n="brand.suffix"> 轉蛋鋪</span></span></div>
     <nav class="modes" role="tablist" data-i18n-aria="mode.label" aria-label="模式">
-      <button id="tab-create" role="tab" aria-selected="true" data-i18n="tab.create">開店設定</button>
+      <button id="tab-browse" role="tab" aria-selected="true" class="tab-ico" data-i18n-aria="tab.browse" aria-label="逛機台"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg><span data-i18n="tab.browse">逛機台</span></button>
+      <button id="tab-create" role="tab" aria-selected="false" data-i18n="tab.create">開店設定</button>
       <button id="tab-play" role="tab" aria-selected="false" data-i18n="tab.play">轉轉看</button>
-      <button id="tab-browse" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.browse" aria-label="逛機台"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg><span data-i18n="tab.browse">逛機台</span></button>
       <button id="tab-shop" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.shop" aria-label="我的商店"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 0 1-5.3 1.9A3 3 0 0 1 12 14a3 3 0 0 1-2.7-1.1A3 3 0 0 1 4 11z"/><path d="M6 14v6h12v-6"/><path d="M10 20v-4h4v4"/></svg><span data-i18n="tab.shop">我的商店</span></button>
       <button id="tab-album" role="tab" aria-selected="false" class="tab-ico" data-i18n-aria="tab.album" aria-label="收集簿"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="15" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h4M12 12h4"/></svg><span data-i18n="tab.album">收集簿</span><b class="tab-badge" id="album-badge" hidden></b></button>
     </nav>

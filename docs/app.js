@@ -4221,11 +4221,12 @@ async function boot() {
     console.error(e);
     return;
   }
+  // 一打開就是「逛機台」（使用者 2026-10-28：「把逛商店放在一開始第一頁」）；轉蛋連結、邀請連結照舊，#album／#shop／#create 直接到那一頁
   const h = location.hash.slice(1);
   if (h.startsWith('f.')) openInvite(h.slice(2));
-  else if (h === 'browse') setMode('browse');
   else if (isMachineHash(h)) await enterPlay(h);
-  else showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
+  else if (['album', 'shop', 'create'].includes(h)) setMode(h);
+  else setMode('browse');
   // 等台紙、貼紙畫好再拿掉載入畫面
   await new Promise((r) => setTimeout(r, 200));
   $('loading').hidden = true;
