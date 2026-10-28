@@ -413,11 +413,13 @@ export async function addSticker(canvas, meta) {
 //   圖先存進 IndexedDB；用手指撕下來（claimPackItem）才放進シール帳（同一個 key → 張數 +1）
 const newId = () => 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 // 有 key 而且同一個 key 的鋁箔包還沒打開 → 用那一包（同一台轉到的貼紙裝在同一包）
-export async function createPack({ kind = 'sheet', title = '', key = '', src = 'made' }) {
+// design／hue／label：鋁箔袋的款式、色調（色相轉幾度）、標籤上的字（空的＝「シール ×N」）
+export async function createPack({ kind = 'sheet', title = '', key = '', src = 'made', design = '', hue = 0, label = '' }) {
   const b = loadBook();
   const same = key && b.packs.find((p) => p.key === key && p.kind === kind && !p.open);
   if (same) return same;
   const p = { id: 'p' + newId(), kind, title: String(title).slice(0, 30), key, src, open: kind !== 'foil', ts: Date.now(), items: [] };
+  if (kind === 'foil') Object.assign(p, { design: String(design || '').slice(0, 20), hue: Math.round(+hue || 0) % 360, label: String(label || '').slice(0, 16) });
   b.packs.unshift(p);
   saveBook(b);
   return p;

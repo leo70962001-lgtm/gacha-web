@@ -9,7 +9,7 @@ import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveL
 import { cutout } from './seg.js';
 import { Holo } from './holo.js';
 import { addSticker, bakeSticker, hasAlpha, loadBook, saveBook, stickerBlob, stickerUrl, createPack, addToPack, markPackOpened, claimPackItem, STICKER_FINS, STICKER_SHAPES, PRESETS, presetFile } from './sticker.js';
-import { openPeel, drawFoilPack, FOIL, FOIL_DRAWN } from './peel.js';
+import { openPeel, drawFoilPack, FOIL, FOIL_DRAWN, PACK_DESIGNS } from './peel.js';
 import { StickerBook } from './stickerbook.js';
 import { Binder, renderShelf } from './binder.js';
 import { Trade } from './trade.js';
@@ -2970,7 +2970,7 @@ function bootCardTheme() {
 //   シール帳：收集簿的分頁（stickerbook.js）；貼到機台（machine.setStickers）；放進轉蛋（獎品的 sticker）；轉到貼紙獎品 → 進シール帳
 let sb = null;
 function stickerBook() {
-  sb = sb || new StickerBook($('album-stickers'), { t, toast, sfx, foilUrl: asset(FOIL.file), onPack: (id) => openPack(id), onMake: () => openStickerMaker(), onMachine: (x) => stickToMachine(x), onGacha: (x) => stickerToGacha(x), changed: () => app.dataset.mode === 'album' && albumTab === 'sticker' && renderAlbumTabsOnly() });
+  sb = sb || new StickerBook($('album-stickers'), { t, toast, sfx, foilUrl: asset(FOIL.file), packUrl, onPack: (id) => openPack(id), onMake: () => openStickerMaker(), onMachine: (x) => stickToMachine(x), onGacha: (x) => stickerToGacha(x), changed: () => app.dataset.mode === 'album' && albumTab === 'sticker' && renderAlbumTabsOnly() });
   return sb;
 }
 // 分頁上的張數跟著變（不重畫整本）
@@ -2985,7 +2985,7 @@ function renderAlbumTabsOnly() {
 // 做貼紙（可以一次做好幾張，使用者 2026-10-27：CapLog「複数のステッカーつくれる」）：
 //   手繪素材點一下＝選／取消（可以選好幾個）、「用照片做」＝裁切＋自動去背，一張一張加進來；形狀、加工整批一樣
 //   「シートにする」→ 做成一張台紙 → 馬上打開（peel.js）：一張一張用手指慢慢撕下來才會放進シール帳
-const mk = { srcs: [], shape: 'cut', fin: 'drop', pack: store.get('clatter.stkPack') || 'sheet', then: null };
+const mk = { srcs: [], shape: 'cut', fin: 'drop', pack: store.get('clatter.stkPack') || 'sheet', po: { design: 'holo', hue: 0, label: '', ...(store.get('clatter.stkPackOpts') || {}) }, then: null };
 // 做好的貼紙的包裝（使用者 2026-10-28：「做好的貼紙可以選包裝」）：鋁箔袋（撕開）／台紙（直接撕貼紙）／不包裝（直接進貼紙簿）
 const STK_PACKS = ['foil', 'sheet', 'none'];
 function openStickerMaker(then) {
@@ -3019,16 +3019,42 @@ async function usePreset(i) {
   renderMaker();
 }
 // 鋁箔包的圖：Gemini 畫的（assets/tex/foil_pack.webp；FOIL 有撕口、標籤的位置）；載不到就用程式畫的
-let foilP = null;
-function foilArt() {
-  foilP =
-    foilP ||
-    fetch(asset(FOIL.file))
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('foil ' + r.status))))
-      .then((b) => createImageBitmap(b))
-      .then((img) => ({ img, ...FOIL }))
-      .catch(() => ({ img: drawFoilPack(), ...FOIL_DRAWN }));
-  return foilP;
+// design＝PACK_DESIGNS 的 id、hue＝色相轉幾度（玩家自己調的顏色）
+const packArtCache = new Map();
+const packDesign = (id) => PACK_DESIGNS.find((x) => x.id === id) || PACK_DESIGNS[0];
+let drawnPackUrl = null;
+function packUrl(p) {
+  const d = packDesign(p?.design);
+  if (!d.drawn) return asset(d.file);
+  drawnPackUrl = drawnPackUrl || drawFoilPack(300, 410).toDataURL('image/webp', 0.85);
+  return drawnPackUrl;
+}
+function foilArt(design = 'holo', hue = 0) {
+  const d = packDesign(design);
+  const key = d.id + '|' + ((hue | 0) % 360);
+  if (!packArtCache.has(key))
+    packArtCache.set(
+      key,
+      (async () => {
+        let img;
+        try {
+          img = d.drawn ? drawFoilPack() : await fetch(asset(d.file)).then((r) => (r.ok ? r.blob() : Promise.reject(new Error('pack ' + r.status)))).then((b) => createImageBitmap(b));
+        } catch {
+          return { img: drawFoilPack(), ...FOIL_DRAWN };
+        }
+        if ((hue | 0) % 360) {
+          const c = document.createElement('canvas');
+          c.width = img.width;
+          c.height = img.height;
+          const g = c.getContext('2d');
+          g.filter = `hue-rotate(${hue | 0}deg)`;
+          g.drawImage(img, 0, 0);
+          img = c;
+        }
+        return { img, seal: d.seal, labelAt: d.labelAt };
+      })(),
+    );
+  return packArtCache.get(key);
 }
 // 打開一包／一張台紙：還沒撕下來的貼紙放上去，撕一張存一張
 async function openPack(packId, onDone) {
@@ -3044,12 +3070,12 @@ async function openPack(packId, onDone) {
   }
   if (!items.length) return;
   const saved = [];
-  const art = p.kind === 'foil' && !p.open ? await foilArt() : null;
+  const art = p.kind === 'foil' && !p.open ? await foilArt(p.design, p.hue) : null;
   openPeel(items, {
     t,
     sfx,
     title: p.title || t('peel.sheetTitle'),
-    pack: art ? { img: art.img, seal: art.seal, labelAt: art.labelAt, label: t('peel.packLabel', { n: items.length }) } : null,
+    pack: art ? { img: art.img, seal: art.seal, labelAt: art.labelAt, label: p.label?.trim() || t('peel.packLabel', { n: items.length }) } : null,
     onOpened: () => markPackOpened(p.id),
     onSave: async (k) => {
       const st = await claimPackItem(p.id, items[k].at);
@@ -3129,6 +3155,7 @@ function renderMaker() {
     b.textContent = t('stk.pk.' + b.dataset.v);
     b.setAttribute('aria-checked', String(b.dataset.v === mk.pack));
   }
+  renderPackOpts();
   const box = $('sk-shapes');
   if (!box.childElementCount) {
     for (const v of STICKER_SHAPES) {
@@ -3244,7 +3271,7 @@ function bindMaker() {
       if (first) then?.(first);
       return;
     }
-    const pk = await createPack({ kind, title: t(kind === 'foil' ? 'peel.foilTitle' : 'peel.sheetTitle'), src: 'made' });
+    const pk = await createPack({ kind, title: t(kind === 'foil' ? 'peel.foilTitle' : 'peel.sheetTitle'), src: 'made', ...(kind === 'foil' ? mk.po : {}) });
     for (const [i, s] of list.entries()) {
       const name = list.length === 1 ? $('sk-name').value.trim() || s.name : s.name;
       await addToPack(pk.id, bakeSticker(s.src, { mask: s.mask, shape: shapeOf(s), fin: mk.fin, size: 512, seed: i + 1 }), { name, fin: mk.fin, shape: shapeOf(s) });
@@ -3400,6 +3427,74 @@ function bindMachineStickers() {
     openStickerMaker((st) => stickToMachine(st));
   };
 }
+// 鋁箔袋的設定（選了鋁箔袋才出現）：款式（縮圖）、顏色（色相）、標籤上的字
+function renderPackOpts() {
+  const box = $('sk-packopts');
+  box.hidden = mk.pack !== 'foil';
+  if (box.hidden) return;
+  const po = mk.po;
+  const save = () => store.set('clatter.stkPackOpts', po);
+  if (!box.childElementCount) {
+    const row = document.createElement('div');
+    row.className = 'sk-designs';
+    for (const d of PACK_DESIGNS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sk-design';
+      b.dataset.v = d.id;
+      const im = document.createElement('img');
+      im.src = packUrl({ design: d.id });
+      im.alt = '';
+      b.append(im);
+      b.onclick = () => {
+        po.design = d.id;
+        save();
+        renderPackOpts();
+      };
+      row.append(b);
+    }
+    const hue = document.createElement('label');
+    hue.className = 'snd-row';
+    const hs = document.createElement('span');
+    const hr = document.createElement('input');
+    hr.type = 'range';
+    hr.min = 0;
+    hr.max = 359;
+    hr.id = 'sk-hue';
+    hr.oninput = () => {
+      po.hue = +hr.value;
+      save();
+      renderPackOpts();
+    };
+    hue.append(hs, hr);
+    const lab = document.createElement('label');
+    lab.className = 'snd-row';
+    const ls = document.createElement('span');
+    const li = document.createElement('input');
+    li.id = 'sk-plabel';
+    li.maxLength = 16;
+    li.oninput = () => {
+      po.label = li.value;
+      save();
+    };
+    lab.append(ls, li);
+    box.append(row, hue, lab);
+  }
+  for (const b of box.querySelectorAll('.sk-design')) {
+    b.setAttribute('aria-pressed', String(b.dataset.v === po.design));
+    b.setAttribute('aria-label', t('stk.pd.' + b.dataset.v));
+    b.title = t('stk.pd.' + b.dataset.v);
+    b.querySelector('img').style.filter = po.hue ? `hue-rotate(${po.hue}deg)` : '';
+  }
+  const [hs, ls] = box.querySelectorAll('.snd-row > span');
+  hs.textContent = t('stk.packHue');
+  ls.textContent = t('stk.packLabel');
+  $('sk-hue').value = po.hue | 0;
+  const li = $('sk-plabel');
+  if (document.activeElement !== li) li.value = po.label || '';
+  li.placeholder = t('peel.packLabel', { n: Math.max(1, mk.srcs.length) });
+}
+
 // 貼紙工房上面那一格：貼紙簿裡做好的貼紙，每張可以放進轉蛋、貼到機台
 async function renderMyStickers() {
   const box = $('my-stickers');

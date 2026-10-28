@@ -207,6 +207,17 @@ export const FOIL = { file: 'tex/foil_pack.webp', seal: 0.245, labelAt: { x: 0.4
 // 載不到圖的時候用程式畫的（drawFoilPack）
 //   枕頭型的袋子：銀色鋁箔＋粉彩虹光、皺褶反光、上下鋸齒封口（直條壓紋）、左上 V 形切口、中間白色圓標籤
 export const FOIL_DRAWN = { seal: 0.11, labelAt: { x: 0.5, y: 0.5, r: 0.22 } };
+// 貼紙袋的款式（使用者 2026-10-28：「追加貼紙可以選擇要不要包裝 再生成幾個包裝給玩家編輯設定」）
+//   file＝Gemini 畫的（tools/cut_pack.py 去背、量 seal 撕口／labelAt 標籤）；drawn＝程式畫的銀色款
+export const PACK_DESIGNS = [
+  { id: 'holo', file: FOIL.file, seal: FOIL.seal, labelAt: FOIL.labelAt },
+  // 2026-10-28 Gemini 一張畫四款（D:\ai\gemini\gacha\pack_sheet.png → tools/cut_packs.py）
+  { id: 'kraft', file: 'tex/pack_kraft.webp', seal: 0.2418, labelAt: { x: 0.4969, y: 0.498, r: 0.2281 } },
+  { id: 'night', file: 'tex/pack_night.webp', seal: 0.2454, labelAt: { x: 0.4969, y: 0.499, r: 0.2281 } },
+  { id: 'candy', file: 'tex/pack_candy.webp', seal: 0.2439, labelAt: { x: 0.4953, y: 0.499, r: 0.2304 } },
+  { id: 'gingham', file: 'tex/pack_gingham.webp', seal: 0.2444, labelAt: { x: 0.4969, y: 0.499, r: 0.2281 } },
+  { id: 'silver', drawn: true, ...FOIL_DRAWN },
+];
 export function drawFoilPack(W = 600, H = 820, seed = 5) {
   const c = document.createElement('canvas');
   c.width = W;

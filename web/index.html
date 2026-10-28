@@ -243,6 +243,13 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .stk-studio { padding: 18px; display: grid; gap: 12px; }
 .stk-studio h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 20px; }
 .stk-studio .sk-stage { max-width: 520px; }
+.sk-packopts { display: grid; gap: 8px; margin-top: 8px; padding: 10px; border: 2px dashed var(--line); border-radius: 12px; }
+.sk-packopts[hidden] { display: none; }
+.sk-designs { display: flex; gap: 8px; flex-wrap: wrap; }
+.sk-design { width: 64px; height: 86px; padding: 3px; border: 2px solid var(--line); border-radius: 10px; background: var(--surface-2); cursor: pointer; }
+.sk-design img { width: 100%; height: 100%; object-fit: contain; }
+.sk-design[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--ink); }
+.sk-packopts input:not([type="range"]) { flex: 1; min-width: 0; padding: 6px 10px; border: 2px solid var(--stroke); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; }
 .my-stk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
 .my-stk { display: grid; gap: 4px; justify-items: center; padding: 8px; border: 2px solid var(--line); border-radius: 14px; background: var(--surface-2); min-width: 0; }
 .my-stk img { width: 84px; height: 84px; object-fit: contain; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25)); }
@@ -1414,7 +1421,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
           <div class="field"><span data-i18n="stk.presets">手繪素材</span><div class="sk-presets" id="sk-presets"></div></div>
           <div class="field"><span data-i18n="stk.shape">形狀</span><div class="chips" id="sk-shapes" role="radiogroup"></div></div>
           <div class="field"><span data-i18n="stk.fin">加工</span><div class="chips" id="sk-fins" role="radiogroup"></div></div>
-          <div class="field"><span data-i18n="stk.pack">包裝</span><div class="chips" id="sk-packs" role="radiogroup"></div></div>
+          <div class="field"><span data-i18n="stk.pack">包裝</span><div class="chips" id="sk-packs" role="radiogroup"></div><div class="sk-packopts" id="sk-packopts" hidden></div></div>
           <div class="field"><label for="sk-name" data-i18n="stk.name">名字</label><input id="sk-name" maxlength="24"></div>
           <button class="btn primary big" id="sk-save" data-i18n="stk.save">放進貼紙簿</button>
         </div>

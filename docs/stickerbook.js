@@ -160,7 +160,10 @@ export class StickerBook {
       tile.title = p.title || '';
       tile.setAttribute('aria-label', t(sealed ? 'stk.packTile' : 'stk.sheetTile', { n: left }));
       const im = el('img');
-      if (sealed) im.src = this.o.foilUrl || '';
+      if (sealed) {
+        im.src = this.o.packUrl?.(p) || this.o.foilUrl || '';
+        if (p.hue) im.style.filter = `hue-rotate(${p.hue}deg)`;
+      }
       else im.src = this.urls[p.items.find((x) => !x.saved)?.id] || '';
       im.alt = '';
       im.draggable = false;
