@@ -127,6 +127,7 @@ function hullGeometry(geo) {
 }
 
 // DecalGeometry 的結果只留「面向貼紙」的三角形（法線跟貼紙方向的內積 > min）：投得深的時候不會印到背面、垂直的側壁
+//   順便把 v 上下翻：貼紙圖是 ImageBitmap，WebGL 不管 flipY → 不翻的話貼上去是上下顛倒的（使用者 2026-10-29：「貼紙貼到機器上反了」）
 function facing(geo, n, min) {
   const pos = geo.getAttribute('position');
   const nor = geo.getAttribute('normal');
@@ -141,7 +142,7 @@ function facing(geo, n, min) {
     for (let k = 0; k < 3; k++) {
       P.push(pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k));
       N.push(nor.getX(i + k), nor.getY(i + k), nor.getZ(i + k));
-      U.push(uv.getX(i + k), uv.getY(i + k));
+      U.push(uv.getX(i + k), 1 - uv.getY(i + k));
     }
   }
   if (!P.length) return null;
