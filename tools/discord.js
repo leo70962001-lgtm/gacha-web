@@ -1,5 +1,6 @@
 // 版本更新公告 → Discord「更新」頻道（使用者 2026-10-30：「版本更新時候把它寫到更新裡」，日中英三種語言）
-//   寫好 tools/release/next.md（## ja／## zh／## en 三段，每段幾行 - 列點）→ node tools/publish.js 推上去以後自動貼出去
+//   順序：中文、日文、英文（使用者 2026-10-30：「發表的時候要寫 中文 日文 英文」）
+//   寫好 tools/release/next.md（## zh／## ja／## en 三段，每段幾行 - 列點）→ node tools/publish.js 推上去以後自動貼出去
 //   → 貼成功就整段搬進 CHANGELOG.md、刪掉 next.md（不會重貼）；沒設定 webhook 就留著，下次 publish 再貼
 //   webhook 網址＝頻道的密碼：放在 tools/.discord-webhook（.gitignore 擋掉）或環境變數 CLATTER_DISCORD_WEBHOOK，不進 repo
 //   node tools/discord.js --dry  只印出要貼的內容；node tools/discord.js --post  不 publish、直接把 next.md 貼出去
@@ -62,7 +63,7 @@ function nextVersion() {
 }
 
 function payload(notes, ver) {
-  const embeds = ['ja', 'zh', 'en']
+  const embeds = ['zh', 'ja', 'en']
     .filter((k) => notes[k])
     .map((k) => ({ title: LANG[k].title(ver), url: SITE, color: LANG[k].color, description: notes[k].slice(0, 4000) }));
   return { username: 'Clatter', content: '', embeds, allowed_mentions: { parse: [] } };
@@ -85,7 +86,7 @@ async function postRelease({ dry = false } = {}) {
   const total = body.embeds.reduce((n, e) => n + e.title.length + e.description.length, 0);
   if (total <= 5800) await send(url, body);
   else for (const e of body.embeds) await send(url, { ...body, embeds: [e] });
-  const entry = `## ${ver}\n\n` + ['ja', 'zh', 'en'].filter((k) => notes[k]).map((k) => `### ${k}\n\n${notes[k]}\n`).join('\n');
+  const entry = `## ${ver}\n\n` + ['zh', 'ja', 'en'].filter((k) => notes[k]).map((k) => `### ${k}\n\n${notes[k]}\n`).join('\n');
   let log = '';
   try {
     log = fs.readFileSync(LOG, 'utf8');

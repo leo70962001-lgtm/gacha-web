@@ -1033,6 +1033,21 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .snd-mute { display: flex; gap: 8px; align-items: center; font-size: 14px; font-weight: 700; cursor: pointer; }
 .snd-mute input { width: 18px; height: 18px; accent-color: var(--accent); }
 #snd-now { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+/* 意見回饋 */
+.fb-open { justify-self: stretch; padding: 6px 12px; font-size: 13px; }
+.fb-card { gap: 10px; }
+.fb-card h2 { padding-right: 40px; }
+.fb-card .mb-hint { margin: 0; }
+.fb-kinds .chip { cursor: pointer; font-size: 13px; padding: 4px 12px; color: inherit; }
+.fb-kinds .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.fb-card textarea, .fb-card .field input { width: 100%; border: 2px solid var(--line); border-radius: 12px; padding: 10px; background: var(--surface); resize: vertical; min-height: 0; }
+.fb-card textarea { min-height: 110px; }
+.fb-count { justify-self: end; margin-top: -6px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.fb-env { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.fb-env input { width: 16px; height: 16px; flex: none; margin-top: 1px; accent-color: var(--accent); }
+.fb-card #fb-send { justify-self: center; min-width: 9em; }
+.fb-foot { margin: 18px 0 4px; text-align: center; }
+.fb-foot button { background: none; border: 0; padding: 6px 8px; color: var(--muted); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .bgm-tile[aria-checked="true"] svg { animation: none; } }
 .swatch[aria-checked="true"]::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 3px solid var(--ink); }
 .link-box { display: grid; gap: 10px; }
@@ -1571,6 +1586,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         <p class="album-empty card-box" id="browse-empty" hidden></p>
         <div class="browse-grid" id="browse-grid"></div>
         <button class="btn" id="browse-more" hidden data-i18n="browse.more">再多看一些</button>
+        <p class="fb-foot"><button type="button" id="browse-feedback"><span aria-hidden="true">💬</span> <span data-i18n="fb.foot">有問題或建議？告訴我們</span></button></p>
       </div>
     </section>
     <section class="page" id="page-shop" hidden aria-labelledby="shop-title">
@@ -1808,6 +1824,22 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   <label class="snd-row"><span data-i18n="snd.bgm">背景音樂</span><input type="range" id="vol-bgm" min="0" max="1" step="0.05"></label>
   <label class="snd-mute"><input type="checkbox" id="snd-mute"><span data-i18n="snd.mute">全部靜音</span></label>
   <small id="snd-now"></small>
+  <button type="button" class="btn ghost fb-open" id="btn-feedback"><span aria-hidden="true">💬</span> <span data-i18n="fb.open">意見回饋・回報問題</span></button>
+</div>
+
+<!-- 意見回饋 → Discord「カスタマーサービス」頻道（使用者 2026-10-30：「有 feedback 的話在這裡」；送到 supabase/functions/feedback） -->
+<div class="sheet" id="sheet-feedback" hidden>
+  <div class="sheet-card fb-card" role="dialog" aria-modal="true" aria-labelledby="fb-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="fb-title" data-i18n="fb.title">意見回饋</h2>
+    <p class="mb-hint" data-i18n="fb.lede"></p>
+    <div class="chips fb-kinds" id="fb-kinds"></div>
+    <label class="field"><span data-i18n="fb.textLabel">內容</span><textarea id="fb-text" rows="5" maxlength="1000"></textarea></label>
+    <small class="fb-count" id="fb-count"></small>
+    <label class="field"><span data-i18n="fb.contactLabel">聯絡方式（可以不填）</span><input id="fb-contact" maxlength="100" autocomplete="off"></label>
+    <label class="fb-env"><input type="checkbox" id="fb-env" checked><span data-i18n="fb.env"></span></label>
+    <button class="btn primary" id="fb-send" type="button" data-i18n="fb.send">送出</button>
+  </div>
 </div>
 
 <script type="importmap">

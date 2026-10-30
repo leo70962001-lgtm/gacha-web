@@ -8,6 +8,8 @@
 export const CLOUD = {
   url: 'https://mtiqeosgpmjlhznhixpr.supabase.co',
   key: 'sb_publishable_IH8ygYOX8cIYjFa-ETiOyA_iFAqgQDH', // 公開用的 publishable key（本來就是給網頁用的，權限靠 RLS 管）
+  // 舊版公開 anon key（JWT，Supabase：「safe to use in a browser」）：開著 JWT 驗證的 Edge Function（feedback）要帶這個才過得了閘道
+  anon: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10aXFlb3NncG1qbGh6bmhpeHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NjIyODAsImV4cCI6MjEwODIzODI4MH0.ecUr4fcFXgeUuSHUaervUKe1IjdwJM2xU7wXI5tGbyo',
 };
 
 const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';

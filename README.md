@@ -41,6 +41,14 @@
 - **彈出視窗上半部被蓋掉、拉不回來**（安卓）：視窗照看得到的高度（`100dvh`）、開著時後面的頁面鎖住（`html:has(.sheet:not([hidden]))`）、`overscroll-behavior: contain` 不讓捲動帶著頁面跑、背景 `touch-action: none`；收藏的大卡、結果卡照畫面高度縮（`calc((100dvh - …) * var(--ar))`），矮的畫面也不用捲；Esc 關最上面那層
 - **開店頁打獎品名稱時鍵盤一直收起來**（螢幕錄影「修正跳掉的bug」）：有短連結的機台每次改完 1.5 秒會自動更新雲端，更新完重抓「被轉走幾個」時整張獎品清單重做 → 正在打字的欄位被換掉、鍵盤收起來。現在只換每格那一行（`renderTaken`）
 
+## 意見回饋 → Discord「カスタマーサービス」（2026-10-30）
+
+使用者：「有 feedback 的話在這裡」（給了カスタマーサービス頻道的 webhook）、「要對應fb之前詢問我」（玩家的回饋要先問過使用者才處理）。
+- **入口**：🔊 音量選單最下面「💬 意見回饋・回報問題」、逛機台頁最下面一行。`#sheet-feedback`：種類（問題／建議／其他）、內容 ≤ 1000 字、聯絡方式（可不填）、「附上畫面資訊」（頁面、玩的機台＋短連結、UA＋畫面大小，預設勾）。送出後 30 秒內不能再送；送不出去內容留著
+- **為什麼要經過伺服器**：網頁直接打 Discord webhook 的話網址會在公開的原始碼裡，誰都能拿去洗頻道 → Edge Function `supabase/functions/feedback/index.ts` 轉送；webhook 網址是 Supabase 的秘密（`DISCORD_FEEDBACK_WEBHOOK`；實際存成了 Discord 那邊的 webhook 名字「Captain Hook」，值對，function 兩個名字都認）。擋：同一個 IP 每分鐘 3 則、1000 字、`allowed_mentions: { parse: [] }`（@everyone 不會響）。Discord 卡片標題、欄位名照中文／日文／英文
+- **JWT 驗證開著**：網頁帶公開的舊版 anon key（`CLOUD.anon`，Supabase 說可以放在瀏覽器）過閘道；新的 publishable key 不是 JWT，過不了「Verify JWT with legacy secret」
+- 部署：dashboard → Edge Functions → feedback → Code，monaco `setValue` 後「Deploy updates」→ 確認（跟 wallet 一樣）。本機測試：Node 24 直接 import 這個 .ts（型別會被拿掉），`process.env` 換成假的 webhook 伺服器
+
 ## 轉卡機（2026-10-25）
 
 第 2 步「機台種類」選 轉蛋機／轉卡機（連結裡 `k:'c'`）。模型 `D:\ai\clatter-1.blend`（Carddass 型）：`blender/measure_card.py` 量部位 → `blender/build_card_glb.py`（跟扭蛋機同一套：套 Maya 群組、清自訂法線＋30° 銳邊＋Weighted Normal、依位置分材質、烘 AO）→ `web/assets/card.b64.txt`＋`ao_card_*.jpg`，第一次切到轉卡機才載入（`Machine.setKind`、`SPECS.card`）。

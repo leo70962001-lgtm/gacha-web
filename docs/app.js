@@ -34,7 +34,7 @@ function nowPlaying(box, m, o) {
   };
   return p;
 }
-import { machineStats, tradeMe, setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
+import { CLOUD, machineStats, tradeMe, setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales } from './cloud.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -569,9 +569,76 @@ function toggleSoundPop(open = $('snd-pop').hidden) {
   pop.style.top = Math.round(r.bottom + 8) + 'px';
   pop.style.right = Math.max(8, Math.round(innerWidth - r.right)) + 'px';
 }
+// ---------- 意見回饋（使用者 2026-10-30：「有 feedback 的話在這裡」）→ supabase/functions/feedback → Discord「カスタマーサービス」 ----------
+//   入口：音量選單最下面、逛機台頁最下面；種類（問題／建議／其他）＋內容＋聯絡方式（可不填）＋附上畫面資訊（頁面、機台、裝置，可以關掉）
+//   送不出去內容留著；送出去以後 30 秒內不能再送（function 那邊也擋同一個 IP 每分鐘 3 則）
+const FB_KINDS = ['bug', 'idea', 'other'];
+let fbKind = 'bug';
+let fbWait = 0;
+function openFeedback() {
+  toggleSoundPop(false);
+  const box = $('fb-kinds');
+  box.textContent = '';
+  for (const k of FB_KINDS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = t('fb.k.' + k);
+    b.setAttribute('aria-pressed', String(k === fbKind));
+    b.onclick = () => {
+      fbKind = k;
+      for (const x of box.children) x.setAttribute('aria-pressed', String(x === b));
+    };
+    box.append(b);
+  }
+  $('fb-text').placeholder = t('fb.ph');
+  $('fb-contact').placeholder = t('fb.contactPh');
+  fbCount();
+  openSheet('sheet-feedback', box.firstElementChild); // 先不要跳鍵盤
+}
+const fbCount = () => ($('fb-count').textContent = `${$('fb-text').value.length} / 1000`);
+// 附上的畫面資訊：現在在哪一頁、玩哪一台、什麼裝置（UA 太長只留前 200 字）
+function fbEnv() {
+  const mode = app.dataset.mode;
+  const page = [mode, location.hash.slice(0, 40)].filter(Boolean).join(' ');
+  const machine = mode === 'play' && play?.cfg ? `${play.cfg.name || t('defaultMachine')}${play.link?.startsWith('s.') ? ' (' + play.link + ')' : ''}` : '';
+  return { page, machine, device: `${navigator.userAgent.slice(0, 160)} · ${innerWidth}×${innerHeight}` };
+}
+async function sendFeedback() {
+  const text = $('fb-text').value.trim();
+  if (!text) {
+    $('fb-text').focus();
+    return toast(t('fb.empty'));
+  }
+  if (Date.now() < fbWait) return toast(t('fb.wait'));
+  const btn = $('fb-send');
+  btn.disabled = true;
+  btn.textContent = t('fb.sending');
+  try {
+    const body = { kind: fbKind, text, contact: $('fb-contact').value.trim(), lang, ...($('fb-env').checked ? fbEnv() : {}) };
+    // function 開著 JWT 驗證 → 帶公開的 anon key（cloud.js）
+    const r = await fetch(CLOUD.url + '/functions/v1/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + CLOUD.anon, apikey: CLOUD.anon }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(String(r.status));
+    fbWait = Date.now() + 30000;
+    $('fb-text').value = '';
+    fbCount();
+    closeSheet('sheet-feedback');
+    toast(t('fb.sent'));
+  } catch (e) {
+    toast(t(e.message === '429' ? 'fb.wait' : 'fb.failed'));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('fb.send');
+  }
+}
+
 function bindSound() {
   $('btn-sound').setAttribute('aria-haspopup', 'dialog');
   $('btn-sound').onclick = () => toggleSoundPop();
+  $('btn-feedback').onclick = openFeedback;
+  $('browse-feedback').onclick = openFeedback;
+  $('fb-send').onclick = sendFeedback;
+  $('fb-text').addEventListener('input', fbCount);
   $('vol-sfx').addEventListener('input', () => {
     audioPref.sfx = +$('vol-sfx').value;
     audioPref.mute = false;
