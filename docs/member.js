@@ -6,7 +6,8 @@
 import { CLOUD } from './cloud.js';
 import { finOf } from './codec.js';
 import { titleOf } from './albumedit.js';
-import { PACK, makeFiles, canShareFiles, shareFiles, downloadFiles, packInfo } from './cardpack.js';
+import { PACK, makeFiles, canShareFiles, shareFiles, downloadFiles, packInfo, POST, postText, caption } from './cardpack.js';
+import { copyText } from './copy.js';
 
 export const WALLET_FN = CLOUD.url + '/functions/v1/wallet';
 // 每個獎品幾分（照稀有度）、升級門檻（伺服器卡背的說明寫的是同一組數字）
@@ -215,7 +216,7 @@ export async function drawFace(g, face, cx, cy, w, opt = {}) {
 }
 
 // Wallet 的 Poster 卡面（artwork）：主題色＋模糊的照片當底、中間一張大卡、星星；上面放 logo／積分、下面放名字、QR，所以卡放中間偏上
-// opt：cy＝卡的中心在多高（0–1）、cw＝卡寬（佔畫面寬幾成）— 桌布、分享圖也用這張，卡擺的位置不一樣
+// opt：cx／cy＝卡的中心在哪（0–1）、cw＝卡寬（佔畫面寬幾成）— 桌布、分享圖也用這張，卡擺的位置不一樣
 export async function drawArtwork(face, W = 716, H = 896, opt = {}) {
   const c = canvas(W, H);
   const g = c.getContext('2d');
@@ -236,8 +237,8 @@ export async function drawArtwork(face, W = 716, H = 896, opt = {}) {
     cover(g, im, -W * 0.1, -H * 0.1, W * 1.2, H * 1.2);
     g.restore();
   }
-  // 中間的光（稀有度色）＋放射線
-  const cx = W / 2;
+  // 中間的光（稀有度色）＋放射線（cx＝卡放在左右哪裡，X 的橫圖放右邊）
+  const cx = W * (opt.cx ?? 0.5);
   const cy = H * (opt.cy ?? 0.42);
   const glow = g.createRadialGradient(cx, cy, 0, cx, cy, W * 0.7);
   glow.addColorStop(0, RC[r][0] + 'cc');
@@ -641,6 +642,25 @@ export class MemberCard {
       btn.type = 'button';
       btn.onclick = () => this.packSave(spec, face, info, btn);
       meta.append(btn);
+      // 動態牆的：複製貼文文字（含連結）＋有網頁發文連結的平台直接過去（圖要自己加）
+      if (spec.feed) {
+        const row = el('div', 'pk-post');
+        const cp = el('button', 'btn ghost', t('pk.copyCap'));
+        cp.type = 'button';
+        cp.onclick = async () => {
+          const text = caption(face, info);
+          this.d.toast((await copyText(text)) ? t('pk.capCopied') : text);
+        };
+        row.append(cp);
+        for (const p of spec.post || []) {
+          const a = el('a', 'btn ghost', t('pk.post.' + p));
+          a.href = POST[p](postText(face, info), info.url);
+          a.target = '_blank';
+          a.rel = 'noopener';
+          row.append(a);
+        }
+        meta.append(row);
+      }
       tile.append(meta);
       grid.append(tile);
       previews.push([spec, pvBox, W, H]);

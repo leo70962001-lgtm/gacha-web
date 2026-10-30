@@ -2991,6 +2991,7 @@ function memberCard() {
         trade.me = await tradeMe(trade.w, v);
       },
       inviteUrl: (code) => `${shareBase()}#f.${code}`,
+      siteUrl: () => shareBase(),
       isIos: isApple,
       // App 主題跟著主題卡（顏色、分頁圖示）；preview＝順便播一次開場動畫
       onTheme: (face, on, preview) => {

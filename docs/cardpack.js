@@ -4,6 +4,8 @@
 //     → 照每個地方的尺寸畫好圖，手機用分享選單「存到照片」，電腦直接下載；一次很多張的打包成 zip
 //   素材：鎖定畫面／主畫面桌布（照這台手機的解析度）、全部的卡做成一組桌布（照片隨機顯示）、聯絡人海報、
 //         Apple Watch 照片錶面、頭像、小紅書分享圖、Discord 橫幅、貼圖（透明 PNG）、App 圖示
+//   分享到朋友圈的平台（使用者 2026-10-30：「增加分享到朋友圈的平台」）：照各家動態牆的比例各做一張
+//     1:1 微信朋友圈・LINE VOOM・微博、4:5 IG・Threads・FB、9:16 限時動態、16:9 X；有網頁發文連結的直接帶文字＋連結過去（圖要自己附）
 import { drawArtwork, drawFace, loadImg, avgColor, cover, rrect, star, rng, hashStr, canvas, mix, rgb, drawPrimaryLogo, appIcon, drawQr, fmtNo, nf, memberStats } from './member.js';
 import { bakeSticker } from './sticker.js';
 
@@ -116,6 +118,73 @@ function flatBg(g, W, Hh, base, dark = 0.35) {
     }
 }
 
+// ---------- 分享圖共用 ----------
+const BODY = '"Huninn", "Noto Sans TC", system-ui, sans-serif';
+const NUM = '"Dela Gothic One", "Huninn", system-ui, sans-serif';
+// 會員資料四行：會員・等級／名字／積分／收集數（(x, y)＝左上角，k＝字的倍率，高約 260k）
+function drawStats(g, info, x, y, k, maxW) {
+  const { t, stats } = info;
+  g.textBaseline = 'alphabetic';
+  g.textAlign = 'left';
+  g.fillStyle = '#ffd678';
+  g.font = `700 ${30 * k}px ${BODY}`;
+  g.fillText(`${t('mb.member')} · ${t('mb.tier' + stats.tier)}`, x, y + 30 * k);
+  g.fillStyle = '#fff';
+  g.font = `${64 * k}px ${NUM}`;
+  g.fillText(info.name || t('mb.member'), x, y + 110 * k, maxW);
+  g.font = `${40 * k}px ${NUM}`;
+  g.fillText(`${nf(stats.points)} ${t('mb.points')}`, x, y + 190 * k);
+  g.fillStyle = 'rgba(255,255,255,0.8)';
+  g.font = `700 ${30 * k}px ${BODY}`;
+  g.fillText(`${t('mb.col')} ${t('mb.pieces', { k: stats.kinds, n: stats.pieces })}`, x, y + 250 * k);
+}
+// 加好友 QR：白底＋「掃碼加我好友」（(x, y)＝QR 左上角，邊長 s；整塊高 s＋52k）；沒有會員號就不畫
+async function drawInviteQr(g, info, x, y, s, k) {
+  if (!info.invite) return;
+  const q = await drawQr(canvas(1, 1), info.invite, s * 1.08).catch(() => null);
+  if (!q) return;
+  g.fillStyle = '#fff';
+  rrect(g, x - 12 * k, y - 12 * k, s + 24 * k, s + 64 * k, 20 * k);
+  g.fill();
+  g.drawImage(q, x, y, s, s);
+  g.fillStyle = '#333';
+  g.textAlign = 'center';
+  g.font = `700 ${22 * k}px ${BODY}`;
+  g.fillText(info.t('pk.scanMe'), x + s / 2, y + s + 36 * k, s + 8 * k); // QR 小的時候字縮進白底裡
+  g.textAlign = 'left';
+}
+// 直的、方的動態牆分享圖（小紅書、朋友圈、IG…）：上面是卡，下面一條深色的會員資料＋加好友 QR
+async function feedCard(face, info, W, Hh) {
+  const c = canvas(W, Hh);
+  const g = c.getContext('2d');
+  const k = W / 1080;
+  const top = Math.round(Hh - 374 * k);
+  // 卡照平常的大小；正方形這種矮的，縮到上下各留 8%
+  const card = face?.kind === 'card';
+  const cw = Math.min(card ? 0.46 : 0.5, (top * 0.84) / (W * (card ? 350 / 240 : 1)));
+  g.drawImage(await drawArtwork(face, W, top, { cy: 0.5, cw }), 0, 0);
+  g.fillStyle = rgb(mix(await baseColor(face), [10, 12, 24], 0.78));
+  g.fillRect(0, top, W, Hh - top);
+  g.drawImage(await drawPrimaryLogo(Math.round(64 * k)), 48 * k, 44 * k);
+  drawStats(g, info, 56 * k, top + 40 * k, k, W - 420 * k);
+  const s = 240 * k;
+  await drawInviteQr(g, info, W - 56 * k - s, top + (Hh - top - s - 40 * k) / 2, s, k);
+  return c;
+}
+
+// 發文連結：網頁沒辦法把圖塞進別人的 App → 只帶文字＋連結，圖（先存到照片）發文時自己加
+//   微信、IG、小紅書沒有網頁發文連結；FB 的分享連結會把 # 後面（好友碼）弄掉 → 這幾個用「複製貼文文字」
+const enc = encodeURIComponent;
+export const POST = {
+  x: (text, url) => `https://x.com/intent/post?text=${enc(`${text} ${url} #Clatter`)}`,
+  threads: (text, url) => `https://www.threads.com/intent/post?text=${enc(`${text} ${url} #Clatter`)}`,
+  line: (text, url) => `https://social-plugins.line.me/lineit/share?url=${enc(url)}&text=${enc(text)}`,
+  weibo: (text, url) => `https://service.weibo.com/share/share.php?url=${enc(url)}&title=${enc(text)}`,
+};
+// 貼文文字（「一起來轉 👉」後面接連結：加好友的邀請連結，沒有會員號就是網站）
+export const postText = (face, info) => info.t('pk.caption', { k: info.stats.kinds, name: face?.name || '' });
+export const caption = (face, info) => `${postText(face, info)} ${info.url} #Clatter`;
+
 // ---------- 每一種素材 ----------
 // draw(face, info, W, H) → canvas；info＝{ name, stats, faces, invite, id, t }
 export const PACK = [
@@ -224,52 +293,54 @@ export const PACK = [
       return c;
     },
   },
+  // 動態牆的分享圖（feed＝有「複製貼文文字」，post＝有網頁發文連結的平台）
+  { id: 'xhs', size: () => [1080, 1440], type: 'image/jpeg', feed: true, draw: feedCard }, // 小紅書 3:4
+  { id: 'moments', size: () => [1080, 1080], type: 'image/jpeg', feed: true, post: ['line', 'weibo'], draw: feedCard }, // 朋友圈九宮格是正方形
+  { id: 'ig', size: () => [1080, 1350], type: 'image/jpeg', feed: true, post: ['threads'], draw: feedCard }, // IG／Threads／FB 動態最大 4:5
   {
-    id: 'xhs',
-    size: () => [1080, 1440], // 小紅書 3:4
+    id: 'story',
+    size: () => [1080, 1920], // 限時動態 9:16
     type: 'image/jpeg',
+    feed: true,
+    // 上面約 14%（進度條、頭像）、下面約 18%（回覆欄）是 App 的按鈕 → logo、卡、資料都放在中間那段
     async draw(face, info, W, Hh) {
       const c = canvas(W, Hh);
       const g = c.getContext('2d');
-      const top = Math.round(Hh * 0.74);
-      g.drawImage(await drawArtwork(face, W, top, { cy: 0.5, cw: face?.kind === 'card' ? 0.46 : 0.5 }), 0, 0);
-      const base = await baseColor(face);
-      g.fillStyle = rgb(mix(base, [10, 12, 24], 0.78));
-      g.fillRect(0, top, W, Hh - top);
       const k = W / 1080;
-      g.drawImage(await drawPrimaryLogo(Math.round(64 * k)), 48 * k, 44 * k);
-      const body = '"Huninn", "Noto Sans TC", system-ui, sans-serif';
-      const num = '"Dela Gothic One", "Huninn", system-ui, sans-serif';
-      const { t, stats } = info;
-      g.textBaseline = 'alphabetic';
-      g.fillStyle = '#ffd678';
-      g.font = `700 ${30 * k}px ${body}`;
-      g.fillText(`${t('mb.member')} · ${t('mb.tier' + stats.tier)}`, 56 * k, top + 70 * k);
-      g.fillStyle = '#fff';
-      g.font = `${64 * k}px ${num}`;
-      g.fillText(info.name || t('mb.member'), 56 * k, top + 150 * k, W - 420 * k);
-      g.font = `${40 * k}px ${num}`;
-      g.fillText(`${nf(stats.points)} ${t('mb.points')}`, 56 * k, top + 230 * k);
-      g.fillStyle = 'rgba(255,255,255,0.8)';
-      g.font = `700 ${30 * k}px ${body}`;
-      g.fillText(`${t('mb.col')} ${t('mb.pieces', { k: stats.kinds, n: stats.pieces })}`, 56 * k, top + 290 * k);
-      if (info.invite) {
-        const q = await drawQr(canvas(1, 1), info.invite, 260 * k).catch(() => null);
-        if (q) {
-          const s = 240 * k;
-          const x = W - 56 * k - s;
-          const y = top + (Hh - top - s - 40 * k) / 2;
-          g.fillStyle = '#fff';
-          rrect(g, x - 12 * k, y - 12 * k, s + 24 * k, s + 64 * k, 20 * k);
-          g.fill();
-          g.drawImage(q, x, y, s, s);
-          g.fillStyle = '#333';
-          g.textAlign = 'center';
-          g.font = `700 ${22 * k}px ${body}`;
-          g.fillText(t('pk.scanMe'), x + s / 2, y + s + 36 * k);
-          g.textAlign = 'left';
-        }
-      }
+      g.drawImage(await drawArtwork(face, W, Hh, { cy: 0.44, cw: face?.kind === 'card' ? 0.48 : 0.56 }), 0, 0);
+      const logo = await drawPrimaryLogo(Math.round(60 * k));
+      g.drawImage(logo, (W - logo.width) / 2, Hh * 0.125);
+      const y0 = Hh * 0.655;
+      const ph = 330 * k;
+      g.fillStyle = `rgba(${mix(await baseColor(face), [10, 12, 24], 0.78).join(',')}, 0.86)`;
+      rrect(g, 48 * k, y0, W - 96 * k, ph, 36 * k);
+      g.fill();
+      const s = 220 * k;
+      drawStats(g, info, 88 * k, y0 + 36 * k, k, W - 96 * k - s - 130 * k);
+      await drawInviteQr(g, info, W - 88 * k - s, y0 + (ph - s - 64 * k) / 2 + 12 * k, s, k);
+      return c;
+    },
+  },
+  {
+    id: 'x',
+    size: () => [1600, 900], // X 時間軸 16:9
+    type: 'image/jpeg',
+    feed: true,
+    post: ['x'],
+    // 卡放右邊，左邊壓暗放 logo、會員資料、加好友 QR
+    async draw(face, info, W, Hh) {
+      const c = canvas(W, Hh);
+      const g = c.getContext('2d');
+      const k = Hh / 900;
+      g.drawImage(await drawArtwork(face, W, Hh, { cx: 0.72, cy: 0.5, cw: face?.kind === 'card' ? 0.3 : 0.38 }), 0, 0);
+      const sh = g.createLinearGradient(0, 0, W * 0.62, 0);
+      sh.addColorStop(0, 'rgba(0,0,0,0.55)');
+      sh.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = sh;
+      g.fillRect(0, 0, W, Hh);
+      g.drawImage(await drawPrimaryLogo(Math.round(64 * k)), 70 * k, 60 * k);
+      drawStats(g, info, 80 * k, 190 * k, k * 1.15, W * 0.5);
+      await drawInviteQr(g, info, 92 * k, 560 * k, 200 * k, k);
       return c;
     },
   },
@@ -498,6 +569,7 @@ export async function cardSplash(face, { t, sfx, unlock }) {
 // 素材包分頁要的資料
 export function packInfo(album, faces, d) {
   const w = d.wallet();
-  return { t: d.t, name: d.myName(), stats: memberStats(album), faces, invite: w ? d.inviteUrl(w.id) : null, id: w?.id ? fmtNo(w.id) : '' };
+  const invite = w ? d.inviteUrl(w.id) : null;
+  return { t: d.t, name: d.myName(), stats: memberStats(album), faces, invite, url: invite || d.siteUrl(), id: w?.id ? fmtNo(w.id) : '' };
 }
 export { appIcon };
