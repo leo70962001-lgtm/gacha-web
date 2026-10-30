@@ -1,4 +1,8 @@
-## ja
+# 更新紀錄（Discord「更新」頻道貼過的公告）
+
+## v2026.10.30
+
+### ja
 
 **引いたカードをシェア**
 - 結果のカードの下に「シェア」ボタン。小紅書・モーメンツ/LINE・IG/Threads・ストーリーズ・X の5サイズから選べます
@@ -16,7 +20,7 @@
 - マイショップ：全部のマシンに 📊 データボタン
 - マシンに貼ったシールが上下逆になる問題を修正
 
-## zh
+### zh
 
 **抽到的卡可以分享**
 - 結果卡下面多了「分享」：小紅書、朋友圈/LINE、IG/Threads、限時動態、X 五種尺寸可以選
@@ -34,7 +38,7 @@
 - 我的商店：每台機台都有 📊 數據按鈕
 - 修正貼到機台上的貼紙上下顛倒
 
-## en
+### en
 
 **Share the cards you pull**
 - New "Share" button under each result card, with 5 sizes: Xiaohongshu, Moments/LINE, IG/Threads, Stories and X
