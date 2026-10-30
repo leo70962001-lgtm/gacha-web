@@ -32,6 +32,14 @@
 - 專案：Supabase 組織 Clatter／專案 `clatter-gacha`（東京，Free），帳號 GitHub leo70962001-lgtm。設定 SQL：`supabase/setup.sql`。公開 key（publishable）寫在 `cloud.js`
 - 免費專案 7 天沒動靜會暫停 → `.github/workflows/keepalive.yml` 每 3 天讀一次資料表
 
+## 手機、App 內建瀏覽器（2026-10-30）
+
+使用者從 Threads 連過來玩（iPhone、安卓的 App 內建瀏覽器，畫面比 Safari／Chrome 矮）回報的幾件事：
+- **機台太小**（「把轉蛋機的大小再放大到框框的大小」）：手機上取景範圍改成名牌那排小按鈕～錢包那條的中間（`updateInsets`）— 屋頂躲到小按鈕後面、腳躲到錢包後面，出口在機台下面 1/4 左右還是露在外面點得到；畫面矮（≤ 700px）時提示只留標題、兩顆按鈕排一列
+- **10 連結果點卡沒反應**：以前只有有音樂／影片的卡是按鈕，現在每張都能點開看大張（`showMulti`）；矮的畫面一排 5 張，整個結果一頁放得下
+- **彈出視窗上半部被蓋掉、拉不回來**（安卓）：視窗照看得到的高度（`100dvh`）、開著時後面的頁面鎖住（`html:has(.sheet:not([hidden]))`）、`overscroll-behavior: contain` 不讓捲動帶著頁面跑、背景 `touch-action: none`；收藏的大卡、結果卡照畫面高度縮（`calc((100dvh - …) * var(--ar))`），矮的畫面也不用捲；Esc 關最上面那層
+- **開店頁打獎品名稱時鍵盤一直收起來**（螢幕錄影「修正跳掉的bug」）：有短連結的機台每次改完 1.5 秒會自動更新雲端，更新完重抓「被轉走幾個」時整張獎品清單重做 → 正在打字的欄位被換掉、鍵盤收起來。現在只換每格那一行（`renderTaken`）
+
 ## 轉卡機（2026-10-25）
 
 第 2 步「機台種類」選 轉蛋機／轉卡機（連結裡 `k:'c'`）。模型 `D:\ai\clatter-1.blend`（Carddass 型）：`blender/measure_card.py` 量部位 → `blender/build_card_glb.py`（跟扭蛋機同一套：套 Maya 群組、清自訂法線＋30° 銳邊＋Weighted Normal、依位置分材質、烘 AO）→ `web/assets/card.b64.txt`＋`ao_card_*.jpg`，第一次切到轉卡機才載入（`Machine.setKind`、`SPECS.card`）。
@@ -207,6 +215,7 @@
 - **App 內主題**（開關，`clatter.member.appTheme`）：卡的色相 → `--accent`／`--bg`／`--stage`／`--floor`（亮暗兩套；主色上是白字 → 調暗到亮度 ≤ 0.19，跟原本的紅一樣看得清楚），品牌圓點跟著變色；開場動畫（卡轉進來＋放射光＋「點一下開始」，點了才有音效 `sfx.reveal(稀有度)`，5 秒沒點就安靜淡出；每個分頁階段一次，從轉蛋／邀請連結進來不播）；分頁圖示（favicon＋apple-touch-icon 換成主題卡）。主題的 `<style>` 要放在 body 最後面（artifact 格式的樣式在 body 裡）
 - **素材**（`PACK`，每種一格：預覽、尺寸、怎麼設定、按鈕）：鎖定畫面桌布（這台手機的實際像素，卡放低讓出時鐘）、主畫面桌布（不放卡）、全部的卡一組桌布（最多 24 張，照片隨機顯示用）、聯絡人海報（去背主體放大）、Apple Watch 照片錶面 410×502、頭像 640²、小紅書 1080×1440（名字、等級、積分、加好友 QR）、Discord 橫幅 1360×480（最好的 5 張排扇形）、貼圖（`bakeSticker` 透明 PNG）、App 圖示 1024²
 - **分享到朋友圈的平台**（2026-10-30，使用者：「增加分享到朋友圈的平台」）：小紅書旁邊照各家動態牆的比例多 4 張，都是「上面卡＋下面會員資料＋加好友 QR」的同一套畫法（`feedCard`／`drawStats`／`drawInviteQr`）：微信朋友圈・LINE VOOM・微博 1080²（九宮格不會被切；卡縮到上下留 8%）、Instagram・Threads・Facebook 1080×1350（4:5）、限時動態 1080×1920（上 14%、下 18% 留給 App 的按鈕 → logo、卡、資料面板放中間）、X 1600×900（卡放右邊 `drawArtwork({ cx: 0.72 })`、左邊壓暗放資料＋QR）。這幾格多一個「複製貼文文字」（「收集了 N 種卡，最愛這張…一起來轉 👉」＋邀請連結 `#f.<碼>`，沒有會員號就網站網址＋#Clatter），有網頁發文連結的直接過去：X `x.com/intent/post`、Threads `threads.com/intent/post`、LINE `lineit/share`、微博 `service.weibo.com/share`（網頁沒辦法把圖塞進別人的 App → 只帶文字＋連結，圖先存到照片再自己加）。微信、IG、小紅書沒有網頁發文連結；FB 的 sharer 會把 `#` 後面的好友碼弄掉，所以也只放複製
+- **抽到的卡直接分享**（2026-10-30，使用者：「抽到自己喜歡的卡的時候下面多一個分享」「發文小幫手不用獨立出來 加到抽到自己喜歡的卡可以分享」）：結果卡下面多「分享」（剛抽到、10 連點開的、收藏回顧都有）→ `#sheet-share`：五種尺寸的 chip（小紅書／朋友圈・LINE／IG・Threads／限時動態／X，記在 `clatter.shareFmt`）→ 預覽 → 手機「分享」（圖＋文字一起，`navigator.share`）／「存到照片」（只有圖）、電腦「下載圖片」＋複製貼文文字＋X／Threads／LINE／微博發文連結。圖是同一套版型（`stripPost`／`storyPost`／`widePost` 吃 `txt＝{ lines, qr }`）：稀有度（NEW）／獎品名／「在『機台』抽到的！」＋掃了就能轉那台的 QR（短連結才放；長連結 300 字 QR 掃不了，只放在文字裡）。中途試過把發文小幫手拆成收集簿的獨立分頁，使用者說不用，收回來了
 - **存檔**：手機（`pointer: coarse` 且 `navigator.canShare({files})`）第一次按＝做圖、按鈕變「存到照片／分享」、再按才叫 `navigator.share`（分享要在點的當下叫，做圖會等太久）；電腦直接下載，很多張用 fflate（jsDelivr ESM）打成 zip
 - **做不到的（表上的限制，照實寫在每一格）**：換桌布、聯絡人海報、各 App 頭像都要使用者自己按；已安裝的 App 圖示改不了（要原生 App 先放進去）；iMessage 貼圖包、`.watchface` 要原生 App
 - 測過：電腦／手機寬度的版面、10 種都做得出來（單張 18 KB–1 MB，7 張桌布 zip）、主題色＋開場（點一下有聲音、5 秒自己收）、手機的兩步分享（用假的 `navigator.share` 測）。真的 iPhone 上存照片、設桌布還沒試
