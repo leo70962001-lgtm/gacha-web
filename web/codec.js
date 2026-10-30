@@ -102,6 +102,23 @@ export async function encodeConfig(cfg) {
       return [x.img.bytes.length, x.img.mime === 'image/webp' ? 'w' : 'p', finCode(x.fin), x.k === 'card' ? 'c' : 'p', x.m, ...x.p, ...x.n, x.s, x.r || 0];
     });
   }
+  // 台紙（使用者 2026-10-30：「增加可以編輯景品的功能」）：[放的獎品編號（0＝照獎品順序全部）, 標題, 藏起來的（1 全N種、2 稀有度、4 名字、8 自己的圖上不排）,
+  //   底 a 插畫／c 單色／i 自己的圖, 底色, 圖片長度, 格式]（圖接在貼紙後面；舊版看不懂 bd 就照舊自動排）
+  const bd = cfg.board;
+  if (bd) {
+    const at = new Map(cfg.items.map((it, i) => [it.uid, i]));
+    const img = bd.bg === 'img' && bd.img;
+    if (img) imgs.push(bd.img.bytes);
+    json.bd = [
+      Array.isArray(bd.pick) ? bd.pick.map((u) => at.get(u)).filter((i) => i != null) : 0,
+      bd.title || '',
+      (bd.kinds === false ? 1 : 0) | (bd.rar === false ? 2 : 0) | (bd.names === false ? 4 : 0) | (bd.grid === false ? 8 : 0),
+      img ? 'i' : bd.bg === 'color' ? 'c' : 'a',
+      bd.bg === 'color' ? bd.c : '',
+      img ? bd.img.bytes.length : 0,
+      img && bd.img.mime === 'image/webp' ? 'w' : 'j',
+    ];
+  }
   // 背景音樂：['n'] 不要音樂、['p', 預設曲]、['a', 音樂網址]（上傳到雲端的檔案或 mp3 網址）；預設曲 shop 就不寫
   const bm = cfg.bgm;
   if (bm?.k === 'none') json.bm = ['n'];
@@ -202,6 +219,30 @@ export async function decodeConfig(token) {
     if (!Number.isInteger(m) || m < 0 || m > 500 || p.includes(null) || n.includes(null) || !num(sz, 0.6) || sz < 0.02) continue;
     stickers.push({ id: 'l' + i + '_' + len, img, fin: finFromCode(fc) || 'flat', k: k === 'c' ? 'card' : 'capsule', m, p, n, s: sz, r: num(rot, 360) || 0 });
   }
+  // 台紙（貼紙圖之後）；放的獎品用獎品 uid 記（沒有 uid 的舊獎品補一個）
+  let board = null;
+  const bd = Array.isArray(j.bd) ? j.bd : null;
+  if (bd) {
+    const [pick, title, hide, bgk, col, len, fmt] = bd;
+    let img = null;
+    if (bgk === 'i' && Number.isInteger(len) && len > 0 && len < 200000 && off + len <= buf.length) {
+      img = { bytes: buf.slice(off, off + len), mime: fmt === 'w' ? 'image/webp' : 'image/jpeg' };
+      off += len;
+    }
+    const f = Number.isInteger(hide) ? hide : 0;
+    const okC = typeof col === 'string' && /^#[0-9a-f]{6}$/i.test(col);
+    board = {
+      pick: Array.isArray(pick) ? [...new Set(pick.filter((i) => Number.isInteger(i) && items[i]))].slice(0, LIMITS.items).map((i) => items[i].uid || (items[i].uid = 'bd' + String(i).padStart(2, '0'))) : null,
+      title: str(title, LIMITS.title),
+      kinds: !(f & 1),
+      rar: !(f & 2),
+      names: !(f & 4),
+      grid: !(f & 8),
+      bg: img ? 'img' : bgk === 'c' && okC ? 'color' : 'art',
+      c: okC ? col : '#fffaf2',
+      img,
+    };
+  }
   let bgm = { k: 'preset', id: BGM_DEFAULT };
   const bm = Array.isArray(j.bm) ? j.bm : [];
   if (bm[0] === 'n') bgm = { k: 'none' };
@@ -224,6 +265,7 @@ export async function decodeConfig(token) {
     bg,
     kind: j.k === 'c' ? 'card' : 'capsule',
     back,
+    board,
     bgm,
     stickers,
     fin: Array.isArray(j.cf) ? { sr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[0]), ssr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[1]) } : null,

@@ -850,8 +850,9 @@ export class Machine {
     if (this.decals.ret) set('ret', drawLabel(t('d.return'), 'down', '#2f6bdb'));
   }
 
-  // 機台名稱、價錢、陣容改了 → 重畫貼紙與台紙
-  updateDecor(cfg, thumbs) {
+  // 機台名稱、價錢、陣容改了 → 重畫貼紙與台紙（bimg＝台紙用的自己的圖，解碼好的）
+  //   台紙上每個獎品的位置記在 _boardHit（開店頁點台紙上的獎品 → cb.onBoardItem）
+  updateDecor(cfg, thumbs, bimg = null) {
     if (!this.loaded) return;
     const t = this.theme || THEMES.red;
     const set = (d, c) => {
@@ -863,7 +864,10 @@ export class Machine {
     set('lid', drawLid(cfg, t, this.art.banner));
     set('price', drawPrice(cfg, this.art.badge));
     if (this.kind === 'card') {
-      set('board', drawBoard(cfg, thumbs));
+      const b = drawBoard(cfg, thumbs, bimg);
+      set('board', b);
+      this._boardCanvas = b; // 開店頁的台紙預覽也用這張
+      this._boardHit = { mesh: this.decals.board, w: b.width, h: b.height, cells: b.cells };
       if (!this.kinds.card.sideDone) {
         const side = drawSide(this.art.cside || this.art.side, 780, 550, t);
         set('sideL', side);
@@ -873,7 +877,10 @@ export class Machine {
       for (const d of Object.values(this.decals)) d.material.needsUpdate = true;
       return;
     }
-    set('card', drawCard(cfg, thumbs, this.art.card));
+    const b = drawCard(cfg, thumbs, this.art.card, bimg);
+    set('card', b);
+    this._boardCanvas = b;
+    this._boardHit = { mesh: this.decals.card, w: b.width, h: b.height, cells: b.cells };
     if (!this._sideDone) {
       const side = drawSide(this.art.side, 768, 652, t);
       set('sideL', side);
@@ -2079,6 +2086,21 @@ export class Machine {
     }
     return best;
   }
+  // 開店頁：點到的是台紙上的哪個獎品（cb.boardEdit()＝開店頁才是 true）；台紙在玻璃、扭蛋後面 → 只看台紙本身
+  _pickBoardItem(e) {
+    const b = this._boardHit;
+    if (!this.cb.boardEdit?.() || !b?.cells?.length) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hit = this.raycaster.intersectObject(b.mesh, false)[0];
+    if (!hit?.uv) return null;
+    const x = hit.uv.x * b.w;
+    const y = (1 - hit.uv.y) * b.h; // canvas 貼圖上下翻過（v＝1 是畫布的頂）
+    const c = b.cells.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h);
+    return c ? c.i : null;
+  }
+
   // 那張貼紙的中心在畫面上的哪裡（拖的時候手指跟中心的距離保持不變）
   _stickerScreen(si) {
     const s = this._stkList?.[si];
@@ -2294,6 +2316,9 @@ export class Machine {
       }
       if (what === 'grid') return this.cb.onGridCapsule?.(this.pickIdx);
       if (what === 'gridCard') return this.cb.onGridCard?.(this.pickIdx);
+      // 開店頁點台紙上的獎品：放開時沒拖動才算（按著拖一樣轉機台）
+      const bi = this._pickBoardItem(e);
+      this.boardTap = bi != null ? { i: bi, x: e.clientX, y: e.clientY, t0: performance.now() } : null;
       // 空白處拖曳 → 轉機台看側面
       el.setPointerCapture(e.pointerId);
       this.dragYaw = { x: e.clientX, yaw: this.yawTarget };
@@ -2346,7 +2371,7 @@ export class Machine {
       }
       const what = this._pick(e);
       this.gridHover = what === 'grid' ? this.pickIdx : -1;
-      el.style.cursor = { handle: 'grab', slot: 'pointer', exit: 'pointer', open: 'pointer', grid: 'pointer', gridCard: 'pointer' }[what] || 'default';
+      el.style.cursor = { handle: 'grab', slot: 'pointer', exit: 'pointer', open: 'pointer', grid: 'pointer', gridCard: 'pointer' }[what] || (this._pickBoardItem(e) != null ? 'pointer' : 'default');
     });
     const up = (e) => {
       if (this.dragSticker) {
@@ -2374,6 +2399,11 @@ export class Machine {
         this.dragHandle = null;
         // 只是點一下 → 自動轉
         if (d.moved < 0.25 && performance.now() - d.t0 < 400 && this.handleEnabled) this.autoTurn();
+      }
+      if (this.boardTap) {
+        const b = this.boardTap;
+        this.boardTap = null;
+        if (e?.type === 'pointerup' && Math.hypot(e.clientX - b.x, e.clientY - b.y) < 8 && performance.now() - b.t0 < 600) this.cb.onBoardItem?.(b.i);
       }
       this.dragYaw = null;
     };

@@ -240,22 +240,51 @@ export function drawLabel(text, arrow, bg = '#1c2340', fg = '#ffffff') {
   return c;
 }
 
+// 台紙的設定（使用者 2026-10-30：「增加可以編輯景品的功能」— 放哪些、怎麼排、自己上傳整張）
+//   cfg.board＝{ pick: [獎品 uid]（照這個順序放；null＝照獎品順序全部）, title（空＝機台名稱）, kinds, rar, names（顯示全 N 種／稀有度／名字）,
+//               bg: 'art'（預設插畫）| 'color' | 'img', c 底色, img 自己的圖, grid（自己的圖上照樣排獎品）}；null＝全部預設
+export function boardOpts(cfg) {
+  const b = cfg.board || {};
+  let idx = cfg.items.map((_, i) => i);
+  if (Array.isArray(b.pick)) {
+    const at = new Map(cfg.items.map((it, i) => [it.uid, i]));
+    idx = b.pick.map((u) => at.get(u)).filter((i) => i != null);
+  }
+  return { idx, auto: !Array.isArray(b.pick), title: b.title || cfg.name, kinds: b.kinds !== false, rar: b.rar !== false, names: b.names !== false, bg: b.bg || 'art', c: b.c || '#fffaf2', grid: b.bg !== 'img' || b.grid !== false };
+}
+// 底：預設插畫、單色（淡淡的點點）、自己的圖（鋪滿）
+function boardBg(g, W, H, o, art, bimg) {
+  if (o.bg === 'img' && bimg) return drawCover(g, bimg, 0, 0, W, H);
+  if (o.bg === 'color' || !art) {
+    g.fillStyle = o.bg === 'color' ? o.c : '#fffaf2';
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    for (let y = 24; y < H; y += 48) for (let x = (y / 48) % 2 ? 24 : 48; x < W; x += 48) {
+      g.beginPath();
+      g.arc(x, y, 5, 0, Math.PI * 2);
+      g.fill();
+    }
+    return;
+  }
+  g.drawImage(art, 0, 0, W, H);
+}
+
 // 窗內的台紙（0.68 × 0.45 m）：機台名稱、價錢、獎品陣容
 // 下面約 1/4 會被扭蛋擋住 → 重要的東西都放上面
-export function drawCard(cfg, thumbs, art) {
+// 回傳的 canvas 帶 cells＝[{ i 獎品編號, x, y, w, h }]（開店頁點台紙上的獎品 → 跳到那個獎品）
+export function drawCard(cfg, thumbs, art, bimg = null) {
   const W = 1024;
   const H = 678;
   const c = canvas(W, H);
+  c.cells = [];
   const g = c.getContext('2d');
+  const o = boardOpts(cfg);
   // 內框：Gemini 台紙中間的白色區域（約 x 8–92%、y 12–88%）
   const ix = W * 0.085;
   const iy = H * 0.13;
   const iw = W * 0.83;
-  if (art) g.drawImage(art, 0, 0, W, H);
-  else {
-    g.fillStyle = '#fffaf2';
-    g.fillRect(0, 0, W, H);
-  }
+  boardBg(g, W, H, o, art, bimg);
+  if (!o.grid) return c; // 自己的圖整張當台紙
   // 標題帶
   g.fillStyle = 'rgba(28,35,64,0.94)';
   roundRect(g, ix + 10, iy + 8, iw - 20, 88, 44);
@@ -263,17 +292,20 @@ export function drawCard(cfg, thumbs, art) {
   g.fillStyle = '#ffffff';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  fitText(g, cfg.name, iw - 260, 58, FONT_DISPLAY);
-  g.fillText(cfg.name, ix + iw / 2 - 50, iy + 54);
-  g.fillStyle = '#ffd23f';
-  g.font = `32px ${FONT_DISPLAY}`;
-  g.textAlign = 'right';
-  fitText(g, t('d.kinds', { n: cfg.items.length }), 170, 32, FONT_DISPLAY);
-  g.fillText(t('d.kinds', { n: cfg.items.length }), ix + iw - 40, iy + 54);
+  fitText(g, o.title, iw - (o.kinds ? 260 : 80), 58, FONT_DISPLAY);
+  g.fillText(o.title, ix + iw / 2 - (o.kinds ? 50 : 0), iy + 54);
+  if (o.kinds) {
+    g.fillStyle = '#ffd23f';
+    g.font = `32px ${FONT_DISPLAY}`;
+    g.textAlign = 'right';
+    fitText(g, t('d.kinds', { n: cfg.items.length }), 170, 32, FONT_DISPLAY);
+    g.fillText(t('d.kinds', { n: cfg.items.length }), ix + iw - 40, iy + 54);
+  }
 
   // 獎品格子（下面 1/4 會被扭蛋擋住，所以只用上半）
-  const n = Math.min(cfg.items.length, 8);
-  const cols = n <= 4 ? n : Math.ceil(n / 2);
+  const list = o.idx.slice(0, 8);
+  const n = list.length;
+  const cols = Math.max(1, n <= 4 ? n : Math.ceil(n / 2));
   const rows = n <= 4 ? 1 : 2;
   const areaX = ix + 6;
   const areaY = iy + 104;
@@ -281,13 +313,14 @@ export function drawCard(cfg, thumbs, art) {
   const areaH = rows === 1 ? 250 : 300;
   const cell = Math.min(areaW / cols, areaH / rows);
   const ox = areaX + (areaW - cell * cols) / 2;
-  for (let i = 0; i < n; i++) {
+  for (const [k, i] of list.entries()) {
     const it = cfg.items[i];
-    const cx = ox + (i % cols) * cell;
-    const cy = areaY + Math.floor(i / cols) * cell;
+    const cx = ox + (k % cols) * cell;
+    const cy = areaY + Math.floor(k / cols) * cell;
     const pad = cell * 0.07;
     const s = cell - pad * 2;
     const rar = RARITY[it.rarity];
+    const nameH = o.names ? s * 0.16 : 0; // 不放名字 → 照片佔滿
     g.save();
     g.fillStyle = '#ffffff';
     g.shadowColor = 'rgba(0,0,0,0.18)';
@@ -296,25 +329,30 @@ export function drawCard(cfg, thumbs, art) {
     g.fill();
     g.restore();
     g.save();
-    roundRect(g, cx + pad * 1.6, cy + pad * 1.6, s - pad * 1.2, s - pad * 1.2 - s * 0.16, s * 0.09);
+    roundRect(g, cx + pad * 1.6, cy + pad * 1.6, s - pad * 1.2, s - pad * 1.2 - nameH, s * 0.09);
     g.clip();
     const th = thumbs[i];
-    if (th) drawCover(g, th, cx + pad * 1.6, cy + pad * 1.6, s - pad * 1.2, s - pad * 1.2 - s * 0.16);
+    if (th) drawCover(g, th, cx + pad * 1.6, cy + pad * 1.6, s - pad * 1.2, s - pad * 1.2 - nameH);
     g.restore();
     g.fillStyle = '#1c2340';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    fitText(g, it.name, s - 16, s * 0.12, bodyFont(), '700');
-    g.fillText(it.name, cx + cell / 2, cy + pad + s - s * 0.09);
+    if (o.names) {
+      fitText(g, it.name, s - 16, s * 0.12, bodyFont(), '700');
+      g.fillText(it.name, cx + cell / 2, cy + pad + s - s * 0.09);
+    }
     // 稀有度標籤
-    g.fillStyle = rar.color;
-    roundRect(g, cx + pad - 4, cy + pad - 6, s * 0.36, s * 0.16, s * 0.08);
-    g.fill();
-    g.fillStyle = '#fff';
-    g.font = `${Math.round(s * 0.11)}px ${FONT_NUM}`;
-    g.fillText(rar.key, cx + pad - 4 + s * 0.18, cy + pad - 6 + s * 0.085);
+    if (o.rar) {
+      g.fillStyle = rar.color;
+      roundRect(g, cx + pad - 4, cy + pad - 6, s * 0.36, s * 0.16, s * 0.08);
+      g.fill();
+      g.fillStyle = '#fff';
+      g.font = `${Math.round(s * 0.11)}px ${FONT_NUM}`;
+      g.fillText(rar.key, cx + pad - 4 + s * 0.18, cy + pad - 6 + s * 0.085);
+    }
+    c.cells.push({ i, x: cx + pad, y: cy + pad, w: s, h: s });
   }
-  if (cfg.items.length > 8) {
+  if (o.auto && cfg.items.length > 8) {
     g.fillStyle = '#1c2340';
     g.font = `28px ${FONT_DISPLAY}`;
     g.textAlign = 'center';
@@ -712,36 +750,44 @@ export function drawCardBack(art, tier = 0, back = null) {
   return c;
 }
 
-// 轉卡機的窗（直的 0.387 × 0.694 m）：台紙＝機台名稱＋獎品陣容（卡片小圖、兩欄）
-export function drawBoard(cfg, thumbs) {
+// 轉卡機的窗（直的 0.387 × 0.694 m）：台紙＝機台名稱＋獎品陣容（卡片小圖、兩欄）；cells 同 drawCard
+export function drawBoard(cfg, thumbs, bimg = null) {
   const W = 560;
   const H = 1004;
   const c = canvas(W, H);
+  c.cells = [];
   const g = c.getContext('2d');
-  const grd = g.createLinearGradient(0, 0, 0, H);
-  grd.addColorStop(0, '#fffaf2');
-  grd.addColorStop(1, '#ffe9c9');
-  g.fillStyle = grd;
-  g.fillRect(0, 0, W, H);
-  g.fillStyle = 'rgba(255, 210, 63, 0.35)';
-  for (let i = 0; i < 14; i++) {
-    g.beginPath();
-    g.arc((i * 137) % W, (i * 271) % H, 18 + (i % 4) * 10, 0, Math.PI * 2);
-    g.fill();
-  }
+  const o = boardOpts(cfg);
+  if (o.bg === 'art') {
+    const grd = g.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, '#fffaf2');
+    grd.addColorStop(1, '#ffe9c9');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255, 210, 63, 0.35)';
+    for (let i = 0; i < 14; i++) {
+      g.beginPath();
+      g.arc((i * 137) % W, (i * 271) % H, 18 + (i % 4) * 10, 0, Math.PI * 2);
+      g.fill();
+    }
+  } else boardBg(g, W, H, o, null, bimg);
+  if (!o.grid) return c;
   g.fillStyle = 'rgba(28,35,64,0.94)';
-  roundRect(g, 24, 24, W - 48, 110, 30);
+  roundRect(g, 24, 24, W - 48, o.kinds ? 110 : 84, 30);
   g.fill();
   g.fillStyle = '#ffffff';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  fitText(g, cfg.name, W - 100, 52, FONT_DISPLAY);
-  g.fillText(cfg.name, W / 2, 66);
-  g.fillStyle = '#ffd23f';
-  fitText(g, t('d.kinds', { n: cfg.items.length }), W - 100, 30, FONT_DISPLAY);
-  g.fillText(t('d.kinds', { n: cfg.items.length }), W / 2, 112);
+  fitText(g, o.title, W - 100, 52, FONT_DISPLAY);
+  g.fillText(o.title, W / 2, 66);
+  if (o.kinds) {
+    g.fillStyle = '#ffd23f';
+    fitText(g, t('d.kinds', { n: cfg.items.length }), W - 100, 30, FONT_DISPLAY);
+    g.fillText(t('d.kinds', { n: cfg.items.length }), W / 2, 112);
+  }
   // 欄數挑卡片最大的（1–3 欄），整組置中
-  const n = Math.min(cfg.items.length, 9);
+  const list = o.idx.slice(0, 9);
+  const n = list.length;
   const AW = W - 48;
   const AH = H - 156 - 60;
   const gap = 14;
@@ -755,10 +801,10 @@ export function drawBoard(cfg, thumbs) {
   const h = w / 0.686;
   const ox = 24 + (AW - (cols * w + (cols - 1) * gap)) / 2;
   const oy = 156 + (AH - (rows * h + (rows - 1) * gap)) / 2;
-  for (let i = 0; i < n; i++) {
+  for (const [k, i] of list.entries()) {
     const it = cfg.items[i];
-    const cx = ox + (i % cols) * (w + gap);
-    const cy = oy + Math.floor(i / cols) * (h + gap);
+    const cx = ox + (k % cols) * (w + gap);
+    const cy = oy + Math.floor(k / cols) * (h + gap);
     const card = drawTradingCard(it, thumbs[i], it.rarity);
     g.save();
     g.shadowColor = 'rgba(0,0,0,0.25)';
@@ -766,8 +812,9 @@ export function drawBoard(cfg, thumbs) {
     g.shadowOffsetY = 4;
     g.drawImage(card, cx, cy, w, h);
     g.restore();
+    c.cells.push({ i, x: cx, y: cy, w, h });
   }
-  if (cfg.items.length > 9) {
+  if (o.auto && cfg.items.length > 9) {
     g.fillStyle = '#1c2340';
     g.font = `30px ${FONT_DISPLAY}`;
     g.fillText(t('d.more', { n: cfg.items.length - 9 }), W / 2, H - 30);

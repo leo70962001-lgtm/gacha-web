@@ -3,7 +3,7 @@ import { Machine, THEMES } from './machine.js';
 import { unlock, setMuted, setSfxVolume, sfx } from './sfx.js';
 import { bgm } from './bgm.js';
 import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES, FRONT_FINISHES, BGM_PRESETS, BGM_DEFAULT, finOf } from './codec.js';
-import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers, drawCardBack } from './decor.js';
+import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers, drawCardBack, boardOpts } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
 import { cutout } from './seg.js';
@@ -248,6 +248,7 @@ function loadDraft(uid = shop.cur) {
   d.kind = d.kind === 'card' ? 'card' : 'capsule';
   d.bg = draftBg(d.bg);
   d.back = draftBack(d.back);
+  d.board = draftBoard(d.board);
   d.bgm = draftBgm(d.bgm);
   d.stickers = draftStickers(d.stickers);
   d.fin = d.fin && (FRONT_FINISHES.includes(d.fin.sr) || FRONT_FINISHES.includes(d.fin.ssr)) ? { sr: FRONT_FINISHES.includes(d.fin.sr) ? d.fin.sr : 'texture', ssr: FRONT_FINISHES.includes(d.fin.ssr) ? d.fin.ssr : 'gold' } : null;
@@ -318,6 +319,7 @@ function saveDraft() {
     ...draft,
     bg,
     back,
+    board: draft.board ? { ...draft.board, img: draft.board.img ? b64(draft.board.img) : null } : null,
     stickers: (draft.stickers || []).map((x) => ({ id: x.id, img: b64(x.img), fin: x.fin, k: x.k, m: x.m, p: x.p, n: x.n, s: x.s, r: x.r })),
     items: draft.items.map((it) => ({
       ...it,
@@ -469,6 +471,7 @@ function renderForm() {
   renderBgm();
   renderMachineStickers();
   renderBack();
+  renderBoardEd();
   renderFront();
   renderSwitch();
 }
@@ -994,6 +997,171 @@ async function shrinkBack(file) {
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type };
 }
 
+// ---------- 台紙（窗裡的獎品看板）（使用者 2026-10-30：「增加可以編輯景品的功能」— 放哪些、怎麼排、點台紙上的獎品就能改、自己上傳整張） ----------
+//   draft.board＝{ pick: [獎品 uid]（null＝照獎品順序全部）, title, kinds, rar, names, bg: art|color|img, c, img, grid }（decor.js boardOpts）；全部預設＝null
+function boardIsDefault(b) {
+  return !b || (!Array.isArray(b.pick) && !b.title && b.kinds !== false && b.rar !== false && b.names !== false && (b.bg || 'art') === 'art');
+}
+function draftBoard(b) {
+  if (!b || typeof b !== 'object') return null;
+  const img = b.img?.b64 ? { bytes: Uint8Array.from(atob(b.img.b64), (ch) => ch.charCodeAt(0)), mime: b.img.mime } : null;
+  const c = /^#[0-9a-f]{6}$/i.test(b.c || '') ? b.c : '#fffaf2';
+  const out = {
+    pick: Array.isArray(b.pick) ? b.pick.filter((u) => typeof u === 'string').slice(0, LIMITS.items) : null,
+    title: String(b.title || '').slice(0, LIMITS.title),
+    kinds: b.kinds !== false,
+    rar: b.rar !== false,
+    names: b.names !== false,
+    bg: b.bg === 'color' ? 'color' : b.bg === 'img' && img ? 'img' : 'art',
+    c,
+    img,
+    grid: b.grid !== false,
+  };
+  return boardIsDefault(out) ? null : out;
+}
+// 台紙用的自己的圖 → ImageBitmap（台紙是同步畫的，先解碼好；同一張圖只解一次）
+let boardBmp = null;
+async function boardImg(b) {
+  if (b?.bg !== 'img' || !b.img) return null;
+  if (boardBmp?.bytes !== b.img.bytes) boardBmp = { bytes: b.img.bytes, bmp: await createImageBitmap(new Blob([b.img.bytes], { type: b.img.mime })).catch(() => null) };
+  return boardBmp.bmp;
+}
+function setBoard(patch, typing = false) {
+  const b = { pick: null, title: '', kinds: true, rar: true, names: true, bg: 'art', c: '#fffaf2', img: null, grid: true, ...(draft.board || {}), ...patch };
+  draft.board = boardIsDefault(b) ? null : b;
+  if (typing) {
+    clearTimeout(setBoard.t);
+    setBoard.t = setTimeout(renderBoardEd, 120);
+  } else renderBoardEd();
+  draftChanged();
+}
+function renderBoardEd() {
+  const box = $('bd-picks');
+  if (!box) return;
+  ensureUids(draft);
+  const b = draft.board || {};
+  const o = boardOpts(draft);
+  const card = draft.kind === 'card';
+  const max = card ? 9 : 8; // 台紙放得下的數量（轉蛋機 8、轉卡機 9）
+  if (!$('bd-show').childElementCount) {
+    const chip = (box, k, onclick, role = 'switch') => {
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'chip fin-chip';
+      x.dataset.k = k;
+      x.setAttribute('role', role);
+      x.onclick = onclick;
+      box.append(x);
+    };
+    for (const k of ['kinds', 'rar', 'names']) chip($('bd-show'), k, () => setBoard({ [k]: (draft.board || {})[k] === false }));
+    for (const k of ['art', 'color', 'img'])
+      chip($('bd-bg'), k, () => {
+        if (k === 'img' && !draft.board?.img) return pickBoardImg();
+        setBoard({ bg: k });
+      }, 'radio');
+    $('bd-title').addEventListener('input', () => setBoard({ title: $('bd-title').value.slice(0, LIMITS.title) }, true));
+    $('bd-all').onclick = () => setBoard({ pick: null });
+    $('bd-none').onclick = () => setBoard({ pick: [] });
+    $('bd-color').addEventListener('input', () => setBoard({ bg: 'color', c: $('bd-color').value }, true));
+    $('bd-img-pick').onclick = pickBoardImg;
+    $('bd-grid').addEventListener('change', () => setBoard({ grid: $('bd-grid').checked }));
+    $('bd-reset').onclick = () => {
+      draft.board = null;
+      renderBoardEd();
+      draftChanged();
+    };
+    $('file-board').addEventListener('change', async () => {
+      const f = $('file-board').files[0];
+      if (!f) return;
+      let bmp;
+      try {
+        bmp = await createImageBitmap(f);
+      } catch (e) {
+        return toast(t('t.badImage'));
+      }
+      // 照台紙的比例裁（轉蛋機橫的、轉卡機直的）；webp 放進連結
+      const c = await openCrop({ bmp, out: draft.kind === 'card' ? [420, 753] : [768, 508], title: t('bd.cropTitle') });
+      if (!c) return;
+      let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.8));
+      if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
+      setBoard({ bg: 'img', img: { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type } });
+    });
+  }
+  if (document.activeElement !== $('bd-title')) $('bd-title').value = b.title || '';
+  $('bd-title').placeholder = draft.name || t('defaultMachine');
+  // 獎品：亮的＝放在台紙上，數字＝排列順序；點一下放上去（排到最後）／拿下來
+  const on = o.idx.slice(0, max);
+  box.textContent = '';
+  draft.items.forEach((it, i) => {
+    const pos = on.indexOf(i);
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'bd-pick';
+    x.setAttribute('aria-pressed', String(pos >= 0));
+    const im = document.createElement('img');
+    im.src = thumbOf(draft, i).url;
+    im.alt = '';
+    const nm = document.createElement('span');
+    nm.textContent = it.name;
+    x.append(im, nm);
+    if (pos >= 0) {
+      const n = document.createElement('b');
+      n.textContent = pos + 1;
+      x.append(n);
+    }
+    x.onclick = () => {
+      const cur = on.map((k) => draft.items[k].uid);
+      const next = cur.includes(it.uid) ? cur.filter((u) => u !== it.uid) : [...cur, it.uid];
+      if (next.length > max) return toast(t('bd.max', { n: max }));
+      setBoard({ pick: next });
+    };
+    box.append(x);
+  });
+  for (const x of $('bd-show').children) {
+    x.textContent = t('bd.s.' + x.dataset.k);
+    x.setAttribute('aria-checked', String(o[x.dataset.k]));
+    x.hidden = card && x.dataset.k !== 'kinds'; // 轉卡機的台紙是整張小卡（卡上本來就有稀有度、名字）
+  }
+  for (const x of $('bd-bg').children) {
+    x.textContent = t('bd.bg.' + x.dataset.k);
+    x.setAttribute('aria-checked', String(x.dataset.k === o.bg));
+  }
+  $('bd-color-row').hidden = o.bg !== 'color';
+  if (document.activeElement !== $('bd-color')) $('bd-color').value = o.c;
+  $('bd-img-row').hidden = o.bg !== 'img';
+  $('bd-grid').checked = b.grid !== false;
+  $('bd-reset').hidden = !draft.board;
+}
+function pickBoardImg() {
+  $('file-board').value = '';
+  $('file-board').click();
+}
+// 預覽＝機台上剛畫好的那張台紙（scheduleDecor 畫完叫）
+function paintBoardPrev() {
+  const src = machine?._boardCanvas;
+  const box = $('board-prev');
+  if (!src || !box) return;
+  let c = box.querySelector('canvas');
+  if (!c) {
+    c = document.createElement('canvas');
+    box.append(c);
+  }
+  c.width = src.width;
+  c.height = src.height;
+  c.className = src.height > src.width ? 'tall' : '';
+  c.getContext('2d').drawImage(src, 0, 0);
+}
+// 點台紙上的獎品 → 捲到那個獎品、閃一下（電腦直接把游標放進名字欄；手機不跳鍵盤）
+function focusItem(i) {
+  const li = document.querySelector(`#items .item[data-i="${i}"]`);
+  if (!li) return;
+  li.scrollIntoView({ block: 'center' });
+  li.classList.remove('picked-hl');
+  void li.offsetWidth;
+  li.classList.add('picked-hl');
+  if (matchMedia('(pointer: fine)').matches) li.querySelector('.name')?.focus({ preventScroll: true });
+}
+
 function setBg(bg) {
   draft.bg = bg;
   renderBgs();
@@ -1059,6 +1227,7 @@ async function applyBg(bg) {
 
 function draftChanged(redrawItems = false) {
   $('pick-work').hidden = draft.kind !== 'card'; // 換機台種類也要跟著藏／出現
+  renderBoardEd(); // 台紙的獎品清單跟著獎品名稱、增減、機台種類
   if (redrawItems) renderItems();
   else {
     const total = draft.items.reduce((a, b) => a + b.qty, 0);
@@ -1514,13 +1683,17 @@ async function cardFront(idx) {
 }
 function scheduleDecor() {
   clearTimeout(decorTimer);
-  decorTimer = setTimeout(() => {
+  decorTimer = setTimeout(async () => {
     if (!machine?.loaded || !shown) return;
-    const thumbs = shown.items.map((_, i) => {
-      const th = thumbOf(shown, i);
+    const cfg = shown;
+    const thumbs = cfg.items.map((_, i) => {
+      const th = thumbOf(cfg, i);
       return th.bmp;
     });
-    machine.updateDecor(shown, thumbs);
+    const bimg = await boardImg(cfg.board); // 台紙用的自己的圖
+    if (shown !== cfg || !machine.loaded) return;
+    machine.updateDecor(cfg, thumbs, bimg);
+    if (cfg === draft) paintBoardPrev();
   }, 120);
 }
 
@@ -4667,6 +4840,9 @@ async function boot() {
       sfx.stick();
       draftChanged();
     },
+    // 開店頁：點台紙上的獎品 → 跳到那個獎品的編輯（使用者 2026-10-30：「點台紙上的獎品就能改」）
+    boardEdit: () => app.dataset.mode === 'create',
+    onBoardItem: (i) => app.dataset.mode === 'create' && focusItem(i),
     onSlot: (x, y) => {
       unlock();
       if (play?.phase === 'coin') insertCoin();

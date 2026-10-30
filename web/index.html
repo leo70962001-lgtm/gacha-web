@@ -893,6 +893,22 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .back-row { display: grid; gap: 3px; font-size: 12px; font-weight: 700; color: var(--muted); }
 .back-row input:not([type="color"]) { font: inherit; font-size: 14px; color: var(--ink); padding: 7px 10px; border-radius: 10px; border: 2px solid var(--stroke); background: var(--surface); }
 .back-colorrow { grid-template-columns: 1fr auto; align-items: center; }
+/* 台紙編輯：上面預覽（跟機台上同一張圖）、下面選項 */
+.board-ed { display: grid; gap: 12px; min-width: 0; }
+.board-prev { display: grid; place-items: center; }
+.board-prev canvas { width: min(100%, 340px); height: auto; border-radius: 10px; border: 2px solid var(--stroke); box-shadow: 3px 3px 0 var(--stroke); }
+.board-prev canvas.tall { width: min(46%, 170px); }
+.bd-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.bd-pick { position: relative; display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border-radius: 999px; border: 2px solid var(--line); background: var(--surface); font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; max-width: 100%; }
+.bd-pick img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; opacity: 0.55; }
+.bd-pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bd-pick[aria-pressed="true"] { border-color: var(--ink); color: var(--ink); }
+.bd-pick[aria-pressed="true"] img { opacity: 1; }
+.bd-pick b { position: absolute; top: -7px; left: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font: 11px/18px var(--font-num); text-align: center; border: 1.5px solid var(--stroke); }
+.bd-pick-acts { gap: 6px; margin-top: 4px; }
+.bd-pick-acts .btn, #bd-img-pick, #bd-reset { padding: 4px 12px; font-size: 12px; }
+.item.picked-hl { animation: itemFlash 1.4s ease-out; } /* 不要叫 .flash：那是抽到 SR／SSR 時蓋滿舞台的閃光 */
+@keyframes itemFlash { 0%, 35% { box-shadow: 0 0 0 4px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
 .back-colorrow input { width: 44px; height: 30px; padding: 0; border: 2px solid var(--stroke); border-radius: 8px; background: none; cursor: pointer; }
 #back-reset { justify-self: start; padding: 5px 12px; font-size: 12px; }
 .bg-tile { aspect-ratio: 16 / 10; border-radius: 10px; border: 2px solid var(--stroke); padding: 0; overflow: hidden; cursor: pointer; background: var(--surface-2) center / cover no-repeat; position: relative; display: grid; align-items: end; justify-items: start; }
@@ -1451,6 +1467,26 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
             <ul class="items" id="items"></ul>
             <div class="row add-row"><button class="btn ghost" id="add-item" data-i18n="addItem">＋ 新增獎品</button><button class="btn ghost" id="open-studio" data-i18n="cs.open">🃏 カード工房で作る</button><button class="btn ghost" id="pick-work" data-i18n="cs.pickWork">🗂 作品冊から選ぶ</button><button class="btn ghost" id="pick-stk" data-i18n="stk.pickPrize">🏷 シール帳から選ぶ</button></div>
             <p class="hint-text" data-i18n="itemsHint"></p>
+            <!-- 台紙（窗裡的獎品看板）：放哪些、怎麼排、標題、顯示什麼、底（使用者 2026-10-30：「增加可以編輯景品的功能」） -->
+            <div class="field board-field" id="board-field"><span id="board-label" data-i18n="bd.label">台紙（窗裡的獎品看板）</span>
+              <div class="board-ed">
+                <div class="board-prev" id="board-prev"></div>
+                <div class="back-opts">
+                  <label class="back-row"><span data-i18n="bd.title">標題</span><input id="bd-title" maxlength="24"></label>
+                  <div class="back-row"><span id="bd-pick-label" data-i18n="bd.pick">要放的獎品（點的順序＝排列順序）</span><div class="bd-picks" id="bd-picks" aria-labelledby="bd-pick-label"></div>
+                    <div class="row bd-pick-acts"><button type="button" class="btn ghost" id="bd-all" data-i18n="bd.all">全部（照獎品順序）</button><button type="button" class="btn ghost" id="bd-none" data-i18n="bd.none">全部取消</button></div>
+                  </div>
+                  <div class="back-row"><span id="bd-show-label" data-i18n="bd.show">顯示</span><div class="chips fin-chips" id="bd-show" aria-labelledby="bd-show-label"></div></div>
+                  <div class="back-row"><span id="bd-bg-label" data-i18n="bd.bg">底</span><div class="chips fin-chips" id="bd-bg" role="radiogroup" aria-labelledby="bd-bg-label"></div></div>
+                  <label class="back-row back-colorrow" id="bd-color-row" hidden><span data-i18n="bd.color">底色</span><input id="bd-color" type="color" value="#fffaf2"></label>
+                  <div class="back-row" id="bd-img-row" hidden><button type="button" class="btn ghost" id="bd-img-pick" data-i18n="bd.imgPick">換一張圖</button>
+                    <label class="fb-env"><input type="checkbox" id="bd-grid" checked><span data-i18n="bd.grid">在圖上照樣排標題跟獎品</span></label></div>
+                  <button type="button" class="btn ghost" id="bd-reset" hidden data-i18n="bd.reset">還原自動排版</button>
+                </div>
+              </div>
+              <p class="hint" data-i18n="bd.hint">也可以直接點機台台紙上的獎品，跳到那個獎品的設定。</p>
+              <input type="file" id="file-board" accept="image/*" hidden>
+            </div>
           </li>
           <li class="step">
             <header><span class="num">2</span><h2 data-i18n="step2">設定價錢</h2></header>
