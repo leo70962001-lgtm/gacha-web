@@ -419,6 +419,18 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .pk-meta p { margin: 2px 0 6px; font-size: 12px; color: var(--muted); line-height: 1.45; }
 .pk-meta .btn { justify-self: start; padding: 5px 14px; font-size: 13px; }
 .pk-post { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+/* 抽到的卡的分享 */
+.share-card { width: min(100%, 460px); justify-items: center; text-align: center; gap: 10px; }
+.share-card h2 { font-size: 20px; padding-inline: 34px; overflow-wrap: anywhere; }
+.sh-fmts { justify-content: center; }
+.sh-fmts .chip { cursor: pointer; font-size: 12px; padding: 4px 10px; color: inherit; }
+.sh-fmts .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.sh-prev { width: 100%; display: grid; place-items: center; min-height: 140px; }
+.sh-prev img { max-width: 100%; max-height: min(38dvh, 420px); border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+.sh-acts { justify-content: center; flex-wrap: wrap; }
+.sh-post { justify-content: center; margin: 0; }
+.sh-post .btn { padding: 4px 12px; font-size: 13px; color: inherit; text-decoration: none; }
+.sh-hint { margin: 0; }
 .pk-meta .pk-post .btn { padding: 3px 10px; font-size: 12px; color: inherit; text-decoration: none; }
 .card-splash { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; overflow: hidden; cursor: pointer; background: radial-gradient(circle at 50% 42%, hsl(var(--sh) 72% 60%), hsl(var(--sh) 60% 16%) 72%); transition: opacity 0.5s ease; -webkit-user-select: none; user-select: none; }
 .cs-rays { position: absolute; left: 50%; top: 42%; width: 170vmax; height: 170vmax; translate: -50% -50%; background: repeating-conic-gradient(rgba(255, 255, 255, 0.16) 0 5deg, transparent 5deg 15deg); -webkit-mask: radial-gradient(circle, #000 12%, transparent 55%); mask: radial-gradient(circle, #000 12%, transparent 55%); animation: csSpin 14s linear infinite; }
@@ -1073,6 +1085,15 @@ button.chip { cursor: pointer; border-color: var(--stroke); }
 /* ---------- 對話框 ---------- */
 .sheet { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(12,16,28,.45); z-index: 40; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 16px; }
 .sheet-card { width: min(100%, 420px); max-height: 100%; overflow: auto; background: var(--surface); border: 3px solid var(--stroke); border-radius: 24px; box-shadow: 6px 6px 0 var(--stroke); padding: 20px; display: grid; gap: 14px; position: relative; }
+/* App 內建瀏覽器（Threads、IG、LINE…）：工具列會伸縮 → 視窗照「看得到的」高度（dvh）；開著的時候後面的頁面鎖住、
+   卡片捲到底也不會帶著頁面跑（使用者 2026-10-30：安卓「頁面下拉後無法拉回去、卡牌上半部被蓋掉」） */
+.sheet { overscroll-behavior: contain; touch-action: none; }
+.sheet-card { overscroll-behavior: contain; touch-action: pan-y pinch-zoom; }
+@supports (height: 100dvh) {
+  .sheet { bottom: auto; height: 100dvh; }
+  .sheet-card { max-height: calc(100dvh - 32px); }
+}
+html:has(.sheet:not([hidden])), html:has(.sheet:not([hidden])) body { overflow: hidden; }
 .sheet-card h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 24px; }
 .close-x { position: absolute; top: 12px; right: 12px; }
 
@@ -1181,6 +1202,18 @@ button.mcard { cursor: pointer; }
 @keyframes flipIn { from { transform: rotateY(90deg) scale(.7); opacity: 0; } }
 @keyframes rainbowCard { 0%, 100% { box-shadow: 0 0 0 3px #ffcf33 inset, 0 0 14px #ffcf33; } 33% { box-shadow: 0 0 0 3px #ff6fae inset, 0 0 14px #ff6fae; } 66% { box-shadow: 0 0 0 3px #5cc8ff inset, 0 0 14px #5cc8ff; } }
 @media (max-width: 520px) { .multi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* 矮的手機畫面（App 內建瀏覽器）：10 連一排 5 張、大卡縮到整張放得下，不用捲（使用者 2026-10-30：「介面沒有配合變更」） */
+@media (max-width: 520px) and (max-height: 760px) {
+  .multi-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+  .mcard { padding: 4px 2px 3px; border-radius: 10px; gap: 2px; }
+  .mcard img { border-radius: 7px; }
+  .mcard .nm { font-size: 10px; }
+  .mcard .rk { font-size: 9px; padding: 0 5px; }
+  .multi-card { gap: 10px; padding: 16px 12px; }
+}
+.view-card .tilt { width: min(290px, 68vw, max(150px, calc((100dvh - 310px) * var(--ar, 0.686)))); }
+.result .tilt { width: min(48vw, 196px, max(110px, calc((100dvh - 410px) * var(--ar, 0.686)))); }
+.result .tilt.square { width: min(56vw, 220px, max(110px, calc(100dvh - 410px))); }
 
 /* 影音 */
 .item .mrow { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; }
@@ -1282,6 +1315,13 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   .top-right .stamp strong { font-size: 13px; }
   .top-right .stamp em { font-size: 10px; }
   .side-btns .btn { padding: 4px 10px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
+}
+/* 矮的手機畫面（App 內建瀏覽器、橫幅多的瀏覽器）：提示只留標題＋按鈕排一列，讓機台大一點（使用者 2026-10-30） */
+@media (max-width: 640px) and (max-height: 700px) {
+  .hint { grid-template-columns: minmax(0, 1fr); gap: 5px; padding: 6px 10px; }
+  .hint p { display: none; }
+  .hint .hint-actions { grid-row: auto; grid-column: 1; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  .hint-actions .btn { min-height: 34px; padding: 5px 10px; overflow: hidden; text-overflow: ellipsis; }
 }
 @media (max-width: 430px) {
   .brand-name { display: none; }
@@ -1580,7 +1620,24 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <button class="btn primary big" id="r-again" data-i18n="again">再轉一次</button>
       <button class="btn" id="r-col" data-i18n="toCollection">看收藏</button>
       <button class="btn" id="r-close" hidden data-i18n="close">關閉</button>
+      <button class="btn sun" id="r-share" data-i18n="sh.share">分享</button>
     </div>
+  </div>
+</div>
+<!-- 抽到的卡分享出去（使用者 2026-10-30：「抽到自己喜歡的卡的時候下面多一個分享」）：選尺寸 → 預覽 → 分享／存圖、複製貼文文字、發文連結 -->
+<div class="sheet" id="sheet-share" hidden>
+  <div class="sheet-card share-card" role="dialog" aria-modal="true" aria-labelledby="sh-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="sh-title"></h2>
+    <div class="chips sh-fmts" id="sh-fmts"></div>
+    <div class="sh-prev" id="sh-prev"></div>
+    <div class="row sh-acts">
+      <button class="btn primary" id="sh-go"></button>
+      <button class="btn" id="sh-save" hidden data-i18n="sh.save">存到照片</button>
+      <button class="btn ghost" id="sh-copy" data-i18n="pk.copyCap">複製貼文文字</button>
+    </div>
+    <div class="pk-post sh-post" id="sh-post"></div>
+    <p class="mb-hint sh-hint" data-i18n="sh.hint"></p>
   </div>
 </div>
 

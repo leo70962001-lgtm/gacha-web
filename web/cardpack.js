@@ -138,10 +138,29 @@ function drawStats(g, info, x, y, k, maxW) {
   g.font = `700 ${30 * k}px ${BODY}`;
   g.fillText(`${t('mb.col')} ${t('mb.pieces', { k: stats.kinds, n: stats.pieces })}`, x, y + 250 * k);
 }
-// 加好友 QR：白底＋「掃碼加我好友」（(x, y)＝QR 左上角，邊長 s；整塊高 s＋52k）；沒有會員號就不畫
-async function drawInviteQr(g, info, x, y, s, k) {
-  if (!info.invite) return;
-  const q = await drawQr(canvas(1, 1), info.invite, s * 1.08).catch(() => null);
+// 會員資料＋加好友 QR（沒有會員號就不放 QR）
+//   txt＝{ lines(g, x, y, k, maxW) 畫字（左上角 (x, y)，高約 260k）, qr: { url, label } | null } — 分享圖的版型都吃這個
+const memberTxt = (info) => ({ lines: (g, x, y, k, maxW) => drawStats(g, info, x, y, k, maxW), qr: info.invite ? { url: info.invite, label: info.t('pk.scanMe') } : null });
+// 抽到的卡（使用者 2026-10-30：「抽到自己喜歡的卡的時候下面多一個分享」）：稀有度（NEW）／名字／在哪台抽到的＋掃了就能轉那台的 QR
+//   p＝{ t, rank, name, from, url, qr（長連結太長就不放）, isNew }
+function prizeLines(g, p, x, y, k, maxW) {
+  g.textBaseline = 'alphabetic';
+  g.textAlign = 'left';
+  g.fillStyle = '#ffd678';
+  g.font = `700 ${34 * k}px ${BODY}`;
+  g.fillText(p.rank + (p.isNew ? ' · NEW!' : ''), x, y + 34 * k, maxW);
+  g.fillStyle = '#fff';
+  g.font = `${68 * k}px ${NUM}`;
+  g.fillText(p.name, x, y + 124 * k, maxW);
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  g.font = `700 ${32 * k}px ${BODY}`;
+  g.fillText(p.t('sh.from', { m: p.from }), x, y + 196 * k, maxW);
+}
+const prizeTxt = (p) => ({ lines: (g, x, y, k, maxW) => prizeLines(g, p, x, y, k, maxW), qr: p.qr ? { url: p.url, label: p.t('sh.scanPlay') } : null });
+// QR：白底＋下面一行字（(x, y)＝QR 左上角，邊長 s；整塊高 s＋52k）
+async function drawLinkQr(g, qr, x, y, s, k) {
+  if (!qr) return;
+  const q = await drawQr(canvas(1, 1), qr.url, s * 1.08).catch(() => null);
   if (!q) return;
   g.fillStyle = '#fff';
   rrect(g, x - 12 * k, y - 12 * k, s + 24 * k, s + 64 * k, 20 * k);
@@ -150,11 +169,11 @@ async function drawInviteQr(g, info, x, y, s, k) {
   g.fillStyle = '#333';
   g.textAlign = 'center';
   g.font = `700 ${22 * k}px ${BODY}`;
-  g.fillText(info.t('pk.scanMe'), x + s / 2, y + s + 36 * k, s + 8 * k); // QR 小的時候字縮進白底裡
+  g.fillText(qr.label, x + s / 2, y + s + 36 * k, s + 8 * k); // QR 小的時候字縮進白底裡
   g.textAlign = 'left';
 }
-// 直的、方的動態牆分享圖（小紅書、朋友圈、IG…）：上面是卡，下面一條深色的會員資料＋加好友 QR
-async function feedCard(face, info, W, Hh) {
+// 直的、方的動態牆分享圖（小紅書、朋友圈、IG…）：上面是卡，下面一條深色的字＋QR
+async function stripPost(face, W, Hh, txt) {
   const c = canvas(W, Hh);
   const g = c.getContext('2d');
   const k = W / 1080;
@@ -166,10 +185,51 @@ async function feedCard(face, info, W, Hh) {
   g.fillStyle = rgb(mix(await baseColor(face), [10, 12, 24], 0.78));
   g.fillRect(0, top, W, Hh - top);
   g.drawImage(await drawPrimaryLogo(Math.round(64 * k)), 48 * k, 44 * k);
-  drawStats(g, info, 56 * k, top + 40 * k, k, W - 420 * k);
+  txt.lines(g, 56 * k, top + 40 * k, k, W - (txt.qr ? 420 : 112) * k);
   const s = 240 * k;
-  await drawInviteQr(g, info, W - 56 * k - s, top + (Hh - top - s - 40 * k) / 2, s, k);
+  await drawLinkQr(g, txt.qr, W - 56 * k - s, top + (Hh - top - s - 40 * k) / 2, s, k);
   return c;
+}
+// 限時動態 9:16：上面約 14%（進度條、頭像）、下面約 18%（回覆欄）是 App 的按鈕 → logo、卡、字都放在中間那段
+async function storyPost(face, W, Hh, txt) {
+  const c = canvas(W, Hh);
+  const g = c.getContext('2d');
+  const k = W / 1080;
+  g.drawImage(await drawArtwork(face, W, Hh, { cy: 0.44, cw: face?.kind === 'card' ? 0.48 : 0.56 }), 0, 0);
+  const logo = await drawPrimaryLogo(Math.round(60 * k));
+  g.drawImage(logo, (W - logo.width) / 2, Hh * 0.125);
+  const y0 = Hh * 0.655;
+  const ph = 330 * k;
+  g.fillStyle = `rgba(${mix(await baseColor(face), [10, 12, 24], 0.78).join(',')}, 0.86)`;
+  rrect(g, 48 * k, y0, W - 96 * k, ph, 36 * k);
+  g.fill();
+  const s = 220 * k;
+  txt.lines(g, 88 * k, y0 + 36 * k, k, W - 176 * k - (txt.qr ? s + 50 * k : 0));
+  await drawLinkQr(g, txt.qr, W - 88 * k - s, y0 + (ph - s - 64 * k) / 2 + 12 * k, s, k);
+  return c;
+}
+// X 16:9：卡放右邊，左邊壓暗放 logo、字、QR
+async function widePost(face, W, Hh, txt) {
+  const c = canvas(W, Hh);
+  const g = c.getContext('2d');
+  const k = Hh / 900;
+  g.drawImage(await drawArtwork(face, W, Hh, { cx: 0.72, cy: 0.5, cw: face?.kind === 'card' ? 0.3 : 0.38 }), 0, 0);
+  const sh = g.createLinearGradient(0, 0, W * 0.62, 0);
+  sh.addColorStop(0, 'rgba(0,0,0,0.55)');
+  sh.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = sh;
+  g.fillRect(0, 0, W, Hh);
+  g.drawImage(await drawPrimaryLogo(Math.round(64 * k)), 70 * k, 60 * k);
+  txt.lines(g, 80 * k, 190 * k, k * 1.15, W * 0.5);
+  await drawLinkQr(g, txt.qr, 92 * k, 560 * k, 200 * k, k);
+  return c;
+}
+const LAYOUT = { xhs: stripPost, moments: stripPost, ig: stripPost, story: storyPost, x: widePost };
+// 抽到的卡的分享圖：跟發文小幫手同一套尺寸（id＝xhs／moments／ig／story／x）
+export const FEEDS = Object.keys(LAYOUT);
+export async function drawPrizePost(face, p, id = 'ig') {
+  const [W, Hh] = PACK.find((s) => s.id === id).size();
+  return LAYOUT[id](face, W, Hh, prizeTxt(p));
 }
 
 // 發文連結：網頁沒辦法把圖塞進別人的 App → 只帶文字＋連結，圖（先存到照片）發文時自己加
@@ -294,56 +354,13 @@ export const PACK = [
     },
   },
   // 動態牆的分享圖（feed＝有「複製貼文文字」，post＝有網頁發文連結的平台）
-  { id: 'xhs', size: () => [1080, 1440], type: 'image/jpeg', feed: true, draw: feedCard }, // 小紅書 3:4
-  { id: 'moments', size: () => [1080, 1080], type: 'image/jpeg', feed: true, post: ['line', 'weibo'], draw: feedCard }, // 朋友圈九宮格是正方形
-  { id: 'ig', size: () => [1080, 1350], type: 'image/jpeg', feed: true, post: ['threads'], draw: feedCard }, // IG／Threads／FB 動態最大 4:5
-  {
-    id: 'story',
-    size: () => [1080, 1920], // 限時動態 9:16
-    type: 'image/jpeg',
-    feed: true,
-    // 上面約 14%（進度條、頭像）、下面約 18%（回覆欄）是 App 的按鈕 → logo、卡、資料都放在中間那段
-    async draw(face, info, W, Hh) {
-      const c = canvas(W, Hh);
-      const g = c.getContext('2d');
-      const k = W / 1080;
-      g.drawImage(await drawArtwork(face, W, Hh, { cy: 0.44, cw: face?.kind === 'card' ? 0.48 : 0.56 }), 0, 0);
-      const logo = await drawPrimaryLogo(Math.round(60 * k));
-      g.drawImage(logo, (W - logo.width) / 2, Hh * 0.125);
-      const y0 = Hh * 0.655;
-      const ph = 330 * k;
-      g.fillStyle = `rgba(${mix(await baseColor(face), [10, 12, 24], 0.78).join(',')}, 0.86)`;
-      rrect(g, 48 * k, y0, W - 96 * k, ph, 36 * k);
-      g.fill();
-      const s = 220 * k;
-      drawStats(g, info, 88 * k, y0 + 36 * k, k, W - 96 * k - s - 130 * k);
-      await drawInviteQr(g, info, W - 88 * k - s, y0 + (ph - s - 64 * k) / 2 + 12 * k, s, k);
-      return c;
-    },
-  },
-  {
-    id: 'x',
-    size: () => [1600, 900], // X 時間軸 16:9
-    type: 'image/jpeg',
-    feed: true,
-    post: ['x'],
-    // 卡放右邊，左邊壓暗放 logo、會員資料、加好友 QR
-    async draw(face, info, W, Hh) {
-      const c = canvas(W, Hh);
-      const g = c.getContext('2d');
-      const k = Hh / 900;
-      g.drawImage(await drawArtwork(face, W, Hh, { cx: 0.72, cy: 0.5, cw: face?.kind === 'card' ? 0.3 : 0.38 }), 0, 0);
-      const sh = g.createLinearGradient(0, 0, W * 0.62, 0);
-      sh.addColorStop(0, 'rgba(0,0,0,0.55)');
-      sh.addColorStop(1, 'rgba(0,0,0,0)');
-      g.fillStyle = sh;
-      g.fillRect(0, 0, W, Hh);
-      g.drawImage(await drawPrimaryLogo(Math.round(64 * k)), 70 * k, 60 * k);
-      drawStats(g, info, 80 * k, 190 * k, k * 1.15, W * 0.5);
-      await drawInviteQr(g, info, 92 * k, 560 * k, 200 * k, k);
-      return c;
-    },
-  },
+  ...[
+    ['xhs', [1080, 1440]], // 小紅書 3:4
+    ['moments', [1080, 1080], ['line', 'weibo']], // 朋友圈九宮格是正方形
+    ['ig', [1080, 1350], ['threads']], // IG／Threads／FB 動態最大 4:5
+    ['story', [1080, 1920]], // 限時動態 9:16
+    ['x', [1600, 900], ['x']], // X 時間軸 16:9
+  ].map(([id, size, post]) => ({ id, size: () => size, type: 'image/jpeg', feed: true, post, draw: (face, info, W, Hh) => LAYOUT[id](face, W, Hh, memberTxt(info)) })),
   {
     id: 'discord',
     size: () => [1360, 480], // Discord 個人橫幅 17:6（680×240 的兩倍）

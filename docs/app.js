@@ -20,7 +20,7 @@ import { MemberCard } from './member.js';
 import { guessCountry, deviceType } from './geo.js';
 import { MachineStats } from './stats.js';
 import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT, artOf } from './cardstudio.js';
-import { applyAppTheme, cardSplash } from './cardpack.js';
+import { applyAppTheme, cardSplash, drawPrizePost, FEEDS, POST, canShareFiles, downloadFiles } from './cardpack.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
 function nowPlaying(box, m, o) {
   const p = mountNowPlaying(box, m, o);
@@ -376,15 +376,8 @@ function renderItems() {
     odds.className = 'odds';
     odds.textContent = t('odds', { p: pct(it.qty / total) });
     meta.append(sel, qw, odds);
-    if (cloudStats && draft.cloud) {
-      const taken = cloudStats[itemKey(it)] || 0;
-      const tk = document.createElement('div');
-      tk.className = 'taken';
-      const b = document.createElement('b');
-      b.textContent = taken;
-      tk.append(t('stock.takenA'), b, t('stock.takenB', { r: Math.max(0, it.qty - taken) }));
-      meta.append(tk);
-    }
+    const tk = takenLine(it);
+    if (tk) meta.append(tk);
     const mrow = document.createElement('div');
     mrow.className = 'mrow';
     const mb = document.createElement('button');
@@ -426,6 +419,29 @@ function renderItems() {
   $('items-sum').textContent = t('itemsSum', { n: draft.items.length, q: total });
   $('add-item').disabled = draft.items.length >= LIMITS.items;
   $('pick-work').hidden = draft.kind !== 'card';
+}
+
+// 「已被轉走 N 個・剩 M 個」（有短連結、抓到雲端數字才有）
+function takenLine(it) {
+  if (!cloudStats || !draft.cloud) return null;
+  const taken = cloudStats[itemKey(it)] || 0;
+  const tk = document.createElement('div');
+  tk.className = 'taken';
+  const b = document.createElement('b');
+  b.textContent = taken;
+  tk.append(t('stock.takenA'), b, t('stock.takenB', { r: Math.max(0, it.qty - taken) }));
+  return tk;
+}
+// 雲端數字更新：只換每格的那一行，不重做整張清單（使用者 2026-10-30「修正跳掉的bug」：
+//   重做清單會把正在打字的獎品名稱欄拿掉 → 手機鍵盤收起來；每次自動更新連結後都會重抓一次）
+function renderTaken() {
+  document.querySelectorAll('#items .item').forEach((li) => {
+    const it = draft.items[li.dataset.i];
+    if (!it) return;
+    li.querySelector('.taken')?.remove();
+    const tk = takenLine(it);
+    if (tk) li.querySelector('.meta').append(tk);
+  });
 }
 
 function pct(x) {
@@ -1311,7 +1327,7 @@ async function refreshStats() {
   if (!draft.cloud || !cloudReady()) return;
   try {
     cloudStats = await pulledCounts(draft.cloud.id);
-    renderItems();
+    renderTaken();
   } catch (e) {
     /* 抓不到就先不顯示 */
   }
@@ -1927,6 +1943,105 @@ function closeResult() {
   afterResult();
 }
 
+// ---------- 抽到的卡分享出去（使用者 2026-10-30：「抽到自己喜歡的卡的時候下面多一個分享」「發文小幫手不用獨立出來 加到抽到自己喜歡的卡可以分享」） ----------
+//   選尺寸（小紅書／朋友圈／IG／限時動態／X，跟持ち出す的發文小幫手同一套）→ 預覽 → 手機：分享（圖＋文字）／存到照片；電腦：下載
+//   ＋複製貼文文字、X／Threads／LINE／微博的發文連結（只帶文字＋連結，圖要自己加）
+let shareFmt = FEEDS.includes(store.get('clatter.shareFmt')) ? store.get('clatter.shareFmt') : 'ig';
+let shareJob = 0;
+let shareImgUrl = null;
+// 這台機台給別人的連結：短連結才放 QR（長連結太長只放在文字裡）；自己試玩還沒做連結＝網站
+function playUrl() {
+  const sid = play.link?.startsWith('s.') ? play.link.slice(2) : play.token === 'draft' && draft.cloud ? draft.cloud.id : null;
+  if (sid) return { url: shareBase() + '#s.' + sid, qr: true };
+  if (play.token && play.token !== 'draft') return { url: shareBase() + '#' + play.token, qr: false };
+  return { url: shareBase(), qr: true };
+}
+async function openPrizeShare(idx, isNew) {
+  const it = play.cfg.items[idx];
+  const R = RARITY[it.rarity];
+  const { url, qr } = playUrl();
+  const p = { t, rank: `${R.key} ${R.label}`, name: it.name, from: play.cfg.name || t('defaultMachine'), url, qr, isNew };
+  const text = t('sh.caption', { m: p.from, rank: p.rank, name: it.name });
+  p.share = `${text} ${url} #Clatter`;
+  $('sh-title').textContent = t('sh.title', { name: it.name });
+  $('sh-copy').onclick = async () => toast((await copyText(p.share)) ? t('pk.capCopied') : p.share);
+  const post = $('sh-post');
+  post.textContent = '';
+  for (const k of ['x', 'threads', 'line', 'weibo']) {
+    const a = document.createElement('a');
+    a.className = 'btn ghost';
+    a.textContent = t('pk.post.' + k);
+    a.href = POST[k](text, url);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    post.append(a);
+  }
+  let face = null;
+  const fmts = $('sh-fmts');
+  fmts.textContent = '';
+  for (const id of FEEDS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = t('sh.f.' + id);
+    b.setAttribute('aria-pressed', String(id === shareFmt));
+    b.onclick = () => {
+      shareFmt = id;
+      store.set('clatter.shareFmt', id);
+      for (const x of fmts.children) x.setAttribute('aria-pressed', String(x === b));
+      if (face) makeShareImage(face, p);
+    };
+    fmts.append(b);
+  }
+  $('sh-prev').textContent = '';
+  $('sh-go').disabled = $('sh-save').disabled = true;
+  $('sh-go').textContent = t('pk.making');
+  openSheet('sheet-share', $('sheet-share').querySelector('[data-close]'));
+  // 卡圖：有去背就用去背（頭衝出框）
+  const isCard = play.cfg.kind === 'card';
+  const L = await cutLayers(idx, 300, isCard ? 437 : 300).catch(() => null);
+  face = { id: play.id + '|' + it.name, name: it.name, r: it.rarity, t: L?.t || thumbOf(play.cfg, idx).url, s: L?.s || null, b: L?.b || null, kind: isCard ? 'card' : 'capsule' };
+  makeShareImage(face, p);
+}
+// 畫好這個尺寸的圖 → 預覽＋按鈕（分享要在按的當下叫，所以圖先做好）
+async function makeShareImage(face, p) {
+  const job = ++shareJob;
+  const go = $('sh-go');
+  const save = $('sh-save');
+  go.disabled = save.disabled = true;
+  go.textContent = t('pk.making');
+  try {
+    const c = await drawPrizePost(face, p, shareFmt);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9));
+    if (job !== shareJob || $('sheet-share').hidden || !blob) return;
+    const name = `clatter-${shareFmt}-${(p.name || 'card').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 30)}.jpg`;
+    const files = [new File([blob], name, { type: 'image/jpeg' })];
+    if (shareImgUrl) URL.revokeObjectURL(shareImgUrl);
+    shareImgUrl = URL.createObjectURL(blob);
+    const img = document.createElement('img');
+    img.alt = t('sh.title', { name: p.name });
+    img.src = shareImgUrl;
+    $('sh-prev').replaceChildren(img);
+    const phone = canShareFiles(files);
+    const send = async (data) => {
+      try {
+        await navigator.share(navigator.canShare(data) ? data : { files });
+      } catch (e) {
+        if (e.name !== 'AbortError') downloadFiles(files, name);
+      }
+    };
+    go.textContent = t(phone ? 'sh.go' : 'sh.download');
+    save.hidden = !phone;
+    go.onclick = () => (phone ? send({ files, text: p.share }) : downloadFiles(files, name));
+    save.onclick = () => send({ files });
+  } catch (e) {
+    console.warn(e);
+    toast(t('pk.failed'));
+  } finally {
+    if (job === shareJob) go.disabled = save.disabled = false;
+  }
+}
+
 function afterResult() {
   resultPlayer?.stop();
   resultPlayer = null;
@@ -2112,7 +2227,9 @@ function showMulti(picks, isNew, best) {
   picks.forEach((idx, i) => {
     const it = play.cfg.items[idx];
     const R = RARITY[it.rarity];
-    const card = document.createElement(it.media ? 'button' : 'div');
+    // 每張都能點開看大張的（使用者 2026-10-30：「這個畫面點卡沒有顯示跳出來」；以前只有音樂／影片的能點）
+    const card = document.createElement('button');
+    card.type = 'button';
     card.className = `mcard r${it.rarity}`;
     card.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);
     card.style.animationDelay = `${i * 0.06 + (i === best ? 0.3 : 0)}s`;
@@ -2132,13 +2249,10 @@ function showMulti(picks, isNew, best) {
       nw.textContent = 'NEW';
       card.append(nw);
     }
-    if (it.media) {
-      card.type = 'button';
-      card.onclick = () => {
-        $('sheet-multi').hidden = true;
-        showResult(idx, false, 'multi');
-      };
-    }
+    card.onclick = () => {
+      $('sheet-multi').hidden = true;
+      showResult(idx, false, 'multi');
+    };
     grid.append(card);
   });
   const n = picks.length;
@@ -2391,8 +2505,12 @@ function updateInsets() {
   const narrow = st.width < 640;
   const plate = $('hud').querySelector('.plate').getBoundingClientRect();
   const tr = $('hud').querySelector('.top-right').getBoundingClientRect();
-  const top = narrow ? plate.bottom - st.top + 4 : 0;
-  const bottom = st.bottom - $('hud').querySelector('.bottom').getBoundingClientRect().top + 4;
+  // 手機：機台放大到名牌那排小按鈕～錢包那條的中間（使用者 2026-10-30：「把轉蛋機的大小再放大到框框的大小」）
+  //   屋頂（招牌跟名牌重複）可以躲到小按鈕後面、腳躲到錢包後面；出口在機台下面 1/4 左右，還是露在錢包上面點得到
+  const chips = $('hud').querySelector('.plate .chips').getBoundingClientRect();
+  const wallet = $('hud').querySelector('.wallet').getBoundingClientRect();
+  const top = narrow ? chips.top - st.top : 0;
+  const bottom = narrow ? st.bottom - (wallet.top + wallet.bottom) / 2 : st.bottom - $('hud').querySelector('.bottom').getBoundingClientRect().top + 4;
   // 10 連的格子連左上名牌、右上價錢章都要避開（寬螢幕的機台不用，它們在兩側）
   const gridTop = Math.max(plate.bottom, tr.height ? tr.bottom : 0) - st.top + 6;
   machine.setInsets(Math.max(0, top), Math.max(0, bottom), Math.max(0, gridTop));
@@ -4440,6 +4558,7 @@ async function boot() {
   $('p-col').onclick = openCollection;
   $('r-again').onclick = afterResult;
   $('r-close').onclick = closeResult;
+  $('r-share').onclick = () => openPrizeShare(resultIdx, !$('r-new').hidden);
   $('r-col').onclick = () => {
     afterResult();
     openCollection();
@@ -4458,7 +4577,7 @@ async function boot() {
   );
   addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    const open = [...document.querySelectorAll('.sheet')].find((s) => !s.hidden);
+    const open = [...document.querySelectorAll('.sheet')].reverse().find((s) => !s.hidden); // 最上面那層（分享疊在結果上）
     if (open) open.id === 'sheet-result' ? closeResult() : open.id === 'sheet-multi' ? closeMulti() : closeSheet(open.id);
   });
   addEventListener('pointerdown', () => unlock(), { once: true });
