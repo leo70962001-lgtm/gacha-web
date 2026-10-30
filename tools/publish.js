@@ -1,9 +1,11 @@
 // node tools/publish.js ["commit message"] — 建 docs/（tools/build_site.py）、commit、第一次就建 GitHub repo
 // （token 從 Git Credential Manager 的 `git credential fill` 拿，不會印出來）、push main、
 // 確認 GitHub Pages 用 main 分支的 /docs。跟 kaii-tantei/tools/publish.js 同一套做法。
+// 最後：有寫 tools/release/next.md 就把版本更新公告貼到 Discord「更新」頻道（tools/discord.js）
 'use strict';
 const { execSync } = require('child_process');
 const path = require('path');
+const { postRelease } = require('./discord');
 const ROOT = path.join(__dirname, '..');
 const REPO = 'gacha-web';
 const sh = (cmd, opts = {}) => execSync(cmd, Object.assign({ cwd: ROOT, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }, opts)).trim();
@@ -56,4 +58,12 @@ async function api(token, method, url, body) {
     console.log('pages enabled:', on.status, on.j && (on.j.html_url || on.j.message));
   } else console.log('pages:', pg.status, pg.j && pg.j.html_url, pg.j && pg.j.status);
   console.log('open: https://' + login + '.github.io/' + REPO + '/');
+  // 公告貼出去以後 next.md 會搬進 CHANGELOG.md → 再 commit 一次（下次 publish 也會帶上）
+  const said = await postRelease().catch((e) => 'Discord post failed (notes kept): ' + e.message);
+  console.log(said);
+  if (said.startsWith('Discord: posted')) {
+    sh('git add -A');
+    sh('git commit -q -F -', { input: 'CHANGELOG: ' + said.split(' ')[2] + '\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n' });
+    console.log(sh('git push origin main 2>&1'));
+  }
 })().catch((e) => { console.error('publish failed:', e.message); process.exit(1); });

@@ -3,3 +3,6 @@
 *.blend1
 __pycache__/
 renders/fx_frames/*.jpg
+
+# Discord 更新頻道的 webhook 網址（等於頻道的密碼，不能進 repo）
+tools/.discord-webhook

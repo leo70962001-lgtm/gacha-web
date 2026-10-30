@@ -6,6 +6,7 @@
 - claude.ai artifact（私人）：https://claude.ai/artifact/95Qk7ZeuLHCcpzFqWDtupd
 - 本機預覽：`py -I tools/serve.py 8790` → http://localhost:8790（或內建瀏覽器的 `gacha-web` 設定）
 - 發佈：`node tools/publish.js "訊息"`（`tools/build_site.py` 把 web/ 包成 docs/ → commit → push → Pages 用 main 的 /docs）
+- 版本更新公告（2026-10-30，使用者：「版本更新時候把它寫到更新裡」，日中英）：玩家看得到的改動，publish 之前先寫 `tools/release/next.md`（`## ja`／`## zh`／`## en` 三段）→ publish 推完會用 Discord webhook 貼到伺服器的「更新」頻道（三種語言各一個 embed，`tools/discord.js`），貼好就搬進 `CHANGELOG.md`、刪掉 next.md；版本號＝日期（同一天第二次起 .2、.3）。webhook 網址放 `tools/.discord-webhook`（.gitignore 擋掉）或環境變數 `CLATTER_DISCORD_WEBHOOK`；沒設定就先留著，下次 publish 再貼。`node tools/discord.js --dry` 先看內容、`--post` 不 publish 直接貼
 
 ## 流程
 
