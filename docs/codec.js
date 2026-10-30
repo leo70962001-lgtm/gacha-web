@@ -68,7 +68,7 @@ export async function encodeConfig(cfg) {
       if (it.framed && it.img) {
         const pad = [0, '', null, '', 0, '', ''];
         while (row.length < 10) row.push(pad[row.length - 3]);
-        row.push(it.framed === 'monster' ? 'm' : 'y');
+        row.push(it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : 'y'); // f＝全圖卡風（2026-10-30）
       }
       return row;
     }),
@@ -181,7 +181,7 @@ export async function decodeConfig(token) {
       uid: typeof uid === 'string' && /^[0-9A-Za-z]{4,12}$/.test(uid) ? uid : null,
       mask,
       sticker: typeof stk === 'string' && finFromCode(stk[0]) ? { fin: finFromCode(stk[0]), baked: stk[1] === 'b' } : null,
-      framed: img && yc === 'y' ? 'duel' : img && yc === 'm' ? 'monster' : false,
+      framed: img && yc === 'y' ? 'duel' : img && yc === 'm' ? 'monster' : img && yc === 'f' ? 'full' : false,
     };
   });
   if (!items.length) throw new Error('e.empty');

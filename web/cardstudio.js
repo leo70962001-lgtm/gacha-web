@@ -54,6 +54,8 @@ export function defaultDesign(t) {
     ],
     weak: 'fighting', resist: '', retreat: 1,
     info: t('cs.sInfo'), flavor: t('cs.sFlavor'), illus: 'Clatter', setno: '001/100',
+    // 全圖卡風
+    fcol: 'red', power: '20000', badge: 'CLATTER', role: 'HERO', cost: '3', trait: t('cs.fTraitS'), ftext: t('cs.fTextS'),
   };
 }
 
@@ -431,6 +433,7 @@ const ART = { x: 70, y: 158, s: 450 }; // 卡圖（正方形）
 // d＝設計、art＝卡圖（Image／Canvas／ImageBitmap，沒有就畫空白）、W＝輸出寬 → canvas
 export function drawDesignCard(d, art, W = W0, lang = 'zh') {
   if (d.style === 'monster') return drawMonsterCard(d, art, W, lang);
+  if (d.style === 'full') return drawFullCard(d, art, W);
   const k = W / W0;
   const c = canvasOf(Math.round(W), Math.round(W * (H0 / W0)));
   const g = c.getContext('2d');
@@ -636,9 +639,274 @@ export function drawDesignCard(d, art, W = W0, lang = 'zh') {
   return c;
 }
 
-// 3D 卡（cardkit）用的深度：框在前面、卡圖往後退一點（像隔著窗看）；style＝'duel'（正方形卡圖）／'monster'（橫的卡圖）
+// ---------- 全圖卡風（使用者 2026-10-30：「卡片編輯的部分再追加可編輯整張卡的種類」，貼了一張全圖的對戰卡當參考） ----------
+//   自己畫的「全圖對戰卡」：卡圖鋪滿整張 → 左上自己的徽章字、右上大大的戰力數字、右邊直的角色標籤
+//   → 下半部半透明的效果欄（「[關鍵字] 說明」開頭的 [ ] 變成色塊）→ 最下面名字帶＋特徵、卡號、稀有度、費用。框色 6 種＋自訂；沒有官方標誌
+export const FCOLS = { red: ['#ef4b43', '#7a0f14'], blue: ['#4b8ff0', '#0f2f7a'], green: ['#36c27a', '#0f5a32'], yellow: ['#f6c93a', '#8a6200'], purple: ['#a76ff0', '#4a1d7a'], black: ['#4a4a52', '#0b0b0d'] };
+export const FCOL_KEYS = Object.keys(FCOLS);
+const fullBase = (d) => {
+  const fh = frameHex(d);
+  return fh ? [shade(fh, 0.15), shade(fh, -0.55)] : FCOLS[d.fcol] || FCOLS.red;
+};
+// 換行，第一行可以比較窄（前面放了關鍵字色塊）
+function wrapFirst(g, text, firstW, restW) {
+  const out = [];
+  let line = '';
+  let maxW = firstW;
+  for (const tok of String(text || '').match(/[A-Za-z0-9'’\-.,:;!?()/]+\s*|\s+|./gu) || []) {
+    const next = line + tok;
+    if (g.measureText(next).width > maxW && line) {
+      out.push(line.trimEnd());
+      line = tok.trimStart();
+      maxW = restW;
+    } else line = next;
+  }
+  out.push(line);
+  return out;
+}
+export function drawFullCard(d, art, W = W0) {
+  const k = W / W0;
+  const c = canvasOf(Math.round(W), Math.round(W * (H0 / W0)));
+  const g = c.getContext('2d');
+  g.scale(k, k);
+  const base = fullBase(d);
+  // 外框（細細一圈框色）＋卡圖鋪滿
+  let gr = g.createLinearGradient(0, 0, W0, H0);
+  gr.addColorStop(0, base[0]);
+  gr.addColorStop(0.5, base[1]);
+  gr.addColorStop(1, base[0]);
+  g.fillStyle = gr;
+  rr(g, 0, 0, W0, H0, 22);
+  g.fill();
+  const IN = { x: 11, y: 11, w: W0 - 22, h: H0 - 22 };
+  g.save();
+  rr(g, IN.x, IN.y, IN.w, IN.h, 14);
+  g.clip();
+  if (art) {
+    const s = Math.max(IN.w / art.width, IN.h / art.height);
+    g.drawImage(art, IN.x + (IN.w - art.width * s) / 2, IN.y + (IN.h - art.height * s) / 2, art.width * s, art.height * s);
+  } else {
+    // 沒有卡圖：框色漸層＋集中線
+    gr = g.createRadialGradient(W0 / 2, H0 * 0.42, 20, W0 / 2, H0 * 0.42, H0 * 0.7);
+    gr.addColorStop(0, shade(base[0], 0.6));
+    gr.addColorStop(1, base[1]);
+    g.fillStyle = gr;
+    g.fillRect(IN.x, IN.y, IN.w, IN.h);
+    const rnd = seeded(11);
+    g.strokeStyle = 'rgba(255,255,255,0.18)';
+    for (let i = 0; i < 70; i++) {
+      const a = rnd() * Math.PI * 2;
+      g.lineWidth = 1 + rnd() * 3;
+      g.beginPath();
+      g.moveTo(W0 / 2 + Math.cos(a) * 120, H0 * 0.42 + Math.sin(a) * 120);
+      g.lineTo(W0 / 2 + Math.cos(a) * 700, H0 * 0.42 + Math.sin(a) * 700);
+      g.stroke();
+    }
+  }
+  // 上下壓暗（字比較清楚）
+  gr = g.createLinearGradient(0, IN.y, 0, IN.y + IN.h);
+  gr.addColorStop(0, 'rgba(0,0,0,0.38)');
+  gr.addColorStop(0.18, 'rgba(0,0,0,0)');
+  gr.addColorStop(0.58, 'rgba(0,0,0,0)');
+  gr.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = gr;
+  g.fillRect(IN.x, IN.y, IN.w, IN.h);
+  g.restore();
+  g.lineWidth = 2;
+  g.strokeStyle = 'rgba(255,255,255,0.55)';
+  rr(g, IN.x, IN.y, IN.w, IN.h, 14);
+  g.stroke();
+  g.textBaseline = 'alphabetic';
+  // 左上：徽章（鋸齒星＋銀色＋斜的字）
+  const badge = (d.badge ?? '').trim();
+  if (badge) {
+    g.save();
+    g.translate(112, 92);
+    g.rotate(-0.1);
+    g.beginPath();
+    for (let i = 0; i < 28; i++) {
+      const a = (i / 28) * Math.PI * 2;
+      const r = i % 2 ? 50 : 66;
+      g.lineTo(Math.cos(a) * r * 1.55, Math.sin(a) * r * 0.78);
+    }
+    g.closePath();
+    gr = g.createLinearGradient(-90, -50, 90, 50);
+    gr.addColorStop(0, '#f6f7fa');
+    gr.addColorStop(0.45, '#9aa1ae');
+    gr.addColorStop(0.55, '#e9ecf2');
+    gr.addColorStop(1, '#5b6170');
+    g.fillStyle = gr;
+    g.fill();
+    g.lineWidth = 4;
+    g.strokeStyle = '#1a1c22';
+    g.stroke();
+    g.font = `italic 900 40px ${SANS}`;
+    g.lineJoin = 'round';
+    g.lineWidth = 7;
+    g.strokeStyle = '#1a1c22';
+    const bw = Math.min(150, g.measureText(badge).width);
+    const sx = Math.min(1, 150 / Math.max(1, g.measureText(badge).width));
+    g.scale(sx, 1);
+    g.strokeText(badge, -bw / 2 / sx, 14);
+    g.fillStyle = '#ffffff';
+    g.fillText(badge, -bw / 2 / sx, 14);
+    g.restore();
+  }
+  // 右上：戰力（大大的斜體數字，白邊）
+  const power = String(d.power ?? '').trim();
+  if (power) {
+    g.save();
+    g.font = `italic 900 70px ${SANS}`;
+    g.textAlign = 'right';
+    g.lineJoin = 'round';
+    const pw = g.measureText(power).width;
+    const sx = Math.min(1, 300 / pw);
+    g.translate(562, 100);
+    g.scale(sx, 1);
+    g.lineWidth = 12;
+    g.strokeStyle = '#ffffff';
+    g.strokeText(power, 0, 0);
+    gr = g.createLinearGradient(0, -60, 0, 0);
+    gr.addColorStop(0, shade(base[0], 0.1));
+    gr.addColorStop(1, base[1]);
+    g.fillStyle = gr;
+    g.fillText(power, 0, 0);
+    g.restore();
+  }
+  // 右邊：直的角色標籤
+  const role = (d.role ?? '').trim();
+  if (role) {
+    const tab = { x: 540, y: 176, w: 34, h: 220 };
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    rr(g, tab.x, tab.y, tab.w, tab.h, 12);
+    g.fill();
+    g.lineWidth = 3;
+    g.strokeStyle = base[0];
+    g.stroke();
+    g.fillStyle = base[1];
+    g.beginPath();
+    g.arc(tab.x + tab.w / 2, tab.y + 22, 10, 0, Math.PI * 2);
+    g.fill();
+    g.save();
+    g.translate(tab.x + tab.w / 2 + 9, tab.y + 38 + (tab.h - 46) / 2); // 圓點下面那段的正中間
+    g.rotate(Math.PI / 2);
+    g.font = `900 25px ${SANS}`;
+    g.fillStyle = base[1];
+    fitX(g, role, 0, 0, tab.h - 56, 'center');
+    g.restore();
+  }
+  // 效果欄：半透明深色底；每段開頭的 [關鍵字] 變成色塊
+  const tb = { x: 30, y: 538, w: 530, h: 200 };
+  g.fillStyle = 'rgba(12, 14, 26, 0.62)';
+  rr(g, tb.x, tb.y, tb.w, tb.h, 12);
+  g.fill();
+  g.lineWidth = 1.5;
+  g.strokeStyle = 'rgba(255,255,255,0.28)';
+  g.stroke();
+  const paras = String(d.ftext ?? d.text ?? '').split('\n').map((p) => {
+    const m = p.match(/^\s*[[［【]([^\]］】]{1,12})[\]］】]\s*/);
+    return m ? { tag: m[1], body: p.slice(m[0].length) } : { tag: '', body: p };
+  });
+  let fs = 22;
+  let laid;
+  for (; fs >= 11; fs -= 1) {
+    laid = [];
+    g.font = `700 ${fs}px ${SANS}`;
+    let h = 0;
+    for (const p of paras) {
+      g.font = `900 ${fs * 0.9}px ${SANS}`;
+      const tw = p.tag ? g.measureText(p.tag).width + fs * 0.9 + 8 : 0;
+      g.font = `700 ${fs}px ${SANS}`;
+      const lines = wrapFirst(g, p.body, tb.w - 28 - tw, tb.w - 28);
+      laid.push({ ...p, tw, lines });
+      h += lines.length * fs * 1.3;
+    }
+    if (h <= tb.h - 20) break;
+  }
+  let y = tb.y + 12 + fs;
+  const bottom = tb.y + tb.h - 8;
+  for (const p of laid) {
+    p.lines.forEach((ln, i) => {
+      if (y > bottom) return;
+      let x = tb.x + 14;
+      if (i === 0 && p.tag) {
+        g.font = `900 ${fs * 0.9}px ${SANS}`;
+        g.fillStyle = '#2f6bdb';
+        rr(g, x, y - fs * 0.92, p.tw - 6, fs * 1.18, 4);
+        g.fill();
+        g.fillStyle = '#ffffff';
+        g.fillText(p.tag, x + fs * 0.45, y - 1);
+        x += p.tw;
+      }
+      g.font = `700 ${fs}px ${SANS}`;
+      g.fillStyle = '#ffffff';
+      g.fillText(ln, x, y);
+      y += fs * 1.3;
+    });
+  }
+  // 最下面：名字帶（框色）＋特徵
+  const nb = { x: 22, y: 748, w: W0 - 44, h: 92 };
+  gr = g.createLinearGradient(0, nb.y, 0, nb.y + nb.h);
+  gr.addColorStop(0, shade(base[0], -0.1));
+  gr.addColorStop(1, base[1]);
+  g.fillStyle = gr;
+  rr(g, nb.x, nb.y, nb.w, nb.h, 10);
+  g.fill();
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  rr(g, nb.x + 6, nb.y + 58, nb.w - 12, 28, 6);
+  g.fill();
+  g.textAlign = 'center';
+  g.font = `900 38px ${SERIF}`;
+  const nf = !d.nameStyle || d.nameStyle === 'auto' ? (d.rarity | 0 ? nameFill(g, d, 160, nb.y + 46, 270) : '#ffffff') : nameFill(g, d, 160, nb.y + 46, 270);
+  g.save();
+  g.lineJoin = 'round';
+  g.lineWidth = 6;
+  g.strokeStyle = 'rgba(0,0,0,0.55)';
+  const nm = d.name || ' ';
+  const nk = Math.min(1, 380 / Math.max(1, g.measureText(nm).width));
+  g.translate(W0 / 2, nb.y + 46);
+  g.scale(Math.max(0.55, nk), 1);
+  g.strokeText(nm, 0, 0);
+  g.fillStyle = nf;
+  g.fillText(nm, 0, 0);
+  g.restore();
+  g.font = `700 18px ${SANS}`;
+  g.fillStyle = '#ffffff';
+  fitX(g, d.trait || '', W0 / 2, nb.y + 79, 360, 'center');
+  // 稀有度（左下圓章）、卡號（右上角）、費用（右下圓章）
+  g.textAlign = 'center';
+  g.fillStyle = '#ffffff';
+  g.beginPath();
+  g.arc(nb.x + 34, nb.y + 30, 19, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = base[1];
+  g.font = `900 ${(d.rarity | 0) >= 2 ? 14 : 18}px ${SANS}`;
+  g.fillText(['N', 'R', 'SR', 'SSR'][d.rarity | 0], nb.x + 34, nb.y + 36);
+  g.font = `700 14px ${SANS}`;
+  g.fillStyle = 'rgba(255,255,255,0.9)';
+  g.textAlign = 'right';
+  g.fillText(d.set || '', nb.x + nb.w - 12, nb.y + 22);
+  const cost = String(d.cost ?? '').trim();
+  if (cost) {
+    g.textAlign = 'center';
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.arc(nb.x + nb.w - 30, nb.y + 46, 17, 0, Math.PI * 2);
+    g.fill();
+    g.lineWidth = 3;
+    g.strokeStyle = base[1];
+    g.stroke();
+    g.fillStyle = base[1];
+    g.font = `900 20px ${SANS}`;
+    g.fillText(cost.slice(0, 2), nb.x + nb.w - 30, nb.y + 53);
+  }
+  g.textAlign = 'left';
+  return c;
+}
+
+// 3D 卡（cardkit）用的深度：框在前面、卡圖往後退一點（像隔著窗看）；style＝'duel'（正方形卡圖）／'monster'（橫的卡圖）／'full'（全圖）
 export function framedDepth(style = 'duel', w = 64) {
-  const A = style === 'monster' ? { x: ART_M.x, y: ART_M.y, w: ART_M.w, h: ART_M.h } : { x: ART.x, y: ART.y, w: ART.s, h: ART.s };
+  const A = style === 'monster' ? { x: ART_M.x, y: ART_M.y, w: ART_M.w, h: ART_M.h } : style === 'full' ? { x: 11, y: 11, w: W0 - 22, h: H0 - 22 } : { x: ART.x, y: ART.y, w: ART.s, h: ART.s };
   const h = Math.round((w * H0) / W0);
   const c = canvasOf(w, h);
   const g = c.getContext('2d');
@@ -670,7 +938,7 @@ export const MTYPES = {
 export const MTYPE_KEYS = Object.keys(MTYPES);
 export const STAGES = ['basic', 'stage1', 'stage2'];
 export const MBORDERS = ['yellow', 'silver', 'gold', 'black'];
-export const STYLES = ['duel', 'monster'];
+export const STYLES = ['duel', 'monster', 'full'];
 const ART_M = { x: 48, y: 108, w: 494, h: 336 }; // 寶可夢風的卡圖（橫的）
 
 // 能量記號：圓章＋白色圖案（雷、無色是深色圖案）
@@ -1211,7 +1479,7 @@ export class CardStudio {
       im.alt = w.d?.name || '';
       im.loading = 'lazy';
       const name = el('b', null, w.d?.name || '?');
-      const tag = el('small', null, `${t('cs.s.' + (w.d?.style === 'monster' ? 'monster' : 'duel'))} · ${['N', 'R', 'SR', 'SSR'][w.d?.rarity | 0]}`);
+      const tag = el('small', null, `${t('cs.s.' + (STYLES.includes(w.d?.style) ? w.d.style : 'duel'))} · ${['N', 'R', 'SR', 'SSR'][w.d?.rarity | 0]}`);
       const acts = el('div', 'work-acts');
       const ed = el('button', 'btn', t('cs.workEdit'));
       ed.type = 'button';
@@ -1308,7 +1576,7 @@ export class CardStudio {
   }
   // 依卡片種類顯示／藏起欄位
   sync() {
-    if (this.ds.style === 'monster') return;
+    if (this.ds.style === 'monster' || this.ds.style === 'full') return;
     const ty = this.ds.type;
     const st = isST(ty);
     for (const [k, show] of Object.entries({ attr: !st, level: !st && ty !== 'link', arrows: ty === 'link', icon: st, race: !st, stats: !st, def: !st && ty !== 'link' })) {
@@ -1394,7 +1662,8 @@ export class CardStudio {
       } catch {
         return this.d.toast(t('t.badImage'));
       }
-      const c = await this.d.openCrop({ bmp, out: ds.style === 'monster' ? [720, 490] : [600, 600], title: t('cs.artCrop') });
+      // 遊戲王風＝正方形、寶可夢風＝橫的、全圖卡＝整張卡的形狀
+      const c = await this.d.openCrop({ bmp, out: ds.style === 'monster' ? [720, 490] : ds.style === 'full' ? [590, 860] : [600, 600], title: t('cs.artCrop') });
       if (!c) return;
       this.art = c;
       const url = c.toDataURL('image/webp', 0.86);
@@ -1512,6 +1781,7 @@ export class CardStudio {
       show();
     };
     if (ds.style === 'monster') this.buildMonster({ group, chips, input, set, artGroup, frameGroup });
+    else if (ds.style === 'full') this.buildFull({ group, chips, input, set, artGroup });
     else {
       // 卡片種類
       chips(group(t('cs.type')), TYPE_KEYS, () => ds.type, (k) => t('cs.t.' + k), (k) => {
@@ -1663,6 +1933,56 @@ export class CardStudio {
     right.append(acts);
     box.append(left, right);
     this.redraw();
+  }
+
+  // 全圖卡風的欄位：框色、名字＋特徵、卡圖（整張卡）、徽章字、戰力、角色、費用、效果（[關鍵字] 開頭變色塊）、卡號
+  buildFull({ group, chips, input, set, artGroup }) {
+    const { t } = this.d;
+    const ds = this.ds;
+    // 以前做的卡切過來：全圖卡的欄位還沒有 → 先放範例
+    const def = defaultDesign(t);
+    for (const k of ['fcol', 'power', 'badge', 'role', 'cost', 'trait', 'ftext']) if (ds[k] === undefined) ds[k] = def[k];
+    const fr = group(t('cs.frame'));
+    chips(fr, FCOL_KEYS, () => (ds.frame ? '' : ds.fcol || 'red'), (k) => t('cs.fc.' + k), (k) => {
+      ds.frame = '';
+      set('fcol', k);
+    }).classList.add('cs-fcols');
+    const crow = el('div', 'cs-row');
+    const fc = el('input');
+    fc.type = 'color';
+    fc.value = /^#[0-9a-f]{6}$/i.test(ds.frame) ? ds.frame : FCOLS[ds.fcol || 'red'][0];
+    fc.setAttribute('aria-label', t('cs.frameColor'));
+    fc.oninput = () => set('frame', fc.value);
+    crow.append(el('span', 'cs-check', t('cs.frameColor')), fc);
+    fr.append(crow);
+    const nm = group(t('cs.name'));
+    input(nm, 'name', { max: 30 });
+    chips(nm, NAME_STYLES, () => ds.nameStyle || 'auto', (k) => t('cs.n.' + k), (k) => set('nameStyle', k));
+    input(group(t('cs.fTrait')), 'trait', { max: 30, ph: t('cs.fTraitS') });
+    artGroup();
+    const top = group(t('cs.fTop'));
+    const trow = el('div', 'cs-row');
+    const bl = el('label', 'cs-stat');
+    bl.append(t('cs.fBadge') + ' ');
+    input(bl, 'badge', { max: 12 }).size = 9;
+    const pl = el('label', 'cs-stat');
+    pl.append(t('cs.fPower') + ' ');
+    input(pl, 'power', { max: 7, mode: 'numeric' }).size = 6;
+    trow.append(bl, pl);
+    const rrow = el('div', 'cs-row');
+    const rl = el('label', 'cs-stat');
+    rl.append(t('cs.fRole') + ' ');
+    input(rl, 'role', { max: 12 }).size = 8;
+    const cl = el('label', 'cs-stat');
+    cl.append(t('cs.fCost') + ' ');
+    input(cl, 'cost', { max: 2, mode: 'numeric' }).size = 2;
+    rrow.append(rl, cl);
+    top.append(trow, rrow, el('p', 'cs-hint', t('cs.fTopHint')));
+    const tx = group(t('cs.text'));
+    input(tx, 'ftext', { area: true, rows: 5, max: 400 });
+    tx.append(el('p', 'cs-hint', t('cs.fTextHint')));
+    const ids = group(t('cs.set'));
+    input(ids, 'set', { max: 14 });
   }
 
   // 寶可夢風的欄位：屬性、外框、名字、進化、HP、卡圖、特性、招式 ×2、弱點／抵抗力／撤退、圖鑑資料

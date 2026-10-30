@@ -240,7 +240,7 @@ function loadDraft(uid = shop.cur) {
     media: draftMedia(it.media),
     uid: typeof it.uid === 'string' ? it.uid : null,
     sticker: it.sticker && STICKER_FINS.includes(it.sticker.fin) ? { fin: it.sticker.fin, baked: !!it.sticker.baked } : null,
-    framed: it.framed && it.img ? (it.framed === 'monster' ? 'monster' : 'duel') : false, // 舊草稿 true＝遊戲王風
+    framed: it.framed && it.img ? (it.framed === 'monster' || it.framed === 'full' ? it.framed : 'duel') : false, // 舊草稿 true＝遊戲王風
     design: it.framed && it.design && typeof it.design === 'object' ? it.design : null,
   }));
   ensureUids(d);
@@ -407,6 +407,7 @@ function renderItems() {
     ss.append(new Option(t('stk.notSticker'), ''));
     for (const f of STICKER_FINS) ss.append(new Option(t('stk.asSticker', { f: t('stk.f.' + f) }), f));
     ss.value = it.sticker?.fin || '';
+    ss.hidden = draft.kind === 'card' && !it.sticker; // 轉卡機不放貼紙（已經設了的留著，讓人改回「不變貼紙」）
     mrow.append(ss);
     if (it.framed && it.design) {
       const eb = document.createElement('button');
@@ -416,11 +417,19 @@ function renderItems() {
       mrow.append(eb);
     }
     li.append(th, name, del, meta, mrow);
+    // 以前放進來、跟這台種類不合的獎品：標出來＋怎麼改
+    if (!fitsKind(it, draft.kind)) {
+      li.classList.add('misfit');
+      const note = document.createElement('p');
+      note.className = 'misfit-note';
+      note.textContent = t(draft.kind === 'card' ? 'kind.misfit.card' : 'kind.misfit.capsule');
+      li.append(note);
+    }
     ul.append(li);
   });
   $('items-sum').textContent = t('itemsSum', { n: draft.items.length, q: total });
   $('add-item').disabled = draft.items.length >= LIMITS.items;
-  $('pick-work').hidden = draft.kind !== 'card';
+  kindButtons();
 }
 
 // 「已被轉走 N 個・剩 M 個」（有短連結、抓到雲端數字才有）
@@ -1226,7 +1235,7 @@ async function applyBg(bg) {
 
 
 function draftChanged(redrawItems = false) {
-  $('pick-work').hidden = draft.kind !== 'card'; // 換機台種類也要跟著藏／出現
+  kindButtons(); // 換機台種類也要跟著藏／出現
   renderBoardEd(); // 台紙的獎品清單跟著獎品名稱、增減、機台種類
   if (redrawItems) renderItems();
   else {
@@ -1249,17 +1258,62 @@ function draftChanged(redrawItems = false) {
   if (app.dataset.mode === 'create') showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
 }
 
+// 機台種類跟獎品（使用者 2026-10-30：「卡片機只能放卡片 轉蛋機不能放卡片」）
+//   轉卡機：卡片工房的卡、作品冊的卡、一般照片獎品（照舊自動做成全圖卡）都可以；貼紙（シール帳的、「轉到變成貼紙」）不行
+//   轉蛋機：卡片工房做的卡（整張卡面）不行
+function fitsKind(it, kind) {
+  return kind === 'card' ? !it.sticker : !it.framed;
+}
+// 這台能用的「放獎品」按鈕：轉卡機＝卡片工房、作品冊；轉蛋機＝シール帳
+function kindButtons() {
+  const card = draft.kind === 'card';
+  $('pick-work').hidden = !card;
+  $('open-studio').hidden = !card;
+  $('pick-stk').hidden = card;
+}
+// 換種類時放不進去的獎品：列出來問一下，確定才拿掉並切換
+let kindAsk = null;
+function askKindSwitch(kind, bad) {
+  return new Promise((done) => {
+    kindAsk = done;
+    $('kc-title').textContent = t('kc.title.' + kind);
+    $('kc-text').textContent = t('kc.text.' + kind, { n: bad.length });
+    const ul = $('kc-list');
+    ul.textContent = '';
+    for (const it of bad) {
+      const li = document.createElement('li');
+      li.textContent = it.name;
+      ul.append(li);
+    }
+    $('kc-ok').onclick = () => {
+      kindAsk = null;
+      closeSheet('sheet-kind');
+      done(true);
+    };
+    $('kc-cancel').onclick = () => closeSheet('sheet-kind'); // closeSheet 會回 false
+    openSheet('sheet-kind', $('kc-cancel'));
+  });
+}
+
 function bindForm() {
   // 機台種類：轉蛋機／轉卡機
   for (const b of $('kinds').children) {
-    b.onclick = () => {
-      if (draft.kind === b.dataset.kind) return;
-      draft.kind = b.dataset.kind;
+    b.onclick = async () => {
+      const kind = b.dataset.kind;
+      if (draft.kind === kind) return;
+      const bad = draft.items.filter((it) => !fitsKind(it, kind));
+      if (bad.length) {
+        if (!(await askKindSwitch(kind, bad))) return;
+        draft.items = draft.items.filter((it) => fitsKind(it, kind));
+        if (!draft.items.length) draft.items.push({ name: t('newPrize', { n: 1 }), rarity: 0, qty: 5, img: null, uid: newUid() }); // 至少要有一個
+      }
+      draft.kind = kind;
       for (const x of $('kinds').children) x.setAttribute('aria-checked', String(x === b));
       renderBack(); // 轉卡機才有卡背
       renderFront(); // 預覽換成卡片／方形
       renderMachineStickers(); // 貼在另一種機台上的貼紙變淡
-      draftChanged();
+      draftChanged(true); // 獎品清單：能放的按鈕、「轉到變成貼紙」跟著種類變
+      if (bad.length) toast(t('kc.done', { n: bad.length }));
     };
   }
   const sw = $('swatches');
@@ -1292,6 +1346,7 @@ function bindForm() {
     if (e.target.classList.contains('stk-sel')) {
       it.sticker = e.target.value ? { fin: e.target.value, baked: !!it.sticker?.baked } : null;
       e.target.classList.toggle('on', !!it.sticker);
+      if (draft.kind === 'card') return draftChanged(true); // 轉卡機：改回不變貼紙 → 紅字提醒拿掉
     }
     if (e.target.classList.contains('name')) {
       const img = li.querySelector('.thumb img');
@@ -2655,6 +2710,11 @@ function openSheet(id, focusEl) {
 }
 function closeSheet(id) {
   if (id === 'sheet-cover') cv.done?.(null);
+  if (id === 'sheet-kind' && kindAsk) {
+    const f = kindAsk;
+    kindAsk = null;
+    f(false); // 取消／點外面／Esc＝不換
+  }
   if (id === 'sheet-media') mediaPreview?.stop();
   if (id === 'sheet-card') {
     cardPlayer?.stop();
@@ -3217,7 +3277,7 @@ async function albumSync() {
     const it = play.cfg.items[i];
     const nm = it.name;
     const th = thumbs[i];
-    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : 1 } : {}) };
+    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : 1 } : {}) };
     const n = play.got[i] || 0;
     const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0) + (e.cut[nm] || 0))); // 舊資料沒有 base：用 got 推回去
     if (base) e.base[nm] = base;
@@ -3269,7 +3329,7 @@ async function addStudioCard({ design, card, music, target, qty, edit }) {
   let idx = edit ? draft.items.findIndex((x) => x.uid === edit.itemUid) : -1;
   if (idx < 0 && draft.items.length >= LIMITS.items) return toast(t('cs.full'));
   const old = idx >= 0 ? draft.items[idx] : null;
-  const it = { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask: null, noMask: true, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: design.style === 'monster' ? 'monster' : 'duel', design };
+  const it = { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask: null, noMask: true, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: design.style === 'monster' || design.style === 'full' ? design.style : 'duel', design };
   if (music.k === 'none') it.media = null;
   else if (music.k === 'preset') it.media = parseMediaUrl(`${PUBLIC_URL}assets/bgm/${BGM_IDS.includes(music.id) ? music.id : BGM_IDS[0]}.mp3`);
   else if (music.k === 'url') it.media = parseMediaUrl(music.url) || it.media;
@@ -4007,6 +4067,7 @@ async function openStickerPicker(onPick = stickToMachine, title = t('stk.pickTit
 
 // 放進轉蛋：做好的貼紙變成現在這台的獎品（圖已經是貼紙 → baked）
 async function stickerToGacha(st) {
+  if (draft.kind === 'card') return toast(t('kind.noSticker', { m: draft.name || t('defaultMachine') })); // 轉卡機不放貼紙
   if (draft.items.length >= LIMITS.items) return toast(t('stk.full'));
   const blob = await stickerBlob(st.id);
   if (!blob) return;
@@ -4186,7 +4247,7 @@ function openCardView(e, name) {
   cardPlayer?.stop();
   const md = it.md && mediaFromLink(it.md);
   $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
-  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: it.y === 'm' ? 'monster' : it.y ? 'duel' : false };
+  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: it.y === 'm' ? 'monster' : it.y === 'f' ? 'full' : it.y ? 'duel' : false };
   cardPlayer = md ? nowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
   if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）

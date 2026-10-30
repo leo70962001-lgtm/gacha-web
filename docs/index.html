@@ -359,6 +359,10 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .cs-sub { display: grid; gap: 6px; padding: 8px; border: 2px dashed var(--line); border-radius: 12px; }
 .cs-sub[hidden] { display: none; }
 .cs-short { flex: none !important; width: 90px !important; min-width: 0 !important; }
+.cs-hint { margin: 2px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+/* 全圖卡風：閃的範圍＝整張（卡圖鋪滿） */
+.tilt.framed.ff .t-tint { -webkit-mask: none; mask: none; }
+.tilt.framed.ff .t-shine { -webkit-mask: var(--spot); mask: var(--spot); }
 .cs-cost { display: grid; gap: 6px; }
 .cs-cost-cur { display: flex; gap: 3px; align-items: center; min-height: 24px; }
 .cs-cost-cur canvas { width: 22px; height: 22px; }
@@ -907,6 +911,11 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .bd-pick b { position: absolute; top: -7px; left: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font: 11px/18px var(--font-num); text-align: center; border: 1.5px solid var(--stroke); }
 .bd-pick-acts { gap: 6px; margin-top: 4px; }
 .bd-pick-acts .btn, #bd-img-pick, #bd-reset { padding: 4px 12px; font-size: 12px; }
+/* 跟機台種類不合的獎品（轉卡機裡的貼紙、轉蛋機裡的卡片工房卡） */
+.item.misfit { box-shadow: 0 0 0 2px #e8423b inset; }
+.misfit-note { grid-column: 1 / -1; margin: 0; font-size: 12px; font-weight: 700; color: #c4271f; line-height: 1.4; }
+.kc-card { gap: 10px; }
+.kc-list { margin: 0; padding-left: 1.2em; max-height: 40dvh; overflow: auto; font-weight: 700; }
 .item.picked-hl { animation: itemFlash 1.4s ease-out; } /* 不要叫 .flash：那是抽到 SR／SSR 時蓋滿舞台的閃光 */
 @keyframes itemFlash { 0%, 35% { box-shadow: 0 0 0 4px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
 .back-colorrow input { width: 44px; height: 30px; padding: 0; border: 2px solid var(--stroke); border-radius: 8px; background: none; cursor: pointer; }
@@ -1804,6 +1813,18 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 
 <!-- 做貼紙：照片 → 裁切 → 去背 → 形狀、加工、名字（app.js 的 openStickerMaker；裁切對話框要蓋在它上面 → 放在它前面） -->
 <!-- 機台的數據後台（stats.js）：概覽／觀眾／獎品 -->
+<!-- 換機台種類時放不進去的獎品（使用者 2026-10-30：「卡片機只能放卡片 轉蛋機不能放卡片」） -->
+<div class="sheet" id="sheet-kind" hidden>
+  <div class="sheet-card kc-card" role="dialog" aria-modal="true" aria-labelledby="kc-title">
+    <h2 id="kc-title"></h2>
+    <p class="meta-line" id="kc-text"></p>
+    <ul class="kc-list" id="kc-list"></ul>
+    <div class="row" style="justify-content:center">
+      <button class="btn primary" id="kc-ok" type="button" data-i18n="kc.ok">拿掉並切換</button>
+      <button class="btn" id="kc-cancel" type="button" data-i18n="kc.cancel">取消</button>
+    </div>
+  </div>
+</div>
 <div class="sheet" id="sheet-stats" hidden>
   <div class="sheet-card stats-card" role="dialog" aria-modal="true" aria-labelledby="st-title">
     <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
