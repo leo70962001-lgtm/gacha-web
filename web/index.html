@@ -85,7 +85,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .app[data-mode="shop"] main, .app[data-mode="album"] main, .app[data-mode="browse"] main, .app[data-mode="studio"] main, .app[data-mode="stickers"] main { grid-template-columns: minmax(0, 1fr); }
 .app[data-mode="shop"] .stage, .app[data-mode="shop"] .panel, .app[data-mode="album"] .stage, .app[data-mode="album"] .panel, .app[data-mode="browse"] .stage, .app[data-mode="browse"] .panel, .app[data-mode="studio"] .stage, .app[data-mode="studio"] .panel, .app[data-mode="stickers"] .stage, .app[data-mode="stickers"] .panel { display: none; }
 .app[data-mode="shop"] #page-shop, .app[data-mode="album"] #page-album, .app[data-mode="browse"] #page-browse, .app[data-mode="studio"] #page-studio, .app[data-mode="stickers"] #page-stickers { display: block; }
-.page { display: none; overflow-y: auto; background: var(--stage); min-height: 0; }
+.page { display: none; overflow-y: auto; min-height: 0; background: radial-gradient(circle, color-mix(in srgb, var(--stroke) 10%, transparent) 1.3px, transparent 1.9px) 0 0 / 22px 22px, var(--stage); }
 .page-inner { max-width: 980px; margin: 0 auto; padding: 22px var(--gutter-r) 48px var(--gutter-l); display: grid; gap: 18px; }
 .page-head h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; }
 .page-head .lede { margin: 4px 0 0; }
@@ -97,8 +97,9 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .bar.tight .modes .tab-ico { position: relative; flex-direction: column; gap: 1px; padding: 3px 10px; }
 .bar.tight .modes .tab-ico span { font-size: 10.5px; line-height: 1.15; }
 .bar.tight .modes .tab-badge { position: absolute; top: -3px; right: 0; margin: 0; }
-.bar.tighter .modes .tab-ico span { display: none; }
-.bar.tighter .modes .tab-ico { padding-inline: 8px; }
+.bar.tighter .brand { display: none; }
+.bar.tightest .modes .tab-ico span { display: none; }
+.bar.tightest .modes .tab-ico { padding-inline: 8px; }
 .card-box { background: var(--surface); border: 2px solid var(--stroke); border-radius: 18px; box-shadow: 3px 3px 0 var(--stroke); }
 /* 逛機台（使用者 2026-10-26：「追加用戶做好的機器的瀏覽頁面」） */
 .browse-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
@@ -124,8 +125,8 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .list-toggle small { color: var(--muted); font-size: 12px; }
 .mach-pub { font-size: 11px; font-weight: 900; padding: 1px 8px; border-radius: 999px; background: var(--sun); border: 1.5px solid var(--stroke); margin-left: 6px; vertical-align: 2px; }
 /* 我的商店 */
-.shop-sum { display: flex; flex-wrap: wrap; gap: 10px; }
-.shop-sum .stat { padding: 10px 14px; display: grid; gap: 2px; min-width: 130px; }
+.shop-sum { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 30%), 1fr)); gap: 10px; }
+.shop-sum .stat { padding: 10px 14px; display: grid; gap: 2px; min-width: 0; }
 .shop-sum .stat small { font-size: 12px; color: var(--muted); font-weight: 700; }
 .shop-sum .stat strong { font-family: var(--font-num); font-size: 24px; font-variant-numeric: tabular-nums; }
 .shop-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
@@ -165,6 +166,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .mach-link { font-size: 12px; color: var(--muted); word-break: break-all; font-family: ui-monospace, Consolas, monospace; }
 .mach-acts { display: flex; flex-wrap: wrap; gap: 6px; }
 .mach-acts .btn { padding: 6px 12px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
+.mach-acts .btn.ghost { margin-left: auto; box-shadow: none; }
 #shop-new { justify-self: start; }
 /* 收藏者會員卡（member.js；使用者 2026-10-28：Apple Wallet 會員卡）：左邊＝跟 Wallet 上一樣擺法的預覽，右邊＝等級、名字、主題卡、按鈕 */
 .mb { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); justify-items: center; width: 100%; min-width: 0; }
@@ -307,6 +309,10 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .work b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .work small { color: var(--muted); font-size: 11px; }
 .work-acts { display: flex; flex-wrap: wrap; gap: 4px; }
+#page-studio .work { position: relative; }
+#page-studio .work-acts { display: grid; gap: 5px; margin-top: 2px; }
+#page-studio .work-acts .btn { width: 100%; }
+#page-studio .work-acts .btn.ghost { position: absolute; top: 4px; right: 4px; width: auto; min-width: 32px; padding: 4px 8px; background: var(--surface); box-shadow: 2px 2px 0 var(--stroke); border-style: solid; }
 .work-acts .btn { padding: 4px 9px; font-size: 12px; box-shadow: 2px 2px 0 var(--stroke); }
 .work-put { display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr) 64px; }
 .work-put[hidden] { display: none; }
@@ -393,12 +399,14 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .cs-music .cs-in { flex: 1; min-width: 160px; }
 .cs-ok { color: var(--muted); }
 .cs-play { padding: 5px 12px; }
-.cs-acts { display: flex; gap: 8px; flex-wrap: wrap; position: sticky; bottom: 0; padding: 10px 0; background: var(--surface); }
+.cs-acts { display: flex; flex-wrap: wrap; gap: 6px; position: sticky; bottom: 0; padding: 10px 0; background: var(--surface); }
+.cs-acts .btn { flex: 1 1 auto; white-space: nowrap; }
+.cs-acts .btn.primary { flex-basis: 100%; }
 /* 手機：卡的預覽縮小、黏在上面（往下改欄位時還看得到卡），按鈕排一列 */
 @media (max-width: 759px) {
   .cs-left { position: sticky; top: 0; z-index: 2; background: var(--surface); padding: 4px 0 8px; box-shadow: 0 8px 10px -8px rgba(0, 0, 0, 0.25); }
   .cs-preview { width: min(48vw, 190px); }
-  .cs-acts .btn { padding: 8px 12px; font-size: 13px; }
+  .cs-acts .btn { padding: 8px 10px; font-size: 12.5px; }
 }
 .item .thumb.framed img { object-fit: contain; background: #1c2340; }
 /* カード工房的卡：圖本身就有框 → 不再加稀有度框、名字牌，照片鋪滿整張 */
@@ -489,6 +497,7 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .binder.bk-init .bk-book, .binder.bk-init .bk-rings { transition: none; }
 .bk-rings { position: absolute; top: 14px; bottom: 14px; left: 50%; width: 46px; translate: -50% 0; display: flex; flex-direction: column; justify-content: space-evenly; pointer-events: none; z-index: 3; transition: opacity .3s; }
 .binder.single .bk-rings { left: 14px; width: 30px; }
+.binder.single.closed .bk-book { transform: translateX(-16px); }
 .bk-rings i { height: 22px; border-radius: 12px; border: 3px solid var(--stroke); background: linear-gradient(180deg, #ffffff, #c9ced8 45%, #8c93a3 60%, #e9ecf2); box-shadow: 0 3px 0 rgba(0,0,0,.18); }
 .bf { position: absolute; inset: 0; border-radius: 10px; }
 .bf-page { background: linear-gradient(90deg, #f3efe6, #fffdf8 6%, #fffdf8 94%, #f3efe6); border: 2px solid var(--stroke); box-shadow: inset 0 0 0 4px #fff, 0 2px 0 rgba(0,0,0,.12); display: grid; grid-template-rows: auto 1fr; padding: 6% 6% 7%; gap: 3%; }
@@ -620,7 +629,9 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .cap-media { left: calc(50% + 22px); bottom: 100px; z-index: 5; }
 @media (prefers-reduced-motion: reduce) { .np, .np-bokeh i { animation: none; } .np-art { transition: none; } }
 /* ---- 收集簿編輯（albumedit.js）：編輯中獎品右下角有 ✎、點了調數量；目錄／櫃子上改名、刪除 ---- */
-.album-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+.album-bar { display: grid; gap: 8px; min-width: 0; }
+.album-subrow { display: flex; align-items: center; gap: 8px; justify-content: space-between; min-width: 0; }
+.album-subrow #album-edit { flex: none; }
 #album-edit { padding: 5px 14px; font-size: 13px; box-shadow: 2px 2px 0 var(--stroke); }
 #album-edit[aria-pressed="true"] { background: var(--sun); }
 #album-edit-hint { margin: -6px 0 0; }
@@ -811,9 +822,10 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 @keyframes roll { to { transform: rotate(360deg); } }
 
 /* ---------- 開店表單 ---------- */
-.panel { overflow-y: auto; background: var(--surface); border-left: 2px solid var(--stroke); }
+.panel { overflow-y: auto; background: radial-gradient(circle, color-mix(in srgb, var(--stroke) 10%, transparent) 1.3px, transparent 1.9px) 0 0 / 22px 22px, var(--bg); border-left: 2px solid var(--stroke); }
 .panel-inner { padding-block: 22px 40px; padding-left: max(22px, env(safe-area-inset-left, 0px)); padding-right: max(22px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
-.panel h1 { font-family: var(--font-display); font-weight: 400; font-size: 28px; line-height: 1.2; margin: 0; text-wrap: balance; }
+.panel h1 { font-family: var(--font-display); font-weight: 400; font-size: 28px; line-height: 1.2; margin: 0; text-wrap: balance; word-break: auto-phrase; }
+.page-head h1, .step h2 { word-break: auto-phrase; }
 .lede { margin: -10px 0 0; color: var(--muted); }
 /* 錢包卡：開店頁最上面 */
 .wallet-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; text-align: left; font: inherit; color: inherit; cursor: pointer; background: var(--surface); border: 2px solid var(--stroke); border-radius: 16px; padding: 10px 14px; box-shadow: 3px 3px 0 var(--stroke); }
@@ -889,6 +901,10 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .kind-btn svg { width: 28px; height: 28px; color: #1c2340; flex: none; }
 .kind-btn[aria-checked="true"] { background: var(--sun); color: #1c2340; }
 .kind-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--stroke); }
+/* 設定欄很窄（320 px 的手機）：格線欄位不要被裡面的東西撐寬（auto 欄＝最小寬度是內容最寬的那個） */
+.panel-inner, .steps, .step, .back-ed, .back-opts, .board-ed, .front-ed, .back-row { grid-template-columns: minmax(0, 1fr); }
+.back-row input:not([type="color"]) { min-width: 0; width: 100%; }
+.back-prev, .front-prev { flex-wrap: wrap; }
 /* 開店的第 1 步：兩張大卡選機台（使用者 2026-11-02：「把功能精簡跟統合更方便用戶操作」） */
 .kinds.big .kind-btn { flex-direction: column; gap: 6px; padding: 14px 10px 12px; text-align: center; }
 .kinds.big .kind-btn svg { width: 44px; height: 44px; }
@@ -919,7 +935,6 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .seg { display: inline-flex; gap: 3px; padding: 3px; max-width: 100%; overflow-x: auto; scrollbar-width: none; justify-self: start; background: var(--surface-2); border: 2px solid var(--stroke); border-radius: 999px; }
 .seg button { flex: none; border: 0; background: transparent; color: var(--ink); padding: 6px 14px; border-radius: 999px; font-weight: 700; white-space: nowrap; cursor: pointer; }
 .seg button[aria-selected="true"] { background: var(--ink); color: var(--surface); }
-.album-nav { display: grid; gap: 8px; min-width: 0; }
 .album-sub:empty { display: none; }
 .album-tabs .chip { font-size: 14px; padding: 5px 14px; cursor: pointer; }
 .album-sub button { font-size: 12.5px; padding: 4px 11px; }
@@ -973,7 +988,7 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .fin-chip.fin-holo::before { background: repeating-linear-gradient(120deg, #ff9ad5 0 3px, #9ee7ff 3px 6px, #fff59a 6px 9px); }
 .back-row { display: grid; gap: 3px; font-size: 12px; font-weight: 700; color: var(--muted); }
 .back-row input:not([type="color"]) { font: inherit; font-size: 14px; color: var(--ink); padding: 7px 10px; border-radius: 10px; border: 2px solid var(--stroke); background: var(--surface); }
-.back-colorrow { grid-template-columns: 1fr auto; align-items: center; }
+.back-colorrow { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 /* 台紙編輯：上面預覽（跟機台上同一張圖）、下面選項 */
 .board-ed { display: grid; gap: 12px; min-width: 0; }
 .board-prev { display: grid; place-items: center; }
@@ -1405,6 +1420,14 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   /* 名牌的小按鈕要排一列（機台才不會變小）→「‹ 回去」只留箭頭 */
   .chip-back { padding-inline: 8px; font-size: 14px; line-height: 1; }
   .chip-back .pb-txt { display: none; }
+  .stage-tip { left: 8px; bottom: 8px; max-width: calc(100% - 16px); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .panel h1 { font-size: 24px; }
+  .lede { font-size: 14px; }
+  .shop-sum .stat { padding: 8px 10px; }
+  .shop-sum .stat strong { font-size: 20px; }
+  .mach { padding: 12px; }
+  .mach-acts { gap: 4px; }
+  .mach-acts .btn { padding: 5px 9px; font-size: 12px; }
   .stage-try { top: 8px; right: 8px; padding: 6px 14px; font-size: 14px; box-shadow: 2px 2px 0 var(--stroke); }
   .page-head h1 { font-size: 24px; }
   .shop-list { grid-template-columns: minmax(0, 1fr); }
@@ -1460,7 +1483,13 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   .lang select { position: absolute; inset: 0; width: 100%; max-width: none; opacity: 0; }
 }
 @media (max-width: 400px) {
-  .brand { display: none; }
+  .brand { gap: 0; }
+}
+/* 320 px 的手機：分頁的字也留著（擠一點） */
+@media (max-width: 360px) {
+  .bar { gap: 4px; }
+  .modes { gap: 0; }
+  .modes .tab-ico { padding: 3px 5px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
@@ -1765,8 +1794,8 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
           <p class="lede" id="album-sum"></p>
         </header>
         <div class="album-bar">
-          <div class="album-nav"><div class="chips album-tabs" id="album-tabs" role="tablist"></div><div class="seg album-sub" id="album-sub" role="tablist"></div></div>
-          <button class="btn ghost" id="album-edit" type="button" aria-pressed="false" hidden>編輯</button>
+          <div class="chips album-tabs" id="album-tabs" role="tablist"></div>
+          <div class="album-subrow"><div class="seg album-sub" id="album-sub" role="tablist"></div><button class="btn ghost" id="album-edit" type="button" aria-pressed="false" hidden>編輯</button></div>
         </div>
         <p class="tr-hint" id="album-edit-hint" hidden></p>
         <p class="album-empty card-box" id="album-empty" hidden></p>

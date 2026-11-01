@@ -3588,7 +3588,7 @@ function renderAlbumTabsOnly() {
   const b = loadBook();
   const n = b.list.reduce((m, x) => m + (x.n || 1), 0);
   const tab = $('album-sub').querySelector('[data-k="sticker"]');
-  if (tab) tab.textContent = `${t('album.stickers')} (${n})`;
+  if (tab) tab.textContent = `${t('album.s.sticker')} (${n})`;
   $('album-sum').textContent = t('stk.sum', { k: b.list.length, n, p: b.pages.length });
 }
 
@@ -4301,10 +4301,10 @@ function renderAlbum() {
     b.textContent =
       k === 'trade' ? t('album.trade') + (inN ? ` (${inN})` : '')
       : k === 'friends' ? `${t('album.friends')} (${trade?.friends.length || 0})`
-      : k === 'sticker' ? `${t('album.stickers')} (${stkN})`
+      : k === 'sticker' ? `${t('album.s.sticker')} (${stkN})`
       : k === 'member' ? t('album.member')
       : k === 'pack' ? t('album.pack')
-      : `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${(k === 'card' ? cards : caps).length})`;
+      : `${t(k === 'card' ? 'album.s.card' : 'album.s.capsule')} (${(k === 'card' ? cards : caps).length})`;
     b.onclick = () => go(k);
     sub.append(b);
   }
@@ -4844,9 +4844,8 @@ function fitBar() {
   const bar = document.querySelector('.bar');
   const over = () => bar.scrollWidth > bar.clientWidth + 1;
   const fit = () => {
-    bar.classList.remove('tight', 'tighter');
-    if (over()) bar.classList.add('tight');
-    if (over()) bar.classList.add('tighter');
+    bar.classList.remove('tight', 'tighter', 'tightest');
+    for (const c of ['tight', 'tighter', 'tightest']) if (over()) bar.classList.add(c);
   };
   const ro = new ResizeObserver(fit);
   ro.observe(bar);

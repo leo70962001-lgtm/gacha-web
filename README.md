@@ -52,6 +52,17 @@
 - **深度往裡面**（同一天，使用者截了浮出框的預覽＋「立體感往裡面做 參考寶可夢的立體卡效果」）：工房的卡改成窗戶式 — holo.js `frameOverlay` 把卡面挖掉卡圖那格（遊戲王風正方形、寶可夢風橫的、全圖卡整張但字的那幾塊留著）＋窗邊內陰影 → `--frame` 放在最前面；主體 `translateZ(-15px) scale(1.0197)`、背景 `translateZ(-38px) scale(1.05)`（退多少放大多少，perspective 760px 正面看剛好對齊）；主體層 `inset: 0`（以前 5% 會錯位，看起來像跑出框）。機台 3D 卡的深度：框 165、主體 130（只在卡圖那格）、背景 95。照片獎品的「浮出框」照舊
 - **全圖卡字那層的遮罩**（同一天，使用者圈了徽章＋「去背的部分」：以前用長方形挖，徽章旁邊的臉一半浮一半不浮、斜的時候後面還有一份錯開的字）：`drawFullCard(d, null, W, { uiOnly: true })` 只畫字那層 → `fullUiMask(d, W)`（白＝徽章星形、戰力的字、角色標籤、外框一圈＋532 以下整段）。用在：`drawDesignMask` 主體沿它切；holo.js `frameOverlay(url, style, ui)` 照它把卡面放回窗裡（沒有 ui 的舊卡才用 `KEEP` 長方形）、`backFill(url, ui)` 背景層把字挖掉、模糊的自己一層層墊回去（不會看到第二份字）；機台 `drawCardLayers(..., ui)` → `framedDepth(style, 128, mask, ui)` 字跟框一樣 165、`inpaintBehind` 連字一起補。放進機台存 `item.ui`（120 px PNG，約 1.5 KB）→ 草稿 b64、連結 `json.u = [[獎品編號, 長度, 格式]]`（圖接在台紙圖後面，舊版忽略）、`cutLayers` 的 `u`（data URL）→ 結果卡 `ui`、收集簿 item `u` → 大卡 `hdv.ui`
 
+## 畫面美化（2026-11-02）
+
+使用者：「優化界面跟美觀」。手機（375／320）、桌機（1280）、深色模式、中日英都截圖或量過（每頁找超出畫面寬度的元素）。
+- 頁面（`.page`）跟開店設定欄（`.panel`）的底：`radial-gradient` 點點（`--stroke` 10% 混透明，22 px 一格）疊在 `--stage`／`--bg` 上 → 白色的步驟卡、作品卡浮起來；深色模式照 token
+- 頂列：手機也留 logo 的圓（以前 ≤400 px 整個藏起來，左邊空一塊）；`fitBar()` 收三段 `.tight`（店名後半）→ `.tighter`（整個 logo）→ `.tightest`（分頁只留圖示）；≤360 px 分頁擠一點，320 px 的手機字也放得下
+- 我的商店：`.shop-sum` 三格一排（auto-fit）；機台卡的按鈕手機上縮小、拿掉（`.ghost`）推到最右
+- 卡片工房：`#page-studio .work-acts` 按鈕一個一行同寬，🗑 放卡片右上角；`.cs-acts` 改 flex-wrap＋flex-grow（主要按鈕整行，其他的填滿，換行也不會留缺口）
+- 收集簿：小分頁短名字 `album.s.*`（完整名字在摘要那行），`#album-edit` 跟小分頁同一排（`.album-subrow`）；一頁的卡冊闔起來往左 16 px（封面扣子不被 `overflow: hidden` 切掉）
+- 手機的舞台提示一行（省略號）、`h1` 用 `word-break: auto-phrase`（日文在詞的地方換行）
+- **320 px 撐寬**：fold 裡的卡背／台紙編輯是 `auto` 欄，最小寬度＝內容最寬的（三張卡背預覽、文字欄）→ 整個設定欄被撐到 361 px。`.panel-inner, .steps, .step, .back-ed, .back-opts, .board-ed, .front-ed, .back-row` 都改 `minmax(0, 1fr)`，預覽可以換行
+
 ## 流程精簡：4 個分頁、開店 5 步、收集簿 3 類（2026-11-02）
 
 使用者：「檢視現在的流程 把功能精簡跟統合更方便用戶操作」（我提了 A 頂列、B 開店、C 收集簿三塊，使用者選「全部照提案做」）。頁面內部的模式（`app.dataset.mode`：browse／play／shop／create／studio／stickers／album）沒變，只改怎麼到那裡。
