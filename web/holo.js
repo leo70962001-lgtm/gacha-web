@@ -46,19 +46,23 @@ function setGlitter() {
 
 // カード工房的卡＋立體加工：「往裡面做」的框（使用者 2026-11-01：「立體感往裡面做 參考寶可夢的立體卡效果」）
 //   卡面挖掉卡圖那一格（＋窗邊的內陰影）＝最前面的一層；卡圖背景在最後面、主體在中間 → 斜的時候卡圖在窗裡面動，什麼都不會跑出框
-//   位置照 cardstudio.js 的卡面（590×860）：遊戲王風正方形窗、寶可夢風橫的窗、全圖卡＝整張（效果欄、名字帶、戰力、徽章、角色標籤留在框上）
+//   位置照 cardstudio.js 的卡面（590×860）：遊戲王風正方形窗、寶可夢風橫的窗、全圖卡＝整張
+//   全圖卡有 ui（字那層的遮罩：徽章、戰力、標籤、效果欄、名字帶的真正形狀）→ 照它留在最前面；舊卡沒有 → 只留效果欄、名字帶兩塊
 const WIN = { duel: [70, 158, 450, 450], monster: [48, 108, 494, 336], full: [11, 11, 568, 838] };
-const KEEP = { full: [[24, 532, 542, 212], [16, 742, 558, 106], [250, 26, 330, 92], [4, 32, 220, 120], [534, 170, 46, 232]] };
-const frames = new Map(); // style|卡面網址 → Promise<objectURL>（工房預覽一直換圖 → 只留最近 12 張）
-function frameOverlay(url, style) {
-  const key = style + '|' + url;
-  if (frames.has(key)) return frames.get(key);
-  const p = new Promise((res) => {
+const KEEP = { full: [[24, 532, 542, 212], [16, 742, 558, 106]] };
+const frames = new Map(); // style|卡面網址|ui（背景層：b|網址|ui）→ Promise<objectURL>
+const loadIm = (url) =>
+  new Promise((res) => {
+    if (!url) return res(null);
     const im = new Image();
     im.onload = () => res(im); // decode() 在背景分頁不會 resolve → 用 onload
     im.onerror = () => res(null);
     im.src = url;
-  }).then(async (im) => {
+  });
+function frameOverlay(url, style, uiUrl = null) {
+  const key = style + '|' + url + '|' + (uiUrl || '');
+  if (frames.has(key)) return frames.get(key);
+  const p = Promise.all([loadIm(url), loadIm(uiUrl)]).then(async ([im, ui]) => {
     if (!im) return null;
     const W = 360;
     const H = Math.round((W * 860) / 590);
@@ -74,14 +78,28 @@ function frameOverlay(url, style) {
     g.globalCompositeOperation = 'destination-out'; // 挖掉卡圖那格
     g.fillRect(...win);
     g.globalCompositeOperation = 'source-over';
-    for (const q of KEEP[style] || []) {
-      g.save();
-      g.beginPath();
-      g.rect(...R(q));
-      g.clip();
-      g.drawImage(im, 0, 0, W, H); // 字的那幾塊放回來
-      g.restore();
-    }
+    if (ui) {
+      // 字那層：卡面照 ui 遮罩（白＝留）剪出來放回窗裡
+      const u = document.createElement('canvas');
+      u.width = W;
+      u.height = H;
+      const ug = u.getContext('2d', { willReadFrequently: true });
+      ug.drawImage(ui, 0, 0, W, H);
+      const ud = ug.getImageData(0, 0, W, H);
+      for (let i = 0; i < ud.data.length; i += 4) ud.data[i + 3] = ud.data[i];
+      ug.putImageData(ud, 0, 0);
+      ug.globalCompositeOperation = 'source-in';
+      ug.drawImage(im, 0, 0, W, H);
+      g.drawImage(u, 0, 0);
+    } else
+      for (const q of KEEP[style] || []) {
+        g.save();
+        g.beginPath();
+        g.rect(...R(q));
+        g.clip();
+        g.drawImage(im, 0, 0, W, H); // 字的那幾塊放回來
+        g.restore();
+      }
     // 窗邊的內陰影：框的影子落進窗裡（只留窗裡那一圈），放在框的後面
     const s = document.createElement('canvas');
     s.width = W;
@@ -102,6 +120,10 @@ function frameOverlay(url, style) {
     const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
     return blob ? URL.createObjectURL(blob) : null;
   });
+  return keep(key, p);
+}
+// 工房預覽一直換圖 → 只留最近 12 張
+function keep(key, p) {
   frames.set(key, p);
   if (frames.size > 12) {
     const [k0, p0] = frames.entries().next().value;
@@ -109,6 +131,48 @@ function frameOverlay(url, style) {
     p0.then((u) => u && setTimeout(() => URL.revokeObjectURL(u), 5000));
   }
   return p;
+}
+// 全圖卡的背景層：字那層（ui 白）挖掉，用四周的顏色由粗到細補回去（模糊的自己一層層墊在下面）
+//   背景層在後面、斜的時候會錯開 → 沒挖掉的話徽章、戰力的字後面會再看到一份（使用者 2026-11-01：「去背的部分」）
+function backFill(url, uiUrl) {
+  const key = 'b|' + url + '|' + uiUrl;
+  if (frames.has(key)) return frames.get(key);
+  const p = Promise.all([loadIm(url), loadIm(uiUrl)]).then(async ([im, ui]) => {
+    if (!im || !ui) return null;
+    const W = 360;
+    const H = Math.round((W * 860) / 590);
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const g = c.getContext('2d');
+    g.drawImage(im, 0, 0, W, H);
+    const u = document.createElement('canvas');
+    u.width = W;
+    u.height = H;
+    const ug = u.getContext('2d', { willReadFrequently: true });
+    ug.filter = 'blur(2px)'; // 放寬一點，字的毛邊也挖掉
+    ug.drawImage(ui, 0, 0, W, H);
+    const ud = ug.getImageData(0, 0, W, H);
+    for (let i = 0; i < ud.data.length; i += 4) ud.data[i + 3] = Math.min(255, ud.data[i] * 3);
+    ug.putImageData(ud, 0, 0);
+    g.globalCompositeOperation = 'destination-out';
+    g.drawImage(u, 0, 0);
+    const hole = document.createElement('canvas');
+    hole.width = W;
+    hole.height = H;
+    hole.getContext('2d').drawImage(c, 0, 0);
+    g.globalCompositeOperation = 'destination-over';
+    for (const r of [2, 4, 8, 16, 32, 64]) {
+      g.filter = `blur(${r}px)`;
+      g.drawImage(hole, 0, 0);
+    }
+    g.filter = 'none';
+    g.fillStyle = '#20202a'; // 還補不到的（離字很遠的中間）
+    g.fillRect(0, 0, W, H);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.88));
+    return blob ? URL.createObjectURL(blob) : null;
+  });
+  return keep(key, p);
 }
 
 const live = new Set();
@@ -132,7 +196,8 @@ export class Holo {
     });
   }
 
-  // d＝{ t 整張圖、s 去背主體、b 背景（主體柔化）、st 主體頭頂（0–1）、r 稀有度、shape 'card'|'round'|'square'、name、tag 要不要名字牌 }
+  // d＝{ t 整張圖、s 去背主體、b 背景（主體柔化）、st 主體頭頂（0–1）、r 稀有度、shape 'card'|'round'|'square'、name、tag 要不要名字牌、
+  //   framed カード工房的卡（duel／monster／full）、ui 全圖卡字那層的遮罩（白＝徽章、戰力、效果欄…，立體時留在最前面）}
   set(d) {
     const el = this.el;
     this.d = d;
@@ -146,7 +211,12 @@ export class Holo {
     el.classList.toggle('fm', d.framed === 'monster'); // 寶可夢風：卡圖是橫的（閃的範圍不一樣）
     el.classList.toggle('ff', d.framed === 'full'); // 全圖卡風：整張都是卡圖
     el.style.setProperty('--rc', `var(--r-${R})`);
-    this.$('.t-photo').style.backgroundImage = `url("${d.s ? d.b || d.t : d.t}")`;
+    const back = d.s ? d.b || d.t : d.t;
+    this.$('.t-photo').style.backgroundImage = `url("${back}")`;
+    if (d.framed && d.s && d.ui)
+      backFill(back, d.ui).then((u) => {
+        if (u && this.d === d) this.$('.t-photo').style.backgroundImage = `url("${u}")`;
+      });
     this.$('.t-simg').style.backgroundImage = d.s ? `url("${d.s}")` : 'none';
     el.style.setProperty('--smask', d.s ? `url("${d.s}")` : 'none');
     this.$('.t-subj').hidden = !d.s;
@@ -154,7 +224,7 @@ export class Holo {
     // カード工房的卡＋立體加工 → 最前面的框（卡面挖掉卡圖那格），做好才換上
     el.style.removeProperty('--frame');
     if (d.framed && d.s && d.t)
-      frameOverlay(d.t, d.framed).then((u) => {
+      frameOverlay(d.t, d.framed, d.ui || null).then((u) => {
         if (u && this.d === d) el.style.setProperty('--frame', `url("${u}")`);
       });
     el.style.transform = '';

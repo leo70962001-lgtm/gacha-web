@@ -666,7 +666,8 @@ function wrapFirst(g, text, firstW, restW) {
   out.push(line);
   return out;
 }
-export function drawFullCard(d, art, W = W0) {
+// uiOnly＝只畫字的那層（外框一圈、徽章、戰力、角色標籤、效果欄、名字帶；沒有卡圖）→ 立體加工的「最前面那層」遮罩（fullUiMask）
+export function drawFullCard(d, art, W = W0, { uiOnly = false } = {}) {
   const k = W / W0;
   const c = canvasOf(Math.round(W), Math.round(W * (H0 / W0)));
   const g = c.getContext('2d');
@@ -684,7 +685,8 @@ export function drawFullCard(d, art, W = W0) {
   g.save();
   rr(g, IN.x, IN.y, IN.w, IN.h, 14);
   g.clip();
-  if (art) {
+  if (uiOnly) g.clearRect(IN.x, IN.y, IN.w, IN.h); // 只留外框那一圈
+  else if (art) {
     const s = Math.max(IN.w / art.width, IN.h / art.height);
     g.drawImage(art, IN.x + (IN.w - art.width * s) / 2, IN.y + (IN.h - art.height * s) / 2, art.width * s, art.height * s);
   } else {
@@ -706,13 +708,15 @@ export function drawFullCard(d, art, W = W0) {
     }
   }
   // 上下壓暗（字比較清楚）
-  gr = g.createLinearGradient(0, IN.y, 0, IN.y + IN.h);
-  gr.addColorStop(0, 'rgba(0,0,0,0.38)');
-  gr.addColorStop(0.18, 'rgba(0,0,0,0)');
-  gr.addColorStop(0.58, 'rgba(0,0,0,0)');
-  gr.addColorStop(1, 'rgba(0,0,0,0.55)');
-  g.fillStyle = gr;
-  g.fillRect(IN.x, IN.y, IN.w, IN.h);
+  if (!uiOnly) {
+    gr = g.createLinearGradient(0, IN.y, 0, IN.y + IN.h);
+    gr.addColorStop(0, 'rgba(0,0,0,0.38)');
+    gr.addColorStop(0.18, 'rgba(0,0,0,0)');
+    gr.addColorStop(0.58, 'rgba(0,0,0,0)');
+    gr.addColorStop(1, 'rgba(0,0,0,0.55)');
+    g.fillStyle = gr;
+    g.fillRect(IN.x, IN.y, IN.w, IN.h);
+  }
   g.restore();
   g.lineWidth = 2;
   g.strokeStyle = 'rgba(255,255,255,0.55)';
@@ -908,7 +912,8 @@ export function drawFullCard(d, art, W = W0) {
 
 // 3D 卡（cardkit）用的深度：框在前面、卡圖往後退一點（像隔著窗看）；style＝'duel'（正方形卡圖）／'monster'（橫的卡圖）／'full'（全圖）
 //   mask＝立體加工的主體遮罩（整張卡大小、白＝主體）：主體在框跟卡圖背景中間（深度往卡片裡面，使用者 2026-11-01：「立體感往裡面做」）
-export function framedDepth(style = 'duel', w = 64, mask = null) {
+//   ui＝全圖卡字那層的遮罩（fullUiMask）：徽章、戰力、效果欄跟框一樣在最前面
+export function framedDepth(style = 'duel', w = 64, mask = null, ui = null) {
   const A = style === 'monster' ? { x: ART_M.x, y: ART_M.y, w: ART_M.w, h: ART_M.h } : style === 'full' ? { x: 11, y: 11, w: W0 - 22, h: H0 - 22 } : { x: ART.x, y: ART.y, w: ART.s, h: ART.s };
   const h = Math.round((w * H0) / W0);
   const c = canvasOf(w, h);
@@ -936,6 +941,18 @@ export function framedDepth(style = 'duel', w = 64, mask = null) {
     g.globalCompositeOperation = 'lighten';
     g.drawImage(m, 0, 0);
     g.restore();
+  }
+  if (ui) {
+    const u = canvasOf(w, h);
+    const ug = u.getContext('2d');
+    ug.drawImage(ui, 0, 0, w, h);
+    ug.globalCompositeOperation = 'multiply';
+    ug.fillStyle = 'rgb(165,165,165)';
+    ug.fillRect(0, 0, w, h);
+    g.filter = 'none';
+    g.globalCompositeOperation = 'lighten';
+    g.drawImage(u, 0, 0);
+    g.globalCompositeOperation = 'source-over';
   }
   return c;
 }
@@ -1443,16 +1460,16 @@ function drawDesignMask(d, mbmp, art, W = W0) {
   g.clip();
   g.drawImage(mbmp, A.x + (A.w - aw * s) / 2, A.y + (A.h - ah * s) / 2, aw * s, ah * s);
   g.restore();
-  // 全圖卡：卡圖鋪滿整張，字都疊在卡圖上 → 效果欄、名字帶、戰力、徽章、角色標籤那幾塊不算主體（字留在卡面上，不跟著浮起來）
+  const id = g.getImageData(0, 0, c.width, c.height);
+  const px = id.data;
+  // 全圖卡：字都疊在卡圖上 → 照字那層的形狀（徽章的星形、戰力的字、標籤、效果欄、名字帶）挖掉，主體就沿著字的邊切，不會切成方塊
+  //   （使用者 2026-11-01 圈了徽章：「去背的部分」— 以前用長方形挖，徽章旁邊的臉一半浮一半不浮）
   if (d.style === 'full') {
-    g.fillStyle = '#000';
-    g.fillRect(24, 532, 542, 212); // 效果欄
-    g.fillRect(16, 742, 558, 106); // 名字帶
-    if (String(d.power ?? '').trim()) g.fillRect(250, 26, 330, 92);
-    if ((d.badge ?? '').trim()) g.fillRect(4, 32, 220, 120);
-    if ((d.role ?? '').trim()) g.fillRect(534, 170, 46, 232);
+    const ui = fullUiMask(d, c.width).getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const yCut = Math.round(532 * k) * c.width * 4; // 效果欄以下（效果欄、名字帶跟它們中間的縫）整段都不算主體
+    for (let i = 0; i < px.length; i += 4) if (ui[i] > 128 || i >= yCut) px[i] = px[i + 1] = px[i + 2] = 0;
+    g.putImageData(id, 0, 0);
   }
-  const px = g.getImageData(0, 0, c.width, c.height).data;
   c.top = 1;
   for (let y = 0; y < c.height; y++) {
     let n = 0;
@@ -1464,6 +1481,21 @@ function drawDesignMask(d, mbmp, art, W = W0) {
   }
   return c;
 }
+// 全圖卡「字那層」的遮罩（白＝字、標籤、外框，黑＝卡圖）：立體時這層留在最前面，主體也沿著它切
+export function fullUiMask(d, W = W0) {
+  const ui = drawFullCard(d, null, W, { uiOnly: true });
+  const id = ui.getContext('2d').getImageData(0, 0, ui.width, ui.height);
+  const yCut = Math.round(532 * (W / W0)) * ui.width * 4; // 效果欄以下整段留在前面（兩塊中間的縫也是）
+  for (let i = 0; i < id.data.length; i += 4) {
+    const v = id.data[i + 3] > 60 || i >= yCut ? 255 : 0; // 半透明的效果欄也算（整塊留在前面）
+    id.data[i] = id.data[i + 1] = id.data[i + 2] = v;
+    id.data[i + 3] = 255;
+  }
+  const c = canvasOf(ui.width, ui.height);
+  c.getContext('2d').putImageData(id, 0, 0);
+  return c;
+}
+
 // 放進轉卡機用：這張卡的主體遮罩（不要立體、沒有卡圖、抓不到主體＝null）；還沒去背的舊設計順便補做
 export async function designMask(d, W = CARD_OUT[0]) {
   if (!d || d.pop === false || !d.art?.b64) return null;
@@ -1583,8 +1615,9 @@ export class CardStudio {
         bg.drawImage(bl, 0, 0);
         b = bk.toDataURL('image/jpeg', 0.88);
       }
-      // t＝完整卡面（框那層從這張挖），b＝背景（主體糊掉），s＝主體
-      this.holo.set({ t: url, s, b, st, r: ds.rarity | 0, fin: fin3dOf(ds), shape: 'card', tag: false, name: '', framed: ds.style || 'duel' });
+      // t＝完整卡面（框那層從這張挖），b＝背景（主體糊掉），s＝主體，ui＝全圖卡的字那層（留在最前面）
+      const ui = ds.style === 'full' ? fullUiMask(ds, 300).toDataURL('image/png') : null;
+      this.holo.set({ t: url, s, b, st, ui, r: ds.rarity | 0, fin: fin3dOf(ds), shape: 'card', tag: false, name: '', framed: ds.style || 'duel' });
     }, 250);
   }
 

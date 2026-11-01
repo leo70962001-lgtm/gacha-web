@@ -428,7 +428,7 @@ export const CARD_PX = { w: 512, h: 746 };
 export const CARD_WIN = { x: 18, y: 18, w: 476, h: 710 }; // 圖片窗（px）
 const STARS = [1, 2, 3, 4];
 
-export function drawCardLayers(item, thumb, rarity = item.rarity, mask = null) {
+export function drawCardLayers(item, thumb, rarity = item.rarity, mask = null, ui = null) {
   const { w: W, h: H } = CARD_PX;
   const { x: wx, y: wy, w: ww, h: wh } = CARD_WIN;
   const rar = RARITY[rarity];
@@ -463,12 +463,24 @@ export function drawCardLayers(item, thumb, rarity = item.rarity, mask = null) {
     fm = canvas(ww, wh);
     fm.getContext('2d').drawImage(mask, 0, 0, ww, wh);
   }
+  // 全圖卡的字那層（徽章、戰力、效果欄…）：深度跟框一樣在前面；背景圖連字也補掉（斜的時候後面不會再看到一份字）
+  let um = null;
+  let hole = fm;
+  if (ui && item.framed) {
+    um = canvas(ww, wh);
+    um.getContext('2d').drawImage(ui, 0, 0, ww, wh);
+    hole = canvas(ww, wh);
+    const hg = hole.getContext('2d');
+    if (fm) hg.drawImage(fm, 0, 0);
+    hg.globalCompositeOperation = 'lighten';
+    hg.drawImage(um, 0, 0);
+  }
   return {
     frame,
     photo,
-    bg: fm ? inpaintBehind(photo, fm) : null,
+    bg: hole ? inpaintBehind(photo, hole) : null,
     over: item.framed ? canvas(W, H) : drawCardOver(item, rarity),
-    depth: item.framed ? framedDepth(item.framed, 64, fm) : mask ? depthFromMask(mask, ww, wh) : estimateDepth(photo),
+    depth: item.framed ? framedDepth(item.framed, um ? 128 : 64, fm, um) : mask ? depthFromMask(mask, ww, wh) : estimateDepth(photo),
   };
 }
 

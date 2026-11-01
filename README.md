@@ -50,6 +50,16 @@
 - **每張卡自己的表面加工**：`ds.fin3d` → `item.fin`（連結的第 12 欄，`FRONT_CODE`）；`itemFin(cfg, it)`＝自己的優先、沒有照機台；結果卡、機台 3D 卡（`front.fin` → `FIN_MODE`）、收集簿／卡冊（album item `f`）都用
 - **工房預覽**：上面「平面／✨ 立體」，立體＝同一套 holo.js 3D 閃卡（會晃、加工、主體浮出來），改設計 0.25 秒後重畫
 - **深度往裡面**（同一天，使用者截了浮出框的預覽＋「立體感往裡面做 參考寶可夢的立體卡效果」）：工房的卡改成窗戶式 — holo.js `frameOverlay` 把卡面挖掉卡圖那格（遊戲王風正方形、寶可夢風橫的、全圖卡整張但字的那幾塊留著）＋窗邊內陰影 → `--frame` 放在最前面；主體 `translateZ(-15px) scale(1.0197)`、背景 `translateZ(-38px) scale(1.05)`（退多少放大多少，perspective 760px 正面看剛好對齊）；主體層 `inset: 0`（以前 5% 會錯位，看起來像跑出框）。機台 3D 卡的深度：框 165、主體 130（只在卡圖那格）、背景 95。照片獎品的「浮出框」照舊
+- **全圖卡字那層的遮罩**（同一天，使用者圈了徽章＋「去背的部分」：以前用長方形挖，徽章旁邊的臉一半浮一半不浮、斜的時候後面還有一份錯開的字）：`drawFullCard(d, null, W, { uiOnly: true })` 只畫字那層 → `fullUiMask(d, W)`（白＝徽章星形、戰力的字、角色標籤、外框一圈＋532 以下整段）。用在：`drawDesignMask` 主體沿它切；holo.js `frameOverlay(url, style, ui)` 照它把卡面放回窗裡（沒有 ui 的舊卡才用 `KEEP` 長方形）、`backFill(url, ui)` 背景層把字挖掉、模糊的自己一層層墊回去（不會看到第二份字）；機台 `drawCardLayers(..., ui)` → `framedDepth(style, 128, mask, ui)` 字跟框一樣 165、`inpaintBehind` 連字一起補。放進機台存 `item.ui`（120 px PNG，約 1.5 KB）→ 草稿 b64、連結 `json.u = [[獎品編號, 長度, 格式]]`（圖接在台紙圖後面，舊版忽略）、`cutLayers` 的 `u`（data URL）→ 結果卡 `ui`、收集簿 item `u` → 大卡 `hdv.ui`
+
+## 轉卡機只放卡片、跟工房整合（2026-11-01）
+
+使用者截了開店頁的獎品清單＋工房：「把卡片機的景品的部分只能加入卡片跟卡片製作做整合」。
+- `fitsKind`：轉卡機＝只有 `it.framed`（工房的卡），轉蛋機＝沒有 framed。轉卡機藏「＋新增獎品」，只留「カード工房で作る」「作品冊から選ぶ」；清單標題、說明、合計換 `.card` 版（`#items-title`、`#items-hint` 的 data-i18n 跟著換）
+- 工房的卡在清單上：直的卡片縮圖（`.items.cards`）、名字 `readOnly`、稀有度 `disabled`（都印在卡上，要在工房改）；點縮圖或「✎ 改卡片」→ `openStudio(i)`；縮圖的提示改 `data-tip`
+- 轉蛋機 → 轉卡機：不合的不再拿掉，`cardFromPrize(it, i)` 自動做成遊戲王風的卡（`designFromPrize`：照片當卡圖、沒照片用字母縮圖 `placeholderThumb`，名字、稀有度照獎品；uid、張數、音樂留著）。轉卡機 → 轉蛋機照舊拿掉卡
+- 舊轉卡機裡的照片獎品：紅框＋「🃏 做成卡片」→ 工房開一張用那張照片的卡（edit 指著這個獎品）→「このカードを更新」就換掉
+- `studioItem(design, card, qty, old)`：卡面、主體遮罩、字那層、表面加工 → 獎品（`addStudioCard` 跟自動做卡共用）
 
 ## 機台種類跟獎品、全圖卡風（2026-10-30）
 

@@ -127,6 +127,14 @@ export async function encodeConfig(cfg) {
       img && bd.img.mime === 'image/webp' ? 'w' : 'j',
     ];
   }
+  // 全圖卡字那層的遮罩（2026-11-01，3D 卡的徽章、戰力、效果欄留在最前面）：[[獎品編號, 長度, 格式], …]，圖接在台紙圖後面；舊版看不懂 u 就照舊
+  const us = [];
+  cfg.items.forEach((it, i) => {
+    if (!it.ui || !it.img || it.framed !== 'full') return;
+    imgs.push(it.ui.bytes);
+    us.push([i, it.ui.bytes.length, it.ui.mime === 'image/webp' ? 'w' : 'p']);
+  });
+  if (us.length) json.u = us;
   // 背景音樂：['n'] 不要音樂、['p', 預設曲]、['a', 音樂網址]（上傳到雲端的檔案或 mp3 網址）；預設曲 shop 就不寫
   const bm = cfg.bgm;
   if (bm?.k === 'none') json.bm = ['n'];
@@ -251,6 +259,14 @@ export async function decodeConfig(token) {
       c: okC ? col : '#fffaf2',
       img,
     };
+  }
+  // 全圖卡字那層的遮罩（台紙圖之後）
+  for (const x of (Array.isArray(j.u) ? j.u : []).slice(0, LIMITS.items)) {
+    const [i, len, fmt] = Array.isArray(x) ? x : [];
+    if (!Number.isInteger(len) || len <= 0 || len > 60000 || off + len > buf.length) break; // 長度不對 → 後面的位置都對不上
+    const bytes = buf.slice(off, off + len);
+    off += len;
+    if (Number.isInteger(i) && items[i]?.framed === 'full') items[i].ui = { bytes, mime: fmt === 'w' ? 'image/webp' : 'image/png' };
   }
   let bgm = { k: 'preset', id: BGM_DEFAULT };
   const bm = Array.isArray(j.bm) ? j.bm : [];

@@ -19,7 +19,7 @@ import { mountNowPlaying } from './nowplaying.js';
 import { MemberCard } from './member.js';
 import { guessCountry, deviceType } from './geo.js';
 import { MachineStats } from './stats.js';
-import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT, artOf, designMask, FIN3D } from './cardstudio.js';
+import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT, artOf, designMask, fullUiMask, FIN3D, defaultDesign } from './cardstudio.js';
 import { applyAppTheme, cardSplash, drawPrizePost, FEEDS, POST, canShareFiles, downloadFiles } from './cardpack.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
 function nowPlaying(box, m, o) {
@@ -143,20 +143,20 @@ async function autoMasks() {
 
 // ---------- 圖片 ----------
 const thumbCache = new WeakMap(); // item.img → { url, bmp }
-const maskCache = new WeakMap(); // item.mask → { bmp, ready }
-function maskOf(cfg, i) {
-  const it = cfg.items[i];
-  if (!it.mask) return null;
-  let m = maskCache.get(it.mask);
+const maskCache = new WeakMap(); // item.mask／item.ui → { bmp, ready }
+function bmpOf(o) {
+  if (!o) return null;
+  let m = maskCache.get(o);
   if (!m) {
     m = { bmp: null };
-    m.ready = createImageBitmap(new Blob([it.mask.bytes], { type: it.mask.mime }))
+    m.ready = createImageBitmap(new Blob([o.bytes], { type: o.mime }))
       .then((b) => (m.bmp = b))
       .catch(() => {});
-    maskCache.set(it.mask, m);
+    maskCache.set(o, m);
   }
   return m;
 }
+const maskOf = (cfg, i) => bmpOf(cfg.items[i].mask);
 function thumbOf(cfg, i) {
   const it = cfg.items[i];
   if (it.img) {
@@ -236,6 +236,7 @@ function loadDraft(uid = shop.cur) {
     qty: Math.min(LIMITS.qty, Math.max(1, it.qty | 0)),
     img: it.img ? { bytes: Uint8Array.from(atob(it.img.b64), (ch) => ch.charCodeAt(0)), mime: it.img.mime } : null,
     mask: it.img && it.mask?.b64 ? { bytes: Uint8Array.from(atob(it.mask.b64), (ch) => ch.charCodeAt(0)), mime: it.mask.mime } : null,
+    ui: it.img && it.framed === 'full' && it.ui?.b64 ? { bytes: Uint8Array.from(atob(it.ui.b64), (ch) => ch.charCodeAt(0)), mime: it.ui.mime } : null, // 全圖卡字那層的遮罩
     noMask: !!it.noMask,
     media: draftMedia(it.media),
     uid: typeof it.uid === 'string' ? it.uid : null,
@@ -326,6 +327,7 @@ function saveDraft() {
       ...it,
       img: it.img ? { b64: btoa(String.fromCharCode(...it.img.bytes)), mime: it.img.mime } : null,
       mask: it.mask ? { b64: btoa(String.fromCharCode(...it.mask.bytes)), mime: it.mask.mime } : null,
+      ui: it.ui ? b64(it.ui) : null,
     })),
   });
 }
@@ -335,6 +337,14 @@ function renderItems() {
   const ul = $('items');
   ul.textContent = '';
   const total = draft.items.reduce((a, b) => a + b.qty, 0);
+  // 轉卡機只放卡片（使用者 2026-11-01：「把卡片機的景品的部分只能加入卡片跟卡片製作做整合」）：
+  //   標題、說明換成卡片的；卡的名字、稀有度、圖都在カード工房改（點縮圖或「改卡片」），這裡只改張數、音樂
+  const cardKind = draft.kind === 'card';
+  ul.classList.toggle('cards', cardKind);
+  for (const [id, key] of [['items-title', 'step1'], ['items-hint', 'itemsHint']]) {
+    $(id).dataset.i18n = cardKind ? key + '.card' : key;
+    $(id).textContent = t($(id).dataset.i18n);
+  }
   draft.items.forEach((it, i) => {
     const li = document.createElement('li');
     li.className = 'item';
@@ -348,11 +358,14 @@ function renderItems() {
     img.src = thumbOf(draft, i).url;
     th.append(img);
     if (it.framed) th.classList.add('framed');
+    if (it.design) th.dataset.tip = t('cs.editShort');
+    else if (cardKind) th.dataset.tip = t('kind.toCardShort');
     const name = document.createElement('input');
     name.className = 'name';
     name.value = it.name;
     name.maxLength = LIMITS.name;
     name.setAttribute('aria-label', t('prizeName'));
+    name.readOnly = !!it.design; // 卡上的名字：在工房改（不然卡面跟清單對不上）
     const del = document.createElement('button');
     del.className = 'del';
     del.type = 'button';
@@ -365,6 +378,7 @@ function renderItems() {
     sel.className = 'rarity';
     sel.setAttribute('aria-label', t('rarity'));
     RARITY.forEach((r, k) => sel.append(new Option(`${r.key} ${r.label}`, k, false, k === it.rarity)));
+    sel.disabled = !!it.design; // 稀有度也印在卡上
     const qw = document.createElement('label');
     qw.className = 'qty-wrap';
     const qty = document.createElement('input');
@@ -416,6 +430,13 @@ function renderItems() {
       eb.className = 'media-btn studio-edit';
       eb.textContent = t('cs.editCard');
       mrow.append(eb);
+    } else if (cardKind) {
+      // 照片獎品（以前放的）：照片當卡圖，在工房做成卡片再放回來（換掉這個）
+      const cb = document.createElement('button');
+      cb.type = 'button';
+      cb.className = 'to-card studio-edit';
+      cb.textContent = t('kind.toCard');
+      mrow.append(cb);
     }
     li.append(th, name, del, meta, mrow);
     // 以前放進來、跟這台種類不合的獎品：標出來＋怎麼改
@@ -423,12 +444,12 @@ function renderItems() {
       li.classList.add('misfit');
       const note = document.createElement('p');
       note.className = 'misfit-note';
-      note.textContent = t(draft.kind === 'card' ? 'kind.misfit.card' : 'kind.misfit.capsule');
+      note.textContent = t(cardKind ? 'kind.misfit.card' : 'kind.misfit.capsule');
       li.append(note);
     }
     ul.append(li);
   });
-  $('items-sum').textContent = t('itemsSum', { n: draft.items.length, q: total });
+  $('items-sum').textContent = t(draft.kind === 'card' ? 'itemsSum.card' : 'itemsSum', { n: draft.items.length, q: total });
   $('add-item').disabled = draft.items.length >= LIMITS.items;
   kindButtons();
 }
@@ -1241,7 +1262,7 @@ function draftChanged(redrawItems = false) {
   if (redrawItems) renderItems();
   else {
     const total = draft.items.reduce((a, b) => a + b.qty, 0);
-    $('items-sum').textContent = t('itemsSum', { n: draft.items.length, q: total });
+    $('items-sum').textContent = t(draft.kind === 'card' ? 'itemsSum.card' : 'itemsSum', { n: draft.items.length, q: total });
     document.querySelectorAll('.item').forEach((li) => {
       const it = draft.items[li.dataset.i];
       li.querySelector('.odds').textContent = t('odds', { p: pct(it.qty / total) });
@@ -1263,7 +1284,7 @@ function draftChanged(redrawItems = false) {
 //   轉卡機：卡片工房的卡、作品冊的卡、一般照片獎品（照舊自動做成全圖卡）都可以；貼紙（シール帳的、「轉到變成貼紙」）不行
 //   轉蛋機：卡片工房做的卡（整張卡面）不行
 function fitsKind(it, kind) {
-  return kind === 'card' ? !it.sticker : !it.framed;
+  return kind === 'card' ? !!it.framed : !it.framed; // 轉卡機＝只放卡片（カード工房的卡）；轉蛋機＝不放卡片
 }
 // 這台能用的「放獎品」按鈕：轉卡機＝卡片工房、作品冊；轉蛋機＝シール帳
 function kindButtons() {
@@ -1271,6 +1292,7 @@ function kindButtons() {
   $('pick-work').hidden = !card;
   $('open-studio').hidden = !card;
   $('pick-stk').hidden = card;
+  $('add-item').hidden = card; // 轉卡機：新的卡從工房、作品冊來
 }
 // 換種類時放不進去的獎品：列出來問一下，確定才拿掉並切換
 let kindAsk = null;
@@ -1279,6 +1301,7 @@ function askKindSwitch(kind, bad) {
     kindAsk = done;
     $('kc-title').textContent = t('kc.title.' + kind);
     $('kc-text').textContent = t('kc.text.' + kind, { n: bad.length });
+    $('kc-ok').textContent = t(kind === 'card' ? 'kc.ok.card' : 'kc.ok');
     const ul = $('kc-list');
     ul.textContent = '';
     for (const it of bad) {
@@ -1305,8 +1328,17 @@ function bindForm() {
       const bad = draft.items.filter((it) => !fitsKind(it, kind));
       if (bad.length) {
         if (!(await askKindSwitch(kind, bad))) return;
-        draft.items = draft.items.filter((it) => fitsKind(it, kind));
-        if (!draft.items.length) draft.items.push({ name: t('newPrize', { n: 1 }), rarity: 0, qty: 5, img: null, uid: newUid() }); // 至少要有一個
+        if (kind === 'card') {
+          // 轉卡機：照片獎品自動做成卡（照片當卡圖），之後可以在工房改
+          toast(t('kc.making', { n: bad.length }));
+          for (const it of bad) {
+            const i = draft.items.indexOf(it);
+            if (i >= 0) draft.items[i] = await cardFromPrize(it, i);
+          }
+        } else {
+          draft.items = draft.items.filter((it) => fitsKind(it, kind));
+          if (!draft.items.length) draft.items.push({ name: t('newPrize', { n: 1 }), rarity: 0, qty: 5, img: null, uid: newUid() }); // 至少要有一個
+        }
       }
       draft.kind = kind;
       for (const x of $('kinds').children) x.setAttribute('aria-checked', String(x === b));
@@ -1314,7 +1346,7 @@ function bindForm() {
       renderFront(); // 預覽換成卡片／方形
       renderMachineStickers(); // 貼在另一種機台上的貼紙變淡
       draftChanged(true); // 獎品清單：能放的按鈕、「轉到變成貼紙」跟著種類變
-      if (bad.length) toast(t('kc.done', { n: bad.length }));
+      if (bad.length) toast(t(kind === 'card' ? 'kc.done.card' : 'kc.done', { n: bad.length }));
     };
   }
   const sw = $('swatches');
@@ -1365,8 +1397,8 @@ function bindForm() {
     if (e.target.closest('.del')) {
       draft.items.splice(+li.dataset.i, 1);
       draftChanged(true);
-    } else if (e.target.closest('.studio-edit') || (e.target.closest('.thumb') && draft.items[+li.dataset.i].design)) {
-      openStudio(+li.dataset.i);
+    } else if (e.target.closest('.studio-edit') || (e.target.closest('.thumb') && (draft.items[+li.dataset.i].design || draft.kind === 'card'))) {
+      openStudio(+li.dataset.i); // 轉卡機的照片獎品 → 工房做成卡
     } else if (e.target.closest('.thumb')) {
       fileFor = +li.dataset.i;
       $('file').value = '';
@@ -1390,7 +1422,7 @@ function bindForm() {
     if (!c || !draft.items.includes(it)) return; // 取消了
     try {
       it.img = await encodeImg(c);
-      it.mask = null;
+      it.mask = it.ui = null;
       it.noMask = false;
       draftChanged(true);
       makeMask(it); // 主體去背（背景跑，好了再更新）
@@ -1735,7 +1767,9 @@ async function cardFront(idx) {
   if (!th.bmp && th.ready) await th.ready;
   const mk = maskOf(play.cfg, idx);
   if (mk && !mk.bmp) await mk.ready;
-  const L = drawCardLayers(it, th.bmp || placeholderThumb(it.name, idx), it.rarity, mk?.bmp || null);
+  const uk = bmpOf(it.ui); // 全圖卡字那層：跟框一樣在前面
+  if (uk && !uk.bmp) await uk.ready;
+  const L = drawCardLayers(it, th.bmp || placeholderThumb(it.name, idx), it.rarity, mk?.bmp || null, uk?.bmp || null);
   L.fin = it.fin || null; // カード工房的卡自己選的表面加工（machine._makeCard 優先用）
   return L;
 }
@@ -2146,8 +2180,8 @@ function showResult(idx, first, view = false) {
   if (it.mask)
     cutLayers(idx, 300, isCard ? 437 : 300).then((L) => {
       if (resultIdx !== idx || !L.s) return;
-      resHolo.set({ ...hd, s: L.s, b: L.b, st: L.st });
-      mediaHolo?.holo.set({ ...hd, tag: false, s: L.s, b: L.b, st: L.st });
+      resHolo.set({ ...hd, s: L.s, b: L.b, st: L.st, ui: L.u });
+      mediaHolo?.holo.set({ ...hd, tag: false, s: L.s, b: L.b, st: L.st, ui: L.u });
     });
   // 剛轉到：獎品照稀有度登場（N 跳出來、R 翻一圈、SR 剪影→轉一圈上色、SSR 剪影集氣→轉兩圈爆光）＋放射光、光環、星星
   const stage = $('r-prize');
@@ -3192,7 +3226,9 @@ async function cutLayers(idx, W, H) {
     back = bc.toDataURL('image/webp', 0.72);
     if (!back.startsWith('data:image/webp')) back = bc.toDataURL('image/jpeg', 0.75);
   }
-  const res = { t: url, s: subj, b: back, st: top };
+  // 全圖卡字那層的遮罩（3D 卡留在最前面，holo.js）：本來就很小，直接轉 data URL
+  const u = it.ui ? `data:${it.ui.mime};base64,${btoa(String.fromCharCode(...it.ui.bytes))}` : null;
+  const res = { t: url, s: subj, b: back, st: top, u };
   albumThumbs.set(key, res);
   return res;
 }
@@ -3237,7 +3273,7 @@ async function albumSync() {
   for (let i = 0; i < play.cfg.items.length; i++) {
     const it = play.cfg.items[i];
     const prev = old?.items[it.name];
-    const need = !prev?.t || (it.mask && (!prev.s || prev.st == null)); // 還沒有縮圖，或後來才去背 → 重做
+    const need = !prev?.t || (it.mask && (!prev.s || prev.st == null)) || (it.ui && !prev.u); // 還沒有縮圖，或後來才去背、才有字那層 → 重做
     thumbs.push(need ? await albumThumb(i) : prev);
   }
   if (!play?.cfg || albumKey() !== key) return; // 等的時候換了機台
@@ -3280,7 +3316,7 @@ async function albumSync() {
     const it = play.cfg.items[i];
     const nm = it.name;
     const th = thumbs[i];
-    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : 1 } : {}), ...(it.fin ? { f: it.fin } : {}) };
+    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : 1 } : {}), ...(it.fin ? { f: it.fin } : {}), ...(th.u ? { u: th.u } : {}) };
     const n = play.got[i] || 0;
     const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0) + (e.cut[nm] || 0))); // 舊資料沒有 base：用 got 推回去
     if (base) e.base[nm] = base;
@@ -3317,21 +3353,33 @@ function cardStudio() {
 function openStudio(i = -1) {
   const it = draft.items[i];
   setMode('studio');
-  if (it?.design) cardStudio().open(it.design, { uid: shop.cur, itemUid: it.uid, qty: it.qty, music: it.media ? { k: 'keep' } : { k: 'none' } });
+  // 照片獎品（轉卡機只放卡片）→ 照片當卡圖開一張新的；放回去就換掉這個獎品
+  const design = it?.design || (it && designFromPrize(it, i));
+  if (design) cardStudio().open(design, { uid: shop.cur, itemUid: it.uid, qty: it.qty, music: it.media ? { k: 'keep' } : { k: 'none' } });
   else if (studio?.edit) cardStudio().open();
 }
-// 做好的卡放進轉卡機：整張卡面＝獎品照片（framed），設計留在草稿裡可以再改；音樂＝獎品的影音
-async function addStudioCard({ design, card, music, target, qty, edit }) {
-  if (target === '__new') {
-    await newMachine();
-    draft.items = []; // 新機台的範例獎品不要
-  } else if (target !== shop.cur) await switchMachine(target);
+// 照片獎品 → 工房的設計：照片當卡圖（沒照片＝清單上的字母縮圖），名字、稀有度照獎品，其他用工房的預設
+function designFromPrize(it, i) {
+  let art;
+  if (it.img) art = { b64: btoa(String.fromCharCode(...it.img.bytes)), mime: it.img.mime };
+  else {
+    const u = placeholderThumb(it.name, i, 360).toDataURL('image/jpeg', 0.88);
+    art = { b64: u.slice(u.indexOf(',') + 1), mime: 'image/jpeg' };
+  }
+  return { ...defaultDesign(t), name: it.name, rarity: it.rarity | 0, art };
+}
+// 換成轉卡機時：照片獎品直接畫成卡（張數、音樂、id 留著）
+async function cardFromPrize(it, i) {
+  const design = designFromPrize(it, i);
+  await studioFonts();
+  const card = drawDesignCard(design, await artOf(design), CARD_OUT[0], lang);
+  return { ...(await studioItem(design, card, it.qty, it)), sticker: null };
+}
+// 工房的設計＋畫好的卡面 → 機台的獎品：整張卡面＝照片（framed）、主體遮罩、全圖卡字那層、這張卡的表面加工
+async function studioItem(design, card, qty, old) {
   const blob = await new Promise((r) => card.toBlob(r, 'image/webp', 0.88));
   const bytes = new Uint8Array(await (blob || (await new Promise((r) => card.toBlob(r, 'image/jpeg', 0.9)))).arrayBuffer());
   const img = { bytes, mime: blob?.type === 'image/webp' ? 'image/webp' : 'image/jpeg' };
-  let idx = edit ? draft.items.findIndex((x) => x.uid === edit.itemUid) : -1;
-  if (idx < 0 && draft.items.length >= LIMITS.items) return toast(t('cs.full'));
-  const old = idx >= 0 ? draft.items[idx] : null;
   // 立體加工（2026-11-01）：卡圖的主體 → 整張卡大小的遮罩（3D 卡的深度、主體浮出來）；fin＝這張卡自己的表面加工
   const mc = await designMask(design, 120).catch(() => null);
   let mask = null;
@@ -3340,7 +3388,24 @@ async function addStudioCard({ design, card, music, target, qty, edit }) {
     if (!mb || mb.type !== 'image/webp') mb = await new Promise((r) => mc.toBlob(r, 'image/png'));
     mask = { bytes: new Uint8Array(await mb.arrayBuffer()), mime: mb.type };
   }
-  const it = { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask, noMask: !mask, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: design.style === 'monster' || design.style === 'full' ? design.style : 'duel', fin: FIN3D.includes(design.fin3d) ? design.fin3d : null, design };
+  // 全圖卡：字那層（徽章、戰力、效果欄…）的遮罩 → 3D 卡把這層留在最前面（PNG，黑白的很小）
+  let ui = null;
+  if (design.style === 'full') {
+    const ub = await new Promise((r) => fullUiMask(design, 120).toBlob(r, 'image/png'));
+    if (ub) ui = { bytes: new Uint8Array(await ub.arrayBuffer()), mime: 'image/png' };
+  }
+  return { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask, ui, noMask: !mask, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: design.style === 'monster' || design.style === 'full' ? design.style : 'duel', fin: FIN3D.includes(design.fin3d) ? design.fin3d : null, design };
+}
+// 做好的卡放進轉卡機：整張卡面＝獎品照片（framed），設計留在草稿裡可以再改；音樂＝獎品的影音
+async function addStudioCard({ design, card, music, target, qty, edit }) {
+  if (target === '__new') {
+    await newMachine();
+    draft.items = []; // 新機台的範例獎品不要
+  } else if (target !== shop.cur) await switchMachine(target);
+  let idx = edit ? draft.items.findIndex((x) => x.uid === edit.itemUid) : -1;
+  if (idx < 0 && draft.items.length >= LIMITS.items) return toast(t('cs.full'));
+  const old = idx >= 0 ? draft.items[idx] : null;
+  const it = await studioItem(design, card, qty, old);
   if (music.k === 'none') it.media = null;
   else if (music.k === 'preset') it.media = parseMediaUrl(`${PUBLIC_URL}assets/bgm/${BGM_IDS.includes(music.id) ? music.id : BGM_IDS[0]}.mp3`);
   else if (music.k === 'url') it.media = parseMediaUrl(music.url) || it.media;
@@ -4258,7 +4323,7 @@ function openCardView(e, name) {
   cardPlayer?.stop();
   const md = it.md && mediaFromLink(it.md);
   $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
-  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: it.f || finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: it.y === 'm' ? 'monster' : it.y === 'f' ? 'full' : it.y ? 'duel' : false };
+  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, ui: it.u || null, r: it.r, fin: it.f || finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: it.y === 'm' ? 'monster' : it.y === 'f' ? 'full' : it.y ? 'duel' : false };
   cardPlayer = md ? nowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
   if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）

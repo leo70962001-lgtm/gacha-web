@@ -839,6 +839,12 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb::after { content: "換照片"; position: absolute; inset: auto 0 0; font-size: 10px; background: rgba(28,35,64,0.75); color: #fff; line-height: 1.6; opacity: 0; transition: opacity .15s; }
 .thumb:hover::after, .thumb:focus-visible::after { opacity: 1; }
+.thumb[data-tip]::after { content: attr(data-tip); }
+/* 轉卡機的清單＝卡片（直的縮圖）；名字、稀有度在工房改 → 這裡只看 */
+.items.cards .thumb { height: 82px; }
+.items.cards .thumb img { object-fit: contain; background: #1c2340; }
+.item .name[readonly] { background: transparent; border-color: transparent; padding-left: 2px; }
+.item select:disabled { opacity: 1; color: var(--ink); background: transparent; border-color: transparent; appearance: none; -webkit-appearance: none; padding-left: 2px; }
 .item .name { grid-area: name; min-width: 0; border: 2px solid var(--line); border-radius: 10px; padding: 6px 10px; background: var(--surface); font-weight: 700; }
 .item .del { grid-area: del; width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; }
 .item .del:hover { background: var(--line); color: var(--ink); }
@@ -1275,6 +1281,7 @@ button.mcard { cursor: pointer; }
 
 /* 影音 */
 .item .mrow { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; }
+.item .to-card { border: 0; background: var(--accent); color: #fff; border-radius: 999px; padding: 3px 12px; font-size: 12px; font-weight: 800; cursor: pointer; }
 .media-btn { border: 1.5px dashed var(--muted); background: transparent; color: var(--muted); border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .media-chip { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; border: 1.5px solid var(--stroke); background: var(--surface); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .media-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1490,10 +1497,10 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         </button>
         <ol class="steps">
           <li class="step">
-            <header><span class="num">1</span><h2 data-i18n="step1">放進獎品</h2><span class="aside" id="items-sum"></span></header>
+            <header><span class="num">1</span><h2 id="items-title" data-i18n="step1">放進獎品</h2><span class="aside" id="items-sum"></span></header>
             <ul class="items" id="items"></ul>
             <div class="row add-row"><button class="btn ghost" id="add-item" data-i18n="addItem">＋ 新增獎品</button><button class="btn ghost" id="open-studio" data-i18n="cs.open">🃏 カード工房で作る</button><button class="btn ghost" id="pick-work" data-i18n="cs.pickWork">🗂 作品冊から選ぶ</button><button class="btn ghost" id="pick-stk" data-i18n="stk.pickPrize">🏷 シール帳から選ぶ</button></div>
-            <p class="hint-text" data-i18n="itemsHint"></p>
+            <p class="hint-text" id="items-hint" data-i18n="itemsHint"></p>
             <!-- 台紙（窗裡的獎品看板）：放哪些、怎麼排、標題、顯示什麼、底（使用者 2026-10-30：「增加可以編輯景品的功能」） -->
             <div class="field board-field" id="board-field"><span id="board-label" data-i18n="bd.label">台紙（窗裡的獎品看板）</span>
               <div class="board-ed">
