@@ -907,7 +907,7 @@ export function drawFullCard(d, art, W = W0) {
 }
 
 // 3D 卡（cardkit）用的深度：框在前面、卡圖往後退一點（像隔著窗看）；style＝'duel'（正方形卡圖）／'monster'（橫的卡圖）／'full'（全圖）
-//   mask＝立體加工的主體遮罩（整張卡大小、白＝主體）：主體比框還前面（浮出卡面）
+//   mask＝立體加工的主體遮罩（整張卡大小、白＝主體）：主體在框跟卡圖背景中間（深度往卡片裡面，使用者 2026-11-01：「立體感往裡面做」）
 export function framedDepth(style = 'duel', w = 64, mask = null) {
   const A = style === 'monster' ? { x: ART_M.x, y: ART_M.y, w: ART_M.w, h: ART_M.h } : style === 'full' ? { x: 11, y: 11, w: W0 - 22, h: H0 - 22 } : { x: ART.x, y: ART.y, w: ART.s, h: ART.s };
   const h = Math.round((w * H0) / W0);
@@ -919,9 +919,23 @@ export function framedDepth(style = 'duel', w = 64, mask = null) {
   g.fillStyle = 'rgb(95,95,95)';
   g.fillRect((A.x / W0) * w, (A.y / H0) * h, (A.w / W0) * w, (A.h / H0) * h);
   if (mask) {
+    // 白＝255 的遮罩壓成 130：比卡圖背景（95）前面、比框（165）後面
+    const m = canvasOf(w, h);
+    const mg = m.getContext('2d');
+    mg.filter = 'blur(1.5px)';
+    mg.drawImage(mask, 0, 0, w, h);
+    mg.filter = 'none';
+    mg.globalCompositeOperation = 'multiply';
+    mg.fillStyle = 'rgb(130,130,130)';
+    mg.fillRect(0, 0, w, h);
+    g.filter = 'none';
+    g.save();
+    g.beginPath();
+    g.rect((A.x / W0) * w, (A.y / H0) * h, (A.w / W0) * w, (A.h / H0) * h); // 只在卡圖那格裡
+    g.clip();
     g.globalCompositeOperation = 'lighten';
-    g.filter = 'blur(1.5px)';
-    g.drawImage(mask, 0, 0, w, h);
+    g.drawImage(m, 0, 0);
+    g.restore();
   }
   return c;
 }
@@ -1539,6 +1553,7 @@ export class CardStudio {
       const url = card.toDataURL('image/jpeg', 0.9);
       let s = null;
       let st = null;
+      let b = url;
       const mb = ds.pop !== false && this.art ? await artMaskBmp(ds) : null;
       if (mb) {
         const m = drawDesignMask(ds, mb, this.art, 300);
@@ -1554,8 +1569,22 @@ export class CardStudio {
         sg.globalCompositeOperation = 'destination-in';
         sg.drawImage(m, 0, 0);
         s = sub.toDataURL('image/png');
+        // 背景那層：主體那塊糊掉（主體往前一點，後面不要看到第二個）
+        const bk = canvasOf(card.width, card.height);
+        const bg = bk.getContext('2d');
+        bg.drawImage(card, 0, 0);
+        const bl = canvasOf(card.width, card.height);
+        const blg = bl.getContext('2d');
+        blg.filter = 'blur(8px) brightness(0.85)';
+        blg.drawImage(card, 0, 0);
+        blg.filter = 'blur(5px)';
+        blg.globalCompositeOperation = 'destination-in';
+        blg.drawImage(m, 0, 0);
+        bg.drawImage(bl, 0, 0);
+        b = bk.toDataURL('image/jpeg', 0.88);
       }
-      this.holo.set({ t: url, s, b: url, st, r: ds.rarity | 0, fin: fin3dOf(ds), shape: 'card', tag: false, name: '', framed: ds.style || 'duel' });
+      // t＝完整卡面（框那層從這張挖），b＝背景（主體糊掉），s＝主體
+      this.holo.set({ t: url, s, b, st, r: ds.rarity | 0, fin: fin3dOf(ds), shape: 'card', tag: false, name: '', framed: ds.style || 'duel' });
     }, 250);
   }
 

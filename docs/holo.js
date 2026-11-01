@@ -44,6 +44,73 @@ function setGlitter() {
   document.documentElement.style.setProperty('--glitter', `url("${c.toDataURL('image/png')}")`);
 }
 
+// カード工房的卡＋立體加工：「往裡面做」的框（使用者 2026-11-01：「立體感往裡面做 參考寶可夢的立體卡效果」）
+//   卡面挖掉卡圖那一格（＋窗邊的內陰影）＝最前面的一層；卡圖背景在最後面、主體在中間 → 斜的時候卡圖在窗裡面動，什麼都不會跑出框
+//   位置照 cardstudio.js 的卡面（590×860）：遊戲王風正方形窗、寶可夢風橫的窗、全圖卡＝整張（效果欄、名字帶、戰力、徽章、角色標籤留在框上）
+const WIN = { duel: [70, 158, 450, 450], monster: [48, 108, 494, 336], full: [11, 11, 568, 838] };
+const KEEP = { full: [[24, 532, 542, 212], [16, 742, 558, 106], [250, 26, 330, 92], [4, 32, 220, 120], [534, 170, 46, 232]] };
+const frames = new Map(); // style|卡面網址 → Promise<objectURL>（工房預覽一直換圖 → 只留最近 12 張）
+function frameOverlay(url, style) {
+  const key = style + '|' + url;
+  if (frames.has(key)) return frames.get(key);
+  const p = new Promise((res) => {
+    const im = new Image();
+    im.onload = () => res(im); // decode() 在背景分頁不會 resolve → 用 onload
+    im.onerror = () => res(null);
+    im.src = url;
+  }).then(async (im) => {
+    if (!im) return null;
+    const W = 360;
+    const H = Math.round((W * 860) / 590);
+    const kx = W / 590;
+    const ky = H / 860;
+    const R = ([x, y, w, h]) => [x * kx, y * ky, w * kx, h * ky];
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const g = c.getContext('2d');
+    g.drawImage(im, 0, 0, W, H);
+    const win = R(WIN[style] || WIN.duel);
+    g.globalCompositeOperation = 'destination-out'; // 挖掉卡圖那格
+    g.fillRect(...win);
+    g.globalCompositeOperation = 'source-over';
+    for (const q of KEEP[style] || []) {
+      g.save();
+      g.beginPath();
+      g.rect(...R(q));
+      g.clip();
+      g.drawImage(im, 0, 0, W, H); // 字的那幾塊放回來
+      g.restore();
+    }
+    // 窗邊的內陰影：框的影子落進窗裡（只留窗裡那一圈），放在框的後面
+    const s = document.createElement('canvas');
+    s.width = W;
+    s.height = H;
+    const sg = s.getContext('2d');
+    sg.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    sg.shadowBlur = 16 * kx;
+    sg.beginPath();
+    sg.rect(-60, -60, W + 120, H + 120);
+    sg.rect(...win);
+    sg.fillStyle = '#000';
+    sg.fill('evenodd');
+    sg.shadowColor = 'transparent';
+    sg.globalCompositeOperation = 'destination-in';
+    sg.fillRect(...win);
+    g.globalCompositeOperation = 'destination-over';
+    g.drawImage(s, 0, 0);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    return blob ? URL.createObjectURL(blob) : null;
+  });
+  frames.set(key, p);
+  if (frames.size > 12) {
+    const [k0, p0] = frames.entries().next().value;
+    frames.delete(k0);
+    p0.then((u) => u && setTimeout(() => URL.revokeObjectURL(u), 5000));
+  }
+  return p;
+}
+
 const live = new Set();
 addEventListener('deviceorientation', (e) => {
   if (e.gamma == null) return;
@@ -84,6 +151,12 @@ export class Holo {
     el.style.setProperty('--smask', d.s ? `url("${d.s}")` : 'none');
     this.$('.t-subj').hidden = !d.s;
     this.$('.t-tag').textContent = d.name || '';
+    // カード工房的卡＋立體加工 → 最前面的框（卡面挖掉卡圖那格），做好才換上
+    el.style.removeProperty('--frame');
+    if (d.framed && d.s && d.t)
+      frameOverlay(d.t, d.framed).then((u) => {
+        if (u && this.d === d) el.style.setProperty('--frame', `url("${u}")`);
+      });
     el.style.transform = '';
     this.tilt(0, 0);
     requestAnimationFrame(() => this.layout());

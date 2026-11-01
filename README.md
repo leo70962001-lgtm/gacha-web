@@ -49,6 +49,7 @@
 - **用到的地方**：機台 3D 卡（`drawCardLayers`：framed＋遮罩 → 遮罩拉進窗、`inpaintBehind` 補背景、`framedDepth(style, 64, mask)` 主體比框還前面）；結果卡／收集簿（`cutLayers` 本來就吃遮罩 → holo 的 pop；`.tilt.framed.pop` 不加底紙、不模糊、只往前 26px）
 - **每張卡自己的表面加工**：`ds.fin3d` → `item.fin`（連結的第 12 欄，`FRONT_CODE`）；`itemFin(cfg, it)`＝自己的優先、沒有照機台；結果卡、機台 3D 卡（`front.fin` → `FIN_MODE`）、收集簿／卡冊（album item `f`）都用
 - **工房預覽**：上面「平面／✨ 立體」，立體＝同一套 holo.js 3D 閃卡（會晃、加工、主體浮出來），改設計 0.25 秒後重畫
+- **深度往裡面**（同一天，使用者截了浮出框的預覽＋「立體感往裡面做 參考寶可夢的立體卡效果」）：工房的卡改成窗戶式 — holo.js `frameOverlay` 把卡面挖掉卡圖那格（遊戲王風正方形、寶可夢風橫的、全圖卡整張但字的那幾塊留著）＋窗邊內陰影 → `--frame` 放在最前面；主體 `translateZ(-15px) scale(1.0197)`、背景 `translateZ(-38px) scale(1.05)`（退多少放大多少，perspective 760px 正面看剛好對齊）；主體層 `inset: 0`（以前 5% 會錯位，看起來像跑出框）。機台 3D 卡的深度：框 165、主體 130（只在卡圖那格）、背景 95。照片獎品的「浮出框」照舊
 
 ## 機台種類跟獎品、全圖卡風（2026-10-30）
 

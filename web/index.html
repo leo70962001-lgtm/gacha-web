@@ -782,12 +782,15 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .tilt.pop .t-subj { transform-origin: 50% 96%; transform: translateZ(30px) scale(1.07); clip-path: inset(-12% -12% 3% -12%); -webkit-mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent); mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent); }
 .tilt.pop .t-simg { filter: drop-shadow(0 8px 6px rgba(0,0,0,.45)); }
 .tilt.pop.round .t-subj, .tilt.pop.square .t-subj { clip-path: inset(-12% -12% 9% -12%); }
-/* カード工房的卡＋立體加工（2026-11-01）：卡面本身就是完整的卡 → 不加底紙、不模糊、不縮；主體（只有卡圖裡的那塊）往前浮 */
-.tilt.framed.pop .t-frame { box-shadow: 0 0 0 2px #1c2340; }
+/* カード工房的卡＋立體加工（2026-11-01：「立體感往裡面做 參考寶可夢的立體卡效果」）：深度往卡片裡面
+   最前面＝框（holo.js 把卡面挖掉卡圖那格做成 --frame）→ 中間＝主體 → 最後面＝卡圖背景；斜的時候在窗裡面動，不會跑出框
+   往後退多少就放大多少（perspective 760px）：正面看位置剛好對齊，斜了才錯開 */
+.tilt.framed.pop .t-face { transform: translateZ(1px); }
+.tilt.framed.pop .t-frame { background: var(--frame, none) 0 0 / 100% 100% no-repeat; box-shadow: 0 0 0 2px #1c2340; }
 .tilt.framed.pop .t-fshine { padding: 0; }
-.tilt.framed.pop .t-back { transform: translateZ(-14px); }
+.tilt.framed.pop .t-back { transform: translateZ(-38px) scale(1.05); }
 .tilt.framed.pop .t-photo { filter: none; }
-.tilt.framed.pop .t-subj { transform-origin: 50% 70%; transform: translateZ(26px) scale(1.035); clip-path: none; -webkit-mask-image: none; mask-image: none; }
+.tilt.framed.pop .t-subj { inset: 0; transform-origin: 50% 50%; transform: translateZ(-15px) scale(1.0197); clip-path: none; -webkit-mask-image: none; mask-image: none; }
 .app[data-mode="play"] .panel { display: none; }
 .app[data-mode="create"] .hud { display: none; }
 .stage { position: relative; min-height: 0; overflow: hidden; background: var(--stage); }
