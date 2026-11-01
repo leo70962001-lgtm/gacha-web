@@ -52,6 +52,17 @@
 - **深度往裡面**（同一天，使用者截了浮出框的預覽＋「立體感往裡面做 參考寶可夢的立體卡效果」）：工房的卡改成窗戶式 — holo.js `frameOverlay` 把卡面挖掉卡圖那格（遊戲王風正方形、寶可夢風橫的、全圖卡整張但字的那幾塊留著）＋窗邊內陰影 → `--frame` 放在最前面；主體 `translateZ(-15px) scale(1.0197)`、背景 `translateZ(-38px) scale(1.05)`（退多少放大多少，perspective 760px 正面看剛好對齊）；主體層 `inset: 0`（以前 5% 會錯位，看起來像跑出框）。機台 3D 卡的深度：框 165、主體 130（只在卡圖那格）、背景 95。照片獎品的「浮出框」照舊
 - **全圖卡字那層的遮罩**（同一天，使用者圈了徽章＋「去背的部分」：以前用長方形挖，徽章旁邊的臉一半浮一半不浮、斜的時候後面還有一份錯開的字）：`drawFullCard(d, null, W, { uiOnly: true })` 只畫字那層 → `fullUiMask(d, W)`（白＝徽章星形、戰力的字、角色標籤、外框一圈＋532 以下整段）。用在：`drawDesignMask` 主體沿它切；holo.js `frameOverlay(url, style, ui)` 照它把卡面放回窗裡（沒有 ui 的舊卡才用 `KEEP` 長方形）、`backFill(url, ui)` 背景層把字挖掉、模糊的自己一層層墊回去（不會看到第二份字）；機台 `drawCardLayers(..., ui)` → `framedDepth(style, 128, mask, ui)` 字跟框一樣 165、`inpaintBehind` 連字一起補。放進機台存 `item.ui`（120 px PNG，約 1.5 KB）→ 草稿 b64、連結 `json.u = [[獎品編號, 長度, 格式]]`（圖接在台紙圖後面，舊版忽略）、`cutLayers` 的 `u`（data URL）→ 結果卡 `ui`、收集簿 item `u` → 大卡 `hdv.ui`
 
+## 流程精簡：4 個分頁、開店 5 步、收集簿 3 類（2026-11-02）
+
+使用者：「檢視現在的流程 把功能精簡跟統合更方便用戶操作」（我提了 A 頂列、B 開店、C 收集簿三塊，使用者選「全部照提案做」）。頁面內部的模式（`app.dataset.mode`：browse／play／shop／create／studio／stickers／album）沒變，只改怎麼到那裡。
+- **頂列 7 → 4 組**：玩（browse＋play）、開店（shop＋create）、工房（studio＋stickers）、收集簿。`MODE_GROUP`／`GROUP_ROOT`／`groupLast`：點別組 → 那組上次的頁；再點自己這組 → 那組第一頁（逛機台、我的商店、卡片工房）；開店第一次來只有一台 → 直接進設定。分頁 id 是 `tab-play／tab-shop／tab-studio／tab-album`。手機一直是圖示＋小字兩行；寬的畫面放不下時 `fitBar()` 先加 `.tight`（同樣兩行、店名後半收起來），還是放不下才 `.tighter`（只留圖示）
+- **玩**：機台名牌第一個小按鈕 `#p-back`「‹ 回去」（`play.back`＝進來前的頁；逛機台的「去轉」用 `nextBack`，因為它先切成 play 才 enterPlay），手機只留箭頭（名牌的小按鈕要一列，機台才不會變小）。逛機台最上面 `#browse-resume`「回到剛剛的機台」。`resumePlay()`：機台還在畫面上（`playLive`，進開店設定就變 false）直接切回，不然 `enterPlay(lastPlay.token)` 重載。原本頂列的「轉轉看」＝開店時舞台右上 `#stage-try`「▶ 試玩」（`enterPlay('draft')`）
+- **開店 5 步**：① 選機台（兩張大卡 `.kinds.big`＋機台名稱、店名）② 放獎品（台紙收進 `<details class="fold" id="board-field">`「自訂台紙」）③ 價錢 ④ 外觀（機台顏色、背景、背景音樂、機台上的貼紙、SR／SSR 表面加工、卡背都是 fold）⑤ 產生連結（複製、試玩、公開、封面在外面；數據、補貨、改用新連結收進 `#link-more`「更多」，三個都藏起來時整個不顯示）。設定頁最上面 `#mach-all`「‹ 我的商店」。id 都沒換，JS 照舊
+- **fold 標題列右邊寫現在選的**：`foldSums()` 讀 `data-sum` 指的那幾個 radiogroup 裡 `aria-checked="true"` 的 aria-label（`data-pre` 加前綴，SR／SSR 那格）；`MutationObserver` 看 panel 裡 aria-checked 一變就重寫（不要等 rAF：背景分頁不會跑）；貼紙張數 `#mstk-sum`、台紙自動／自訂 `#bd-sum` 另外算
+- **工房**：兩頁最上面 `.seg` 切換（`data-go="studio|stickers"`，setMode 一起標 aria-selected）
+- **收集簿 7 → 3 類**：`ALBUM_GROUPS` 收藏（卡片冊／轉蛋收藏／貼紙簿）、好友（好友名單／交換）、會員卡（會員卡／帶出去）；`#album-tabs` 大分頁＋`#album-sub` 小分頁，`albumLast` 記每類上次看哪個。`albumTab` 的值跟以前一樣（邀請連結、交換的 goFriends 照舊）
+- 數據的說明「先去步驟 3」→ 步驟 5
+
 ## 轉卡機只放卡片、跟工房整合（2026-11-01）
 
 使用者截了開店頁的獎品清單＋工房：「把卡片機的景品的部分只能加入卡片跟卡片製作做整合」。

@@ -491,6 +491,25 @@ function renderPrice() {
   $('price-coins').textContent = t('coinsN', { n: draft.price.coins });
 }
 
+// 收起來的設定（<details class="fold">）：標題列右邊寫現在選的（顏色、背景、音樂、卡背…）、貼紙幾張、台紙自動／自訂
+//   選項都用 aria-checked 標選中 → 看 panel 裡 aria-checked 一變就重寫
+function foldSums() {
+  for (const el of document.querySelectorAll('#panel [data-sum]')) {
+    const pre = (el.dataset.pre || '').split(',');
+    el.textContent = el.dataset.sum
+      .split(' ')
+      .map((id, i) => {
+        const b = $(id)?.querySelector('[aria-checked="true"]');
+        return b ? (pre[i] || '') + (b.getAttribute('aria-label') || b.textContent.trim()) : '';
+      })
+      .filter(Boolean)
+      .join(' · ');
+  }
+  const n = (draft.stickers || []).length;
+  $('mstk-sum').textContent = n ? t('look.stkN', { n }) : t('look.none');
+  $('bd-sum').textContent = t(draft.board ? 'bd.sumCustom' : 'bd.sumAuto');
+}
+
 function renderForm() {
   renderItems();
   renderPrice();
@@ -505,6 +524,7 @@ function renderForm() {
   renderBoardEd();
   renderFront();
   renderSwitch();
+  foldSums();
 }
 
 // ---------- 背景音樂（使用者 2026-10-26：「可以設定背景音樂」） ----------
@@ -1817,6 +1837,10 @@ let playSrc = 'other';
 async function enterPlay(token) {
   let cfg;
   const link = token;
+  const from = app.dataset.mode;
+  const back = nextBack || (from !== 'play' ? from : play?.back) || 'browse';
+  nextBack = null;
+  lastPlay = { token, src: playSrc };
   const fromDraft = token === 'draft' ? shop.cur : null; // 開店的人自己試玩：收集簿用固定的 key（設定一改 play id 就會變）
   const sid = token.startsWith('s.') ? token.slice(2) : null;
   let pulled = null;
@@ -1839,7 +1863,7 @@ async function enterPlay(token) {
   const id = sid ? 's' + sid : shortId(token);
   // cloud：共用庫存的機台 id（第一版短連結沒有共用庫存 → null，照舊用這台裝置的庫存）
   // phase 'loading'：機台（轉卡機第一次要載入模型）準備好、setPhase('coin') 之前不能投幣
-  play = { cfg, token, link: sid ? link : token, id, cloud: shared ? sid : null, fromDraft, phase: 'loading', inserted: 0, busy: false };
+  play = { cfg, token, link: sid ? link : token, id, cloud: shared ? sid : null, fromDraft, back, phase: 'loading', inserted: 0, busy: false };
   const saved = reconcile(store.get('clatter.play.' + id), cfg);
   const totalQ = cfg.items.map((it) => it.qty);
   if (saved) {
@@ -1890,6 +1914,7 @@ async function enterPlay(token) {
     else toast(t('t.pullFail'));
   }
   setMode('play');
+  playLive = true;
   renderPlate();
   await showMachine(cfg, left(), cfg.items.reduce((a, b) => a + b.qty, 0));
   if (left() === 0) setPhase('soldout');
@@ -1899,6 +1924,9 @@ async function enterPlay(token) {
 
 function renderPlate() {
   const cfg = play.cfg;
+  const bk = t(BACK_LABEL[play.back] || 'tab.browse');
+  $('p-back-txt').textContent = bk;
+  $('p-back').setAttribute('aria-label', t('back.to', { p: bk }));
   $('p-shop').textContent = cfg.shop || '';
   $('p-shop').hidden = !cfg.shop;
   $('p-name').textContent = cfg.name;
@@ -2853,16 +2881,50 @@ function updateInsets() {
   machine.setInsets(Math.max(0, top), Math.max(0, bottom), Math.max(0, gridTop));
 }
 
+// 頂列 7 個分頁 → 4 組（使用者 2026-11-02：「檢視現在的流程 把功能精簡跟統合更方便用戶操作」）：
+//   玩＝逛機台＋轉（機台名牌上「‹ 回去」、逛機台最上面「回到剛剛的機台」）、開店＝我的商店（全部機台）＋開店設定、
+//   工房＝卡片工房＋貼紙工房（頁面最上面切換）、收集簿；點別組 → 那組上次的頁，再點一次自己這組 → 回到那組的第一頁
+const MODE_GROUP = { browse: 'play', play: 'play', shop: 'shop', create: 'shop', studio: 'studio', stickers: 'studio', album: 'album' };
+const GROUP_ROOT = { play: 'browse', shop: 'shop', studio: 'studio', album: 'album' };
+const groupLast = {};
+function goGroup(g) {
+  const cur = app.dataset.mode;
+  // 開店第一次來：只有一台 → 直接進設定；好幾台 → 先看全部機台
+  const first = g === 'shop' && shop.list.length < 2 ? 'create' : GROUP_ROOT[g];
+  const m = MODE_GROUP[cur] === g ? GROUP_ROOT[g] : groupLast[g] || first;
+  if (m === cur) return;
+  if (m === 'play') return resumePlay();
+  setMode(m);
+}
+// 回到剛剛轉的那台：機台還在畫面上（沒去開店設定換成草稿）就直接切回來，不然重新載入
+let lastPlay = null; // { token, src }
+let playLive = false;
+let nextBack = null;
+function resumePlay() {
+  unlock();
+  if (play && playLive) return setMode('play');
+  const h = location.hash.slice(1);
+  const tok = lastPlay?.token || (isMachineHash(h) ? h : null);
+  if (!tok) return setMode('browse');
+  playSrc = lastPlay?.src || 'link';
+  nextBack = play?.back || null;
+  enterPlay(tok);
+}
+function backFromPlay() {
+  const m = play?.back || 'browse';
+  if (m === 'studio' || m === 'stickers' || m === 'shop' || m === 'create' || m === 'album') setMode(m);
+  else setMode('browse');
+}
+const BACK_LABEL = { browse: 'tab.browse', shop: 'tab.shop', create: 'tab.create', album: 'tab.album', studio: 'tab.studio', stickers: 'tab.stickers' };
+
 function setMode(mode) {
   if (mode !== 'create') cancelStick();
+  if (mode === 'create') playLive = false; // 舞台換成開店的草稿機台
   app.dataset.mode = mode;
-  $('tab-create').setAttribute('aria-selected', String(mode === 'create'));
-  $('tab-play').setAttribute('aria-selected', String(mode === 'play'));
-  $('tab-shop').setAttribute('aria-selected', String(mode === 'shop'));
-  $('tab-album').setAttribute('aria-selected', String(mode === 'album'));
-  $('tab-browse').setAttribute('aria-selected', String(mode === 'browse'));
-  $('tab-studio').setAttribute('aria-selected', String(mode === 'studio'));
-  $('tab-stickers').setAttribute('aria-selected', String(mode === 'stickers'));
+  const g = MODE_GROUP[mode];
+  groupLast[g] = mode;
+  for (const k of ['play', 'shop', 'studio', 'album']) $('tab-' + k).setAttribute('aria-selected', String(k === g));
+  for (const b of document.querySelectorAll('[data-go]')) b.setAttribute('aria-selected', String(b.dataset.go === mode));
   $('page-stickers').hidden = mode !== 'stickers';
   if (mode === 'stickers') {
     renderMaker();
@@ -2965,6 +3027,7 @@ function renderSwitch() {
   sel.textContent = '';
   shop.list.forEach((uid, i) => sel.append(new Option(switchLabel(i, uid === shop.cur ? draft : store.get(draftKey(uid))), uid, false, uid === shop.cur)));
   $('mach-count').textContent = t('sw.label', { n: shop.list.length });
+  $('mach-all').textContent = t('sw.all');
 }
 function relabelSwitch() {
   const o = [...$('mach-sel').options].find((x) => x.value === shop.cur);
@@ -3524,7 +3587,7 @@ function stickerBook() {
 function renderAlbumTabsOnly() {
   const b = loadBook();
   const n = b.list.reduce((m, x) => m + (x.n || 1), 0);
-  const tab = [...$('album-tabs').children].find((x) => x.textContent.startsWith(t('album.stickers')));
+  const tab = $('album-sub').querySelector('[data-k="sticker"]');
   if (tab) tab.textContent = `${t('album.stickers')} (${n})`;
   $('album-sum').textContent = t('stk.sum', { k: b.list.length, n, p: b.pages.length });
 }
@@ -3895,6 +3958,7 @@ const thumbUrlOf = (im) => {
 let mstkSel = -1;
 function renderMachineStickers() {
   const box = $('mstk-list');
+  foldSums();
   box.textContent = '';
   const arr = draft.stickers || [];
   if (mstkSel >= arr.length) mstkSel = arr.length - 1;
@@ -4185,6 +4249,12 @@ async function grantSticker(cfg, idx) {
 
 // 收集簿：分「卡片冊」（轉卡機，像真的卡冊）跟「轉蛋收藏」（轉蛋機，木頭展示櫃）兩個分頁（binder.js）
 let albumTab = store.get('clatter.albumTab') || null;
+const ALBUM_GROUPS = [
+  { k: 'col', tabs: ['card', 'capsule', 'sticker'] },
+  { k: 'social', tabs: ['friends', 'trade'] },
+  { k: 'member', tabs: ['member', 'pack'] },
+];
+const albumLast = {};
 let albumEditing = false;
 let albumEdit = null;
 let binder = null;
@@ -4198,28 +4268,45 @@ function renderAlbum() {
   const caps = entries.filter(([, e]) => e.kind !== 'card');
   // 第一次打開：有卡片就先看卡片冊
   if (!albumTab) albumTab = cards.length || !caps.length ? 'card' : 'capsule';
+  // 分頁 7 個 → 大分頁 3 個＋各自的小分頁（使用者 2026-11-02：「把功能精簡跟統合」）：
+  //   收藏（卡片冊／轉蛋收藏／貼紙簿）、好友・交換（好友名單／交換）、會員卡・帶出去（會員卡／帶出去）；每個大分頁記得上次看哪個
   const tabs = $('album-tabs');
-  tabs.textContent = '';
+  const sub = $('album-sub');
+  tabs.textContent = sub.textContent = '';
   const book = loadBook();
   const stkN = book.list.reduce((n, x) => n + (x.n || 1), 0);
-  for (const [k, list] of [['card', cards], ['capsule', caps], ['sticker', null], ['member', null], ['pack', null], ['friends', null], ['trade', null]]) {
+  const inN = trade?.list.in.length || 0;
+  const g = ALBUM_GROUPS.find((x) => x.tabs.includes(albumTab)) || ALBUM_GROUPS[0];
+  albumLast[g.k] = albumTab;
+  const go = (k) => {
+    albumTab = k;
+    store.set('clatter.albumTab', k);
+    renderAlbum();
+  };
+  for (const x of ALBUM_GROUPS) {
     const b = document.createElement('button');
     b.className = 'chip';
     b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(x === g));
+    b.textContent = t('album.g.' + x.k) + (x.k === 'social' && inN ? ` (${inN})` : '');
+    b.onclick = () => x !== g && go(albumLast[x.k] || x.tabs[0]);
+    tabs.append(b);
+  }
+  for (const k of g.tabs) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.dataset.k = k;
     b.setAttribute('aria-selected', String(albumTab === k));
     b.textContent =
-      k === 'trade' ? t('album.trade') + (trade?.list.in.length ? ` (${trade.list.in.length})` : '')
+      k === 'trade' ? t('album.trade') + (inN ? ` (${inN})` : '')
       : k === 'friends' ? `${t('album.friends')} (${trade?.friends.length || 0})`
       : k === 'sticker' ? `${t('album.stickers')} (${stkN})`
       : k === 'member' ? t('album.member')
       : k === 'pack' ? t('album.pack')
-      : `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${list.length})`;
-    b.onclick = () => {
-      albumTab = k;
-      store.set('clatter.albumTab', k);
-      renderAlbum();
-    };
-    tabs.append(b);
+      : `${t(k === 'card' ? 'album.binder' : 'album.shelf')} (${(k === 'card' ? cards : caps).length})`;
+    b.onclick = () => go(k);
+    sub.append(b);
   }
   // 會員卡（member.js）、帶出去（同一張主題卡，cardpack.js 的素材）
   $('album-member').hidden = albumTab !== 'member';
@@ -4622,8 +4709,32 @@ function renderBrowse(load = true) {
     b.setAttribute('aria-selected', String(b.dataset.k === browse.sort));
   }
   $('browse-q').placeholder = t('browse.search');
+  renderResume();
   if (load) loadBrowse(true);
   else drawBrowse();
+}
+function renderResume() {
+  const box = $('browse-resume');
+  box.hidden = !play;
+  box.textContent = '';
+  if (!play) return;
+  const cfg = play.cfg;
+  const ico = document.createElement('div');
+  ico.className = 'mach-ico';
+  ico.style.setProperty('--c', (THEMES[cfg.theme] || THEMES.red).body);
+  ico.innerHTML = KIND_ICON[cfg.kind === 'card' ? 'card' : 'capsule'];
+  const tx = document.createElement('div');
+  tx.className = 'r-txt';
+  const sm = document.createElement('small');
+  sm.textContent = t('browse.resume');
+  const b = document.createElement('b');
+  b.textContent = cfg.name || t('defaultMachine');
+  tx.append(sm, b);
+  const go = document.createElement('button');
+  go.className = 'btn primary';
+  go.textContent = t('browse.resumeBtn');
+  go.onclick = resumePlay;
+  box.append(ico, tx, go);
 }
 async function loadBrowse(reset) {
   if (browse.loading) return;
@@ -4717,6 +4828,7 @@ function drawBrowse() {
     go.onclick = () => {
       // 跟打開分享連結一樣：網址換成這台（重新整理、切回「轉轉看」都還是這台）
       history.replaceState(null, '', location.pathname + location.search + '#s.' + r.id);
+      nextBack = 'browse';
       setMode('play');
       playSrc = 'browse';
       enterPlay('s.' + r.id);
@@ -4727,12 +4839,14 @@ function drawBrowse() {
   }
 }
 
-// 頂列放不下 → 有圖示的分頁（逛機台、我的商店、收集簿）只留圖示；換語言、裝 App 按鈕出現、視窗變寬窄都會重量
+// 頂列放不下 → 先把分頁改成圖示＋小字兩行（.tight），還是放不下才只留圖示（.tighter）；換語言、裝 App 按鈕出現、視窗變寬窄都會重量
 function fitBar() {
   const bar = document.querySelector('.bar');
+  const over = () => bar.scrollWidth > bar.clientWidth + 1;
   const fit = () => {
-    bar.classList.remove('tight');
-    if (bar.scrollWidth > bar.clientWidth + 1) bar.classList.add('tight');
+    bar.classList.remove('tight', 'tighter');
+    if (over()) bar.classList.add('tight');
+    if (over()) bar.classList.add('tighter');
   };
   const ro = new ResizeObserver(fit);
   ro.observe(bar);
@@ -4843,18 +4957,24 @@ async function boot() {
   });
   bindCoinDrag();
 
-  $('tab-create').onclick = () => setMode('create');
-  $('tab-shop').onclick = () => setMode('shop');
-  $('tab-album').onclick = () => setMode('album');
-  $('tab-browse').onclick = () => setMode('browse');
+  for (const k of ['play', 'shop', 'studio', 'album']) $('tab-' + k).onclick = () => goGroup(k);
+  for (const b of document.querySelectorAll('[data-go]')) b.onclick = () => setMode(b.dataset.go);
+  $('p-back').onclick = backFromPlay;
+  $('mach-all').onclick = () => setMode('shop');
+  // 開店時舞台右上「▶ 試玩」：用現在的設定直接轉（原本頂列的「轉轉看」）
+  $('stage-try').onclick = () => {
+    unlock();
+    playSrc = 'shop';
+    enterPlay('draft');
+  };
+  foldSums();
+  new MutationObserver(foldSums).observe($('panel'), { subtree: true, attributes: true, attributeFilter: ['aria-checked'] });
   $('list-on').onchange = () => toggleListed($('list-on').checked);
   $('browse-q').oninput = () => drawBrowse();
   $('browse-more').onclick = () => loadBrowse(false);
   $('shop-new').onclick = newMachine;
   $('open-studio').onclick = () => openStudio();
   $('shop-studio').onclick = () => openStudio();
-  $('tab-studio').onclick = () => setMode('studio');
-  $('tab-stickers').onclick = () => setMode('stickers');
   $('btn-stats').onclick = () => openStats(draft);
   $('pick-work').onclick = () => openWorkPicker();
   $('wp-make').onclick = () => {
@@ -4891,13 +5011,6 @@ async function boot() {
   setupPwa();
   fitBar();
   resHolo = new Holo($('r-tilt'), $('result-card'));
-  // 從連結進來的玩家 → 回到那台機器；賣家 → 用目前的表單內容試玩
-  $('tab-play').onclick = () => {
-    unlock();
-    const h = location.hash.slice(1);
-    playSrc = isMachineHash(h) ? 'link' : 'shop';
-    enterPlay(isMachineHash(h) ? h : 'draft');
-  };
   bindSound();
   // 按鈕、分頁、勾選的小聲音（sfx.js 裡很小聲）
   document.addEventListener(
