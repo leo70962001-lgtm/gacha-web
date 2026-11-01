@@ -229,7 +229,7 @@ export class Binder {
       m.append(el('span', 'pk-no', `No.${String(idx + 1).padStart(2, '0')}`), el('span', 'pk-q', '?'), el('span', 'pk-sleeve'));
       return m;
     }
-    const fx = finOf(e.fin, it.r); // 店家選的表面加工
+    const fx = it.f || finOf(e.fin, it.r); // 店家選的表面加工（カード工房的卡可以自己選：f）
     const b = el('button', `pk got r${it.r} fx-${fx}${it.y ? ' framed' : ''}`); // framed＝カード工房的卡（圖本身就有名字）
     b.type = 'button';
     b.style.setProperty('--rc', `var(--r-${R.key.toLowerCase()})`);

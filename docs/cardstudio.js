@@ -4,6 +4,8 @@
 //   可以改：卡片種類（框的顏色）、外框（黑金銀白）、自訂框色、名字顏色（自動照稀有度：R 銀、SR 金、SSR 彩虹）
 //   做好 → 整張卡畫成一張圖（360×525）當轉卡機的獎品照片，item.framed＝這張圖本身就是完整的卡面（機台、結果卡、收集簿不再加框跟名字牌）
 //         設計（含原始卡圖）存在本機草稿的 item.design，可以再打開來改；音樂＝獎品的影音（預設曲、上傳、網址）
+import { cutout } from './seg.js';
+import { Holo } from './holo.js';
 const W0 = 590; // 卡面的基準寬（59 × 86 mm → 590 × 860）
 const H0 = 860;
 export const CARD_OUT = [360, 525]; // 放進機台的大小
@@ -905,7 +907,8 @@ export function drawFullCard(d, art, W = W0) {
 }
 
 // 3D 卡（cardkit）用的深度：框在前面、卡圖往後退一點（像隔著窗看）；style＝'duel'（正方形卡圖）／'monster'（橫的卡圖）／'full'（全圖）
-export function framedDepth(style = 'duel', w = 64) {
+//   mask＝立體加工的主體遮罩（整張卡大小、白＝主體）：主體比框還前面（浮出卡面）
+export function framedDepth(style = 'duel', w = 64, mask = null) {
   const A = style === 'monster' ? { x: ART_M.x, y: ART_M.y, w: ART_M.w, h: ART_M.h } : style === 'full' ? { x: 11, y: 11, w: W0 - 22, h: H0 - 22 } : { x: ART.x, y: ART.y, w: ART.s, h: ART.s };
   const h = Math.round((w * H0) / W0);
   const c = canvasOf(w, h);
@@ -915,6 +918,11 @@ export function framedDepth(style = 'duel', w = 64) {
   g.filter = 'blur(1px)';
   g.fillStyle = 'rgb(95,95,95)';
   g.fillRect((A.x / W0) * w, (A.y / H0) * h, (A.w / W0) * w, (A.h / H0) * h);
+  if (mask) {
+    g.globalCompositeOperation = 'lighten';
+    g.filter = 'blur(1.5px)';
+    g.drawImage(mask, 0, 0, w, h);
+  }
   return c;
 }
 
@@ -1373,6 +1381,85 @@ export const listWorks = () => wtx('readonly', (st) => st.getAll()).then((a) => 
 const putWork = (w) => wtx('readwrite', (st) => st.put(w));
 const delWork = (id) => wtx('readwrite', (st) => st.delete(id));
 const newWid = () => 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+// ---------- 立體加工（使用者 2026-11-01：「轉卡機的立體卡的加工跟卡片的製作的整合再一起」「卡片有立體加工」） ----------
+//   卡圖去背（seg.js，跟照片獎品同一套）→ ds.artMask（160 px 寬的灰階，白＝主體）；ds.pop＝主體要不要浮出來（預設要）
+//   放進轉卡機：照卡圖在卡上的位置畫成整張卡大小的遮罩 → item.mask（機台 3D 卡的深度、結果卡／收集簿的主體浮出來都吃這張）
+//   ds.fin3d＝這張卡自己的表面加工（空＝照機台的 SR／SSR 設定），工房裡可以直接看立體預覽
+export const FIN3D = ['holo', 'texture', 'rainbow', 'gold', 'silver', 'none'];
+export const fin3dOf = (d) => (FIN3D.includes(d?.fin3d) ? d.fin3d : ['none', 'holo', 'texture', 'gold'][d?.rarity | 0] || 'none');
+const AMASK = new Map(); // artMask.b64 → ImageBitmap（畫遮罩是同步的，先解好）
+async function artMaskBmp(d) {
+  const m = d?.artMask;
+  if (!m?.b64) return null;
+  if (!AMASK.has(m.b64)) AMASK.set(m.b64, await createImageBitmap(b64Blob(m)).catch(() => null));
+  return AMASK.get(m.b64);
+}
+// 卡圖 → 去背遮罩 { b64, mime }（抓不到主體＝null）
+export async function makeArtMask(art) {
+  const m = art && (await cutout(art));
+  if (!m) return null;
+  const c = canvasOf(160, Math.max(1, Math.round((160 * m.height) / m.width)));
+  c.getContext('2d').drawImage(m, 0, 0, c.width, c.height);
+  const url = c.toDataURL('image/webp', 0.85);
+  const out = { b64: url.split(',')[1], mime: url.startsWith('data:image/webp') ? 'image/webp' : 'image/png' };
+  AMASK.set(out.b64, c);
+  return out;
+}
+// 卡圖在卡上的位置（每種樣式不一樣；卡圖都是 cover 進去）
+function artBox(d) {
+  if (d.style === 'monster') return { x: ART_M.x, y: ART_M.y, w: ART_M.w, h: ART_M.h };
+  if (d.style === 'full') return { x: 11, y: 11, w: W0 - 22, h: H0 - 22 };
+  return { x: ART.x, y: ART.y, w: ART.s, h: ART.s };
+}
+// 整張卡大小的遮罩：主體＝白，其他黑；c.top＝主體頭頂在卡的哪裡（0–1）
+function drawDesignMask(d, mbmp, art, W = W0) {
+  const k = W / W0;
+  const c = canvasOf(Math.round(W), Math.round(W * (H0 / W0)));
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, c.width, c.height);
+  g.scale(k, k);
+  const A = artBox(d);
+  const aw = art?.width || mbmp.width;
+  const ah = art?.height || mbmp.height;
+  const s = Math.max(A.w / aw, A.h / ah);
+  g.save();
+  g.beginPath();
+  g.rect(A.x, A.y, A.w, A.h);
+  g.clip();
+  g.drawImage(mbmp, A.x + (A.w - aw * s) / 2, A.y + (A.h - ah * s) / 2, aw * s, ah * s);
+  g.restore();
+  // 全圖卡：卡圖鋪滿整張，字都疊在卡圖上 → 效果欄、名字帶、戰力、徽章、角色標籤那幾塊不算主體（字留在卡面上，不跟著浮起來）
+  if (d.style === 'full') {
+    g.fillStyle = '#000';
+    g.fillRect(24, 532, 542, 212); // 效果欄
+    g.fillRect(16, 742, 558, 106); // 名字帶
+    if (String(d.power ?? '').trim()) g.fillRect(250, 26, 330, 92);
+    if ((d.badge ?? '').trim()) g.fillRect(4, 32, 220, 120);
+    if ((d.role ?? '').trim()) g.fillRect(534, 170, 46, 232);
+  }
+  const px = g.getImageData(0, 0, c.width, c.height).data;
+  c.top = 1;
+  for (let y = 0; y < c.height; y++) {
+    let n = 0;
+    for (let x = 0; x < c.width; x++) if (px[(y * c.width + x) * 4] > 128) n++;
+    if (n > c.width * 0.03) {
+      c.top = y / c.height;
+      break;
+    }
+  }
+  return c;
+}
+// 放進轉卡機用：這張卡的主體遮罩（不要立體、沒有卡圖、抓不到主體＝null）；還沒去背的舊設計順便補做
+export async function designMask(d, W = CARD_OUT[0]) {
+  if (!d || d.pop === false || !d.art?.b64) return null;
+  const art = await createImageBitmap(b64Blob(d.art)).catch(() => null);
+  if (!art) return null;
+  if (!d.artMask) d.artMask = await makeArtMask(art);
+  const mb = await artMaskBmp(d);
+  return mb ? drawDesignMask(d, mb, art, W) : null;
+}
+
 // 卡圖（沒有＝null）；順便把框用的自己的圖解好（drawDesignCard 是同步的）
 export async function artOf(d) {
   await loadFrameImg(d);
@@ -1415,6 +1502,61 @@ export class CardStudio {
     this.build();
     this.built = true;
     this.renderWorks();
+    if (!this.ds.artMask) this.maskArt(); // 以前做的卡還沒去背：背景補做（立體加工）
+  }
+
+  // 卡圖去背（立體加工用）：換了卡圖、或舊設計還沒做過 → 在背景跑，好了更新立體預覽
+  async maskArt() {
+    const ds = this.ds;
+    if (!this.art || ds.pop === false) return this.paintPop();
+    const art = this.art;
+    this.masking = true;
+    this.paintPop();
+    const m = await makeArtMask(art).catch(() => null);
+    this.masking = false;
+    if (this.ds !== ds || this.art !== art) return; // 途中換了卡、換了圖
+    ds.artMask = m;
+    ds.maskFail = !m;
+    this.paintPop();
+    this.saveLocal();
+    this.paintHolo();
+  }
+  // 「主體浮出來」那一行的狀態字
+  paintPop() {
+    const s = this.popState;
+    if (!s) return;
+    const { t } = this.d;
+    const ds = this.ds;
+    s.textContent = ds.pop === false ? '' : !this.art ? t('cs.popNoArt') : this.masking ? t('cs.popWorking') : ds.artMask ? t('cs.popOk') : ds.maskFail ? t('cs.popFail') : '';
+  }
+  // 立體預覽：跟結果卡、收集簿同一套 3D 閃卡（holo.js）；換設計後 0.25 秒畫一次（toDataURL 有點重）
+  paintHolo() {
+    clearTimeout(this.holoT);
+    this.holoT = setTimeout(async () => {
+      if (!this.view3d || !this.holo) return;
+      const ds = this.ds;
+      const card = drawDesignCard(ds, this.art, 300, this.d.lang());
+      const url = card.toDataURL('image/jpeg', 0.9);
+      let s = null;
+      let st = null;
+      const mb = ds.pop !== false && this.art ? await artMaskBmp(ds) : null;
+      if (mb) {
+        const m = drawDesignMask(ds, mb, this.art, 300);
+        st = m.top;
+        // 灰階遮罩 → 透明度，套在卡面上＝只剩主體
+        const mg = m.getContext('2d', { willReadFrequently: true });
+        const id = mg.getImageData(0, 0, m.width, m.height);
+        for (let i = 0; i < id.data.length; i += 4) id.data[i + 3] = id.data[i];
+        mg.putImageData(id, 0, 0);
+        const sub = canvasOf(card.width, card.height);
+        const sg = sub.getContext('2d');
+        sg.drawImage(card, 0, 0);
+        sg.globalCompositeOperation = 'destination-in';
+        sg.drawImage(m, 0, 0);
+        s = sub.toDataURL('image/png');
+      }
+      this.holo.set({ t: url, s, b: url, st, r: ds.rarity | 0, fin: fin3dOf(ds), shape: 'card', tag: false, name: '', framed: ds.style || 'duel' });
+    }, 250);
   }
 
   // 存進作品冊（有 wid＝改同一張）；放進機台時也會自動存
@@ -1444,6 +1586,7 @@ export class CardStudio {
     this.build();
     this.renderWorks();
     this.box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (!this.ds.artMask) this.maskArt();
   }
   // 作品冊：每張卡＝縮圖＋名字＋「編輯」「放進機台」「刪除」；最前面一格「＋ 新しいカード」
   async renderWorks() {
@@ -1572,6 +1715,7 @@ export class CardStudio {
       pv.getContext('2d').drawImage(c, 0, 0);
       this.saveLocal();
       this.sync();
+      this.paintHolo();
     });
   }
   // 依卡片種類顯示／藏起欄位
@@ -1593,7 +1737,34 @@ export class CardStudio {
     box.textContent = '';
     const left = el('div', 'cs-left');
     this.preview = el('canvas', 'cs-preview');
-    left.append(this.preview);
+    // 平面／立體預覽（立體＝轉卡機抽到時、收集簿裡的 3D 閃卡；主體浮出來、表面加工都看得到）
+    const views = el('div', 'chips cs-views');
+    const holoWrap = el('div', 'tilt-wrap cs-holo');
+    const holoEl = el('div');
+    holoWrap.append(holoEl);
+    this.holo = new Holo(holoEl, holoWrap);
+    const showView = (v3) => {
+      this.view3d = v3;
+      this.preview.hidden = v3;
+      holoWrap.hidden = !v3;
+      views.querySelectorAll('.chip').forEach((x, i) => x.setAttribute('aria-pressed', String(!!i === v3)));
+      if (v3) {
+        this.paintHolo();
+        // 自己慢慢晃；切回平面或換頁就停（只開一個迴圈）
+        if (!holoEl.running) {
+          holoEl.running = true;
+          this.holo.start(() => (holoEl.running = this.view3d && holoEl.isConnected));
+        }
+      }
+    };
+    for (const [i, k] of ['cs.view2d', 'cs.view3d'].entries()) {
+      const b = el('button', 'chip', t(k));
+      b.type = 'button';
+      b.onclick = () => showView(!!i);
+      views.append(b);
+    }
+    left.append(views, this.preview, holoWrap);
+    showView(!!this.view3d);
     const right = el('div', 'cs-right');
     const set = (k, v, re = true) => {
       ds[k] = v;
@@ -1668,7 +1839,10 @@ export class CardStudio {
       this.art = c;
       const url = c.toDataURL('image/webp', 0.86);
       ds.art = { b64: url.split(',')[1], mime: url.startsWith('data:image/webp') ? 'image/webp' : 'image/png' };
+      ds.artMask = null; // 新的卡圖 → 重新去背（立體加工）
+      ds.maskFail = false;
       this.redraw();
+      this.maskArt();
     };
     art.append(ab, file);
     };
@@ -1859,6 +2033,24 @@ export class CardStudio {
     }
     // 稀有度（機台的稀有度＝閃法、名字顏色）
     chips(group(t('cs.rarity')), [0, 1, 2, 3], () => ds.rarity | 0, (k) => ['N', 'R', 'SR', 'SSR'][k], (k) => set('rarity', k));
+    // 立體加工：主體浮出來＋這張卡自己的表面加工（使用者 2026-11-01：「轉卡機的立體卡的加工跟卡片的製作的整合再一起」）
+    const d3 = group(t('cs.d3'));
+    const pl = el('label', 'cs-check');
+    const pc = el('input');
+    pc.type = 'checkbox';
+    pc.checked = ds.pop !== false;
+    pl.append(pc, el('span', null, t('cs.pop')));
+    this.popState = el('small', 'cs-hint cs-popstate');
+    pc.onchange = () => {
+      ds.pop = pc.checked;
+      if (pc.checked && !ds.artMask) this.maskArt();
+      this.paintPop();
+      this.redraw();
+    };
+    d3.append(pl, this.popState, el('div', 'cs-label cs-sublabel', t('cs.fin3d')));
+    chips(d3, ['', ...FIN3D], () => (FIN3D.includes(ds.fin3d) ? ds.fin3d : ''), (k) => (k ? t('ffin.' + k) : t('cs.finAuto')), (k) => set('fin3d', k)).classList.add('cs-fin3d');
+    d3.append(el('p', 'cs-hint', t('cs.d3Hint')));
+    this.paintPop();
     // 音樂
     this.musicGroup(group(t('cs.music')));
     // 加到機台

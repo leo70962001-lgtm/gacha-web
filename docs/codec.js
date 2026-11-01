@@ -22,6 +22,8 @@ const FRONT_CODE = { holo: 'h', texture: 't', rainbow: 'r', gold: 'g', silver: '
 // 背景音樂（使用者 2026-10-26：「可以設定背景音樂」）：預設曲 assets/bgm/<id>.mp3（Gemini「音楽を作成」做的）；沒設定＝shop
 export const BGM_PRESETS = ['shop', 'arcade', 'sakura', 'night', 'festival', 'dream'];
 export const BGM_DEFAULT = 'shop';
+// 獎品實際的表面加工：獎品自己有選（カード工房）就用它，沒有照機台的設定
+export const itemFin = (cfg, it) => (FRONT_FINISHES.includes(it?.fin) ? it.fin : finOf(cfg?.fin, it?.rarity | 0));
 export function finOf(fin, r) {
   if (r === 2) return FRONT_FINISHES.includes(fin?.sr) ? fin.sr : 'texture';
   if (r === 3) return FRONT_FINISHES.includes(fin?.ssr) ? fin.ssr : 'gold';
@@ -69,6 +71,12 @@ export async function encodeConfig(cfg) {
         const pad = [0, '', null, '', 0, '', ''];
         while (row.length < 10) row.push(pad[row.length - 3]);
         row.push(it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : 'y'); // f＝全圖卡風（2026-10-30）
+      }
+      // 這張卡自己的表面加工（カード工房的立體加工，2026-11-01）：沒有就照機台的 SR／SSR 設定
+      if (FRONT_FINISHES.includes(it.fin)) {
+        const pad = [0, '', null, '', 0, '', '', ''];
+        while (row.length < 11) row.push(pad[row.length - 3]);
+        row.push(FRONT_CODE[it.fin]);
       }
       return row;
     }),
@@ -161,7 +169,7 @@ export async function decodeConfig(token) {
   }
   let off = j.__off;
   const items = (Array.isArray(j.i) ? j.i : []).slice(0, LIMITS.items).map((r) => {
-    const [name, rarity, qty, len, fmt, media, uid, mlen, mfmt, stk, yc] = Array.isArray(r) ? r : [];
+    const [name, rarity, qty, len, fmt, media, uid, mlen, mfmt, stk, yc, fc] = Array.isArray(r) ? r : [];
     let img = null;
     let mask = null;
     if (Number.isInteger(len) && len > 0 && off + len <= buf.length) {
@@ -182,6 +190,7 @@ export async function decodeConfig(token) {
       mask,
       sticker: typeof stk === 'string' && finFromCode(stk[0]) ? { fin: finFromCode(stk[0]), baked: stk[1] === 'b' } : null,
       framed: img && yc === 'y' ? 'duel' : img && yc === 'm' ? 'monster' : img && yc === 'f' ? 'full' : false,
+      fin: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === fc) || null,
     };
   });
   if (!items.length) throw new Error('e.empty');

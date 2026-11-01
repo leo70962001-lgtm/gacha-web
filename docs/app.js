@@ -2,7 +2,7 @@
 import { Machine, THEMES } from './machine.js';
 import { unlock, setMuted, setSfxVolume, sfx } from './sfx.js';
 import { bgm } from './bgm.js';
-import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES, FRONT_FINISHES, BGM_PRESETS, BGM_DEFAULT, finOf } from './codec.js';
+import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES, FRONT_FINISHES, BGM_PRESETS, BGM_DEFAULT, finOf, itemFin } from './codec.js';
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers, drawCardBack, boardOpts } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
@@ -19,7 +19,7 @@ import { mountNowPlaying } from './nowplaying.js';
 import { MemberCard } from './member.js';
 import { guessCountry, deviceType } from './geo.js';
 import { MachineStats } from './stats.js';
-import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT, artOf } from './cardstudio.js';
+import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT, artOf, designMask, FIN3D } from './cardstudio.js';
 import { applyAppTheme, cardSplash, drawPrizePost, FEEDS, POST, canShareFiles, downloadFiles } from './cardpack.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
 function nowPlaying(box, m, o) {
@@ -241,6 +241,7 @@ function loadDraft(uid = shop.cur) {
     uid: typeof it.uid === 'string' ? it.uid : null,
     sticker: it.sticker && STICKER_FINS.includes(it.sticker.fin) ? { fin: it.sticker.fin, baked: !!it.sticker.baked } : null,
     framed: it.framed && it.img ? (it.framed === 'monster' || it.framed === 'full' ? it.framed : 'duel') : false, // 舊草稿 true＝遊戲王風
+    fin: FRONT_FINISHES.includes(it.fin) ? it.fin : null, // 這張卡自己的表面加工（カード工房，2026-11-01）
     design: it.framed && it.design && typeof it.design === 'object' ? it.design : null,
   }));
   ensureUids(d);
@@ -1734,7 +1735,9 @@ async function cardFront(idx) {
   if (!th.bmp && th.ready) await th.ready;
   const mk = maskOf(play.cfg, idx);
   if (mk && !mk.bmp) await mk.ready;
-  return drawCardLayers(it, th.bmp || placeholderThumb(it.name, idx), it.rarity, mk?.bmp || null);
+  const L = drawCardLayers(it, th.bmp || placeholderThumb(it.name, idx), it.rarity, mk?.bmp || null);
+  L.fin = it.fin || null; // カード工房的卡自己選的表面加工（machine._makeCard 優先用）
+  return L;
 }
 function scheduleDecor() {
   clearTimeout(decorTimer);
@@ -2125,7 +2128,7 @@ function showResult(idx, first, view = false) {
   resultPlayer?.stop();
   // 獎品＝3D 閃卡（寶可夢卡的閃法，holo.js）：轉卡機是卡片、轉蛋機是方形的壓克力牌；有去背的話做好大張的就換上
   const isCard = play.cfg.kind === 'card';
-  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, fin: finOf(play.cfg.fin, it.rarity), shape: isCard ? 'card' : 'square', name: it.name, tag: isCard, framed: it.framed || false };
+  const hd = { t: thumbOf(play.cfg, idx).url, r: it.rarity, fin: itemFin(play.cfg, it), shape: isCard ? 'card' : 'square', name: it.name, tag: isCard, framed: it.framed || false };
   // 有音樂／影片：獎品改成「正在播放」卡（使用者 2026-10-26：「有音樂或動畫的設計改成這樣的設計」，nowplaying.js），封面還是 3D 閃卡（「立體的功能要留著」）
   const hasMedia = !!it.media;
   $('r-prize').hidden = $('r-name').hidden = hasMedia;
@@ -3277,7 +3280,7 @@ async function albumSync() {
     const it = play.cfg.items[i];
     const nm = it.name;
     const th = thumbs[i];
-    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : 1 } : {}) };
+    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : 1 } : {}), ...(it.fin ? { f: it.fin } : {}) };
     const n = play.got[i] || 0;
     const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0) + (e.cut[nm] || 0))); // 舊資料沒有 base：用 got 推回去
     if (base) e.base[nm] = base;
@@ -3329,7 +3332,15 @@ async function addStudioCard({ design, card, music, target, qty, edit }) {
   let idx = edit ? draft.items.findIndex((x) => x.uid === edit.itemUid) : -1;
   if (idx < 0 && draft.items.length >= LIMITS.items) return toast(t('cs.full'));
   const old = idx >= 0 ? draft.items[idx] : null;
-  const it = { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask: null, noMask: true, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: design.style === 'monster' || design.style === 'full' ? design.style : 'duel', design };
+  // 立體加工（2026-11-01）：卡圖的主體 → 整張卡大小的遮罩（3D 卡的深度、主體浮出來）；fin＝這張卡自己的表面加工
+  const mc = await designMask(design, 120).catch(() => null);
+  let mask = null;
+  if (mc) {
+    let mb = await new Promise((r) => mc.toBlob(r, 'image/webp', 0.85));
+    if (!mb || mb.type !== 'image/webp') mb = await new Promise((r) => mc.toBlob(r, 'image/png'));
+    mask = { bytes: new Uint8Array(await mb.arrayBuffer()), mime: mb.type };
+  }
+  const it = { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask, noMask: !mask, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: design.style === 'monster' || design.style === 'full' ? design.style : 'duel', fin: FIN3D.includes(design.fin3d) ? design.fin3d : null, design };
   if (music.k === 'none') it.media = null;
   else if (music.k === 'preset') it.media = parseMediaUrl(`${PUBLIC_URL}assets/bgm/${BGM_IDS.includes(music.id) ? music.id : BGM_IDS[0]}.mp3`);
   else if (music.k === 'url') it.media = parseMediaUrl(music.url) || it.media;
@@ -4247,7 +4258,7 @@ function openCardView(e, name) {
   cardPlayer?.stop();
   const md = it.md && mediaFromLink(it.md);
   $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
-  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: it.y === 'm' ? 'monster' : it.y === 'f' ? 'full' : it.y ? 'duel' : false };
+  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, r: it.r, fin: it.f || finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: it.y === 'm' ? 'monster' : it.y === 'f' ? 'full' : it.y ? 'duel' : false };
   cardPlayer = md ? nowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
   if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）

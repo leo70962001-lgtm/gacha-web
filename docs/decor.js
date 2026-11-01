@@ -457,12 +457,18 @@ export function drawCardLayers(item, thumb, rarity = item.rarity, mask = null) {
   roundRect(g, wx, wy, ww, wh, 22);
   g.fill();
   g.globalCompositeOperation = 'source-over';
+  // カード工房的卡＋立體加工（2026-11-01）：遮罩是整張卡的大小 → 跟卡面一樣直接拉進窗，主體在卡圖裡往前浮
+  let fm = mask;
+  if (mask && item.framed) {
+    fm = canvas(ww, wh);
+    fm.getContext('2d').drawImage(mask, 0, 0, ww, wh);
+  }
   return {
     frame,
     photo,
-    bg: mask && !item.framed ? inpaintBehind(photo, mask) : null,
+    bg: fm ? inpaintBehind(photo, fm) : null,
     over: item.framed ? canvas(W, H) : drawCardOver(item, rarity),
-    depth: item.framed ? framedDepth(item.framed) : mask ? depthFromMask(mask, ww, wh) : estimateDepth(photo),
+    depth: item.framed ? framedDepth(item.framed, 64, fm) : mask ? depthFromMask(mask, ww, wh) : estimateDepth(photo),
   };
 }
 

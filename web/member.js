@@ -49,7 +49,7 @@ export function ownedFaces(album) {
     for (const [name, n] of Object.entries(e.got || {})) {
       const it = e.items?.[name];
       if (!(n > 0) || !it?.t) continue;
-      out.push({ id: key + '|' + name, key, name, n, r: it.r | 0, t: it.t, s: it.s || null, b: it.b || null, st: it.st ?? null, kind: e.kind === 'card' ? 'card' : 'capsule', fin: finOf(e.fin, it.r | 0), from: titleOf(e), ts: e.ts || 0 });
+      out.push({ id: key + '|' + name, key, name, n, r: it.r | 0, t: it.t, s: it.s || null, b: it.b || null, st: it.st ?? null, kind: e.kind === 'card' ? 'card' : 'capsule', fin: it.f || finOf(e.fin, it.r | 0), from: titleOf(e), ts: e.ts || 0 });
     }
   }
   return out.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'card' ? -1 : 1) || b.r - a.r || b.ts - a.ts);

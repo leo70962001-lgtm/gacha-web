@@ -23,6 +23,7 @@ const PLANES = [
 export const SLOT = new THREE.Vector3(0.2, 0.6, 0.35); // 投幣口
 const HANDLE_C = new THREE.Vector3(0, 0.4822, 0.3836);
 const EXIT = { x: -0.15, floor: 0.0666, z0: 0.2, z1: 0.272, lip: 0.357 }; // 出口凹槽
+const FIN_MODE = { holo: 1, texture: 2, gold: 3, rainbow: 4, silver: 5, none: 0 }; // 表面加工 → cardkit 的 uMode
 const FRONT = 0.3575; // 機身正面
 const HOLE = { x: -0.15, z: 0.06 }; // 窗內底部的出蛋孔（正上方就是出口）
 const DISC = { x: 0, z: 0.06 }; // 轉盤中心（跟著把手轉）
@@ -642,7 +643,8 @@ export class Machine {
   // 卡片：正面＝這次抽到的獎品（app 畫好的 canvas），背面＝shown 等級的卡背（SSR 可能先裝成金卡）
   // front＝drawCardLayers 的三層（圖片窗做 3D 視差）或一張平面 canvas
   _makeCard(front, rarity, shown) {
-    const fm = this.frontModes?.[rarity] ?? rarity; // 正面：N 一般、R ホロ、SR／SSR 照店家選的表面加工（cardkit.js）
+    // 正面：N 一般、R ホロ、SR／SSR 照店家選的表面加工（cardkit.js）；カード工房的卡自己選了（front.fin）就用它
+    const fm = front?.fin ? (FIN_MODE[front.fin] ?? rarity) : (this.frontModes?.[rarity] ?? rarity);
     const bm = this.backModes?.[shown] ?? (shown >= 3 ? 3 : shown === 2 ? 2 : 0);
     let layers = null;
     let face = front;
@@ -666,8 +668,7 @@ export class Machine {
 
   // 店家選的 SR／SSR 表面加工 → 3D 卡面的閃光（cardkit uMode）
   setFrontFinish(fin) {
-    const MODE = { holo: 1, texture: 2, gold: 3, rainbow: 4, silver: 5, none: 0 };
-    this.frontModes = [0, 1, MODE[fin?.sr] ?? 2, MODE[fin?.ssr] ?? 3];
+    this.frontModes = [0, 1, FIN_MODE[fin?.sr] ?? 2, FIN_MODE[fin?.ssr] ?? 3];
   }
 
   // 店家自訂的卡背（decor.drawCardBack 的 back）→ 重做 4 個稀有度的卡背貼圖（已經發出去的卡不變）

@@ -360,6 +360,15 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .cs-sub[hidden] { display: none; }
 .cs-short { flex: none !important; width: 90px !important; min-width: 0 !important; }
 .cs-hint { margin: 2px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+/* 工房的平面／立體預覽 */
+.cs-views { justify-content: center; margin-bottom: 6px; }
+.cs-views .chip { cursor: pointer; font-size: 13px; padding: 4px 14px; color: inherit; }
+.cs-views .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.cs-holo { display: grid; place-items: center; padding: 14px 0 10px; }
+.cs-holo[hidden] { display: none; }
+.cs-holo .tilt { width: min(260px, 62vw); }
+.cs-popstate:empty { display: none; }
+.cs-fin3d .chip { font-size: 12px; padding: 4px 10px; }
 /* 全圖卡風：閃的範圍＝整張（卡圖鋪滿） */
 .tilt.framed.ff .t-tint { -webkit-mask: none; mask: none; }
 .tilt.framed.ff .t-shine { -webkit-mask: var(--spot); mask: var(--spot); }
@@ -773,6 +782,12 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .tilt.pop .t-subj { transform-origin: 50% 96%; transform: translateZ(30px) scale(1.07); clip-path: inset(-12% -12% 3% -12%); -webkit-mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent); mask-image: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent); }
 .tilt.pop .t-simg { filter: drop-shadow(0 8px 6px rgba(0,0,0,.45)); }
 .tilt.pop.round .t-subj, .tilt.pop.square .t-subj { clip-path: inset(-12% -12% 9% -12%); }
+/* カード工房的卡＋立體加工（2026-11-01）：卡面本身就是完整的卡 → 不加底紙、不模糊、不縮；主體（只有卡圖裡的那塊）往前浮 */
+.tilt.framed.pop .t-frame { box-shadow: 0 0 0 2px #1c2340; }
+.tilt.framed.pop .t-fshine { padding: 0; }
+.tilt.framed.pop .t-back { transform: translateZ(-14px); }
+.tilt.framed.pop .t-photo { filter: none; }
+.tilt.framed.pop .t-subj { transform-origin: 50% 70%; transform: translateZ(26px) scale(1.035); clip-path: none; -webkit-mask-image: none; mask-image: none; }
 .app[data-mode="play"] .panel { display: none; }
 .app[data-mode="create"] .hud { display: none; }
 .stage { position: relative; min-height: 0; overflow: hidden; background: var(--stage); }
@@ -1535,6 +1550,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
                   <div class="back-row"><span id="fssr-label" data-i18n="ffin.ssr">SSR 的表面</span><div class="chips fin-chips" id="front-ssr" role="radiogroup" aria-labelledby="fssr-label"></div></div>
                 </div>
               </div>
+              <p class="hint-text" data-i18n="ffin.cardHint"></p>
             </div>
             <div class="field" id="back-field" hidden><span id="back-label" data-i18n="back.label">卡背</span>
               <div class="back-ed">
