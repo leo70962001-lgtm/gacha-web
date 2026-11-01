@@ -58,6 +58,8 @@ export function defaultDesign(t) {
     info: t('cs.sInfo'), flavor: t('cs.sFlavor'), illus: 'Clatter', setno: '001/100',
     // 全圖卡風
     fcol: 'red', power: '20000', badge: 'CLATTER', role: 'HERO', cost: '3', trait: t('cs.fTraitS'), ftext: t('cs.fTextS'),
+    // 明星卡風
+    sframe: 'white', sname: 'SUPER STAR', sgroup: 'CLATTER STARS', year: '2026', stag: 'ROOKIE', serial: '001/100', sink: 'gold', sig: null,
   };
 }
 
@@ -436,6 +438,7 @@ const ART = { x: 70, y: 158, s: 450 }; // 卡圖（正方形）
 export function drawDesignCard(d, art, W = W0, lang = 'zh') {
   if (d.style === 'monster') return drawMonsterCard(d, art, W, lang);
   if (d.style === 'full') return drawFullCard(d, art, W);
+  if (d.style === 'star') return drawStarCard(d, art, W);
   const k = W / W0;
   const c = canvasOf(Math.round(W), Math.round(W * (H0 / W0)));
   const g = c.getContext('2d');
@@ -666,7 +669,7 @@ function wrapFirst(g, text, firstW, restW) {
   out.push(line);
   return out;
 }
-// uiOnly＝只畫字的那層（外框一圈、徽章、戰力、角色標籤、效果欄、名字帶；沒有卡圖）→ 立體加工的「最前面那層」遮罩（fullUiMask）
+// uiOnly＝只畫字的那層（外框一圈、徽章、戰力、角色標籤、效果欄、名字帶；沒有卡圖）→ 立體加工的「最前面那層」遮罩（uiMask）
 export function drawFullCard(d, art, W = W0, { uiOnly = false } = {}) {
   const k = W / W0;
   const c = canvasOf(Math.round(W), Math.round(W * (H0 / W0)));
@@ -910,11 +913,253 @@ export function drawFullCard(d, art, W = W0, { uiOnly = false } = {}) {
   return c;
 }
 
-// 3D 卡（cardkit）用的深度：框在前面、卡圖往後退一點（像隔著窗看）；style＝'duel'（正方形卡圖）／'monster'（橫的卡圖）／'full'（全圖）
+// ---------- 明星卡風（使用者 2026-11-01：「卡片的風格再加上照片的風格 明星卡」） ----------
+//   偶像小卡、球星卡那種：照片鋪滿整張 → 框（白、黑、銀、金、彩虹燙，或自訂色）＋四個角的燙金角線
+//   → 左上團體／隊伍＋年份、右上燙金的限量編號、名字上面的小標（ROOKIE、生日…）→ 下面大大的名字＋英文名、右下稀有度章
+//   → 親筆簽名：自己用手指簽（ds.sig＝白色筆跡的 PNG，畫的時候上墨水色）；沒有官方標誌
+export const SFRAMES = ['white', 'black', 'silver', 'gold', 'prism'];
+export const SINKS = ['gold', 'silver', 'black', 'white', 'red', 'blue'];
+const STAR_IN = { x: 16, y: 16, w: W0 - 32, h: H0 - 32 }; // 照片（框裡面整張）
+const FOIL = {
+  gold: ['#8a5a0a', '#ffe9a0', '#c8901c', '#fff3c8', '#9a6a10'],
+  silver: ['#7d838c', '#f4f6fa', '#a7adb6', '#ffffff', '#8d939c'],
+  prism: ['#ff9ab8', '#ffe68a', '#a8ffb8', '#8ad8ff', '#d2a8ff', '#ff9ab8'],
+  white: ['#ffffff', '#f2eee6', '#ffffff', '#e9e4da'],
+  black: ['#3a3a42', '#0b0b0d', '#2a2a30', '#0b0b0d'],
+};
+const INK = { black: '#141414', white: '#ffffff', red: '#e0262e', blue: '#2a6fd8' }; // 金、銀＝燙金漸層
+function foil(g, x0, y0, x1, y1, stops) {
+  const gr = g.createLinearGradient(x0, y0, x1, y1);
+  stops.forEach((c, i) => gr.addColorStop(i / (stops.length - 1), c));
+  return gr;
+}
+// 燙金上面的字：亮的燙金用深色字
+const foilInk = (stops) => (stops === FOIL.prism ? '#3a2a5a' : lumOf(stops[1]) > 0.5 ? '#3a2606' : '#ffffff');
+// 框、燙金的顏色：自訂色 → 那個顏色的亮暗；白框、黑框的燙金用金色
+function starFoils(d) {
+  const fh = frameHex(d);
+  if (fh) {
+    const st = [shade(fh, 0.35), fh, shade(fh, -0.35), fh];
+    return { frame: st, accent: st };
+  }
+  const k = SFRAMES.includes(d.sframe) ? d.sframe : 'white';
+  return { frame: FOIL[k], accent: FOIL[k === 'white' || k === 'black' ? 'gold' : k] };
+}
+const SIG = new Map(); // sig.b64 → canvas／ImageBitmap（畫卡是同步的，簽名要先解好）
+export function cacheSig(sig, img) {
+  SIG.set(sig.b64, img);
+}
+async function loadSig(d) {
+  const s = d?.sig;
+  if (!s?.b64 || SIG.has(s.b64)) return;
+  try {
+    SIG.set(s.b64, await createImageBitmap(b64Blob(s)));
+  } catch {}
+}
+// uiOnly＝只畫字那層（框、角線、團體、編號、簽名、名字、稀有度章；沒有照片）→ 立體加工的「最前面那層」遮罩（uiMask）
+export function drawStarCard(d, art, W = W0, { uiOnly = false } = {}) {
+  const k = W / W0;
+  const c = canvasOf(Math.round(W), Math.round(W * (H0 / W0)));
+  const g = c.getContext('2d');
+  g.scale(k, k);
+  const { frame, accent } = starFoils(d);
+  const IN = STAR_IN;
+  g.fillStyle = foil(g, 0, 0, W0, H0, frame);
+  rr(g, 0, 0, W0, H0, 22);
+  g.fill();
+  g.save();
+  rr(g, IN.x, IN.y, IN.w, IN.h, 12);
+  g.clip();
+  if (uiOnly) g.clearRect(IN.x, IN.y, IN.w, IN.h);
+  else {
+    if (art) {
+      const s = Math.max(IN.w / art.width, IN.h / art.height);
+      g.drawImage(art, IN.x + (IN.w - art.width * s) / 2, IN.y + (IN.h - art.height * s) / 2, art.width * s, art.height * s);
+    } else {
+      // 沒有照片：粉→藍的漸層＋白色人形
+      const bg = g.createLinearGradient(0, IN.y, 0, IN.y + IN.h);
+      bg.addColorStop(0, '#ffd6e4');
+      bg.addColorStop(1, '#a9c8ff');
+      g.fillStyle = bg;
+      g.fillRect(IN.x, IN.y, IN.w, IN.h);
+      g.fillStyle = 'rgba(255,255,255,0.6)';
+      g.beginPath();
+      g.arc(W0 / 2, 330, 96, 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();
+      g.ellipse(W0 / 2, 720, 220, 270, 0, Math.PI, 0);
+      g.fill();
+    }
+    // 上下壓暗（字比較清楚）
+    const gr = g.createLinearGradient(0, IN.y, 0, IN.y + IN.h);
+    gr.addColorStop(0, 'rgba(0,0,0,0.32)');
+    gr.addColorStop(0.14, 'rgba(0,0,0,0)');
+    gr.addColorStop(0.62, 'rgba(0,0,0,0)');
+    gr.addColorStop(1, 'rgba(0,0,0,0.62)');
+    g.fillStyle = gr;
+    g.fillRect(IN.x, IN.y, IN.w, IN.h);
+  }
+  g.restore();
+  // 四個角的燙金角線
+  g.strokeStyle = foil(g, 0, 0, W0, H0, accent);
+  g.lineWidth = 3;
+  g.lineCap = 'round';
+  const m = 28;
+  const L = 44;
+  for (const [x, y, sx, sy] of [[m, m, 1, 1], [W0 - m, m, -1, 1], [m, H0 - m, 1, -1], [W0 - m, H0 - m, -1, -1]]) {
+    g.beginPath();
+    g.moveTo(x, y + sy * L);
+    g.lineTo(x, y);
+    g.lineTo(x + sx * L, y);
+    g.stroke();
+  }
+  const shadow = (on) => {
+    g.shadowColor = on ? 'rgba(0,0,0,0.55)' : 'transparent';
+    g.shadowBlur = on ? 8 : 0;
+    g.shadowOffsetY = on ? 2 : 0;
+  };
+  g.textBaseline = 'alphabetic';
+  g.textAlign = 'left';
+  // 左上：團體／隊伍＋年份
+  const grp = (d.sgroup ?? '').trim();
+  const yr = (d.year ?? '').trim();
+  shadow(true);
+  if (grp) {
+    g.font = `800 24px ${SANS}`;
+    g.letterSpacing = '3px';
+    g.fillStyle = '#ffffff';
+    fitX(g, grp, 50, 78, 300);
+  }
+  if (yr) {
+    g.font = `700 16px ${SANS}`;
+    g.letterSpacing = '4px';
+    g.fillStyle = 'rgba(255,255,255,0.85)';
+    g.fillText(yr, 52, grp ? 104 : 78);
+  }
+  g.letterSpacing = '0px';
+  shadow(false);
+  // 右上：限量編號（燙金章）
+  const ser = (d.serial ?? '').trim();
+  if (ser) {
+    g.font = `800 13px ${SANS}`;
+    const nw = g.measureText('No.').width;
+    g.font = `italic 900 26px ${SANS}`;
+    const w = Math.min(260, g.measureText(ser).width + nw + 40);
+    const x = W0 - 46 - w;
+    const y = 50;
+    shadow(true);
+    g.fillStyle = foil(g, x, y, x + w, y + 40, accent);
+    rr(g, x, y, w, 40, 20);
+    g.fill();
+    shadow(false);
+    g.lineWidth = 1.5;
+    g.strokeStyle = 'rgba(0,0,0,0.3)';
+    g.stroke();
+    g.fillStyle = foilInk(accent);
+    g.font = `800 13px ${SANS}`;
+    g.fillText('No.', x + 16, y + 26);
+    g.font = `italic 900 26px ${SANS}`;
+    fitX(g, ser, x + 22 + nw, y + 30, w - nw - 38);
+  }
+  // 親筆簽名：白色筆跡 → 上墨水色（金、銀＝燙金漸層），斜斜的簽在照片中下
+  const sg = d.sig?.b64 && SIG.get(d.sig.b64);
+  if (sg) {
+    const s = Math.min(340 / sg.width, 140 / sg.height);
+    const w = Math.max(1, Math.round(sg.width * s));
+    const h = Math.max(1, Math.round(sg.height * s));
+    const tc = canvasOf(w, h);
+    const tg = tc.getContext('2d');
+    tg.drawImage(sg, 0, 0, w, h);
+    tg.globalCompositeOperation = 'source-in';
+    const ink = SINKS.includes(d.sink) ? d.sink : 'gold';
+    tg.fillStyle = FOIL[ink] ? foil(tg, 0, 0, w, h, FOIL[ink]) : INK[ink];
+    tg.fillRect(0, 0, w, h);
+    g.save();
+    g.translate(W0 * 0.58, 600);
+    g.rotate(-0.12);
+    g.shadowColor = ink === 'black' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)';
+    g.shadowBlur = 6;
+    g.drawImage(tc, -w / 2, -h / 2);
+    g.restore();
+  }
+  // 下面：小標、燙金直條、名字、英文名
+  const tag = (d.stag ?? '').trim();
+  const sn = (d.sname ?? '').trim();
+  const nameY = sn ? 760 : 778;
+  if (tag) {
+    g.font = `800 16px ${SANS}`;
+    g.letterSpacing = '2px';
+    const tw = Math.min(220, g.measureText(tag).width) + 26;
+    const ty = nameY - 84;
+    g.fillStyle = foil(g, 50, ty, 50 + tw, ty + 28, accent);
+    rr(g, 50, ty, tw, 28, 14);
+    g.fill();
+    g.fillStyle = foilInk(accent);
+    fitX(g, tag, 63, ty + 20, tw - 26);
+    g.letterSpacing = '0px';
+  }
+  g.fillStyle = foil(g, 0, nameY - 50, 0, nameY + 34, accent);
+  rr(g, 40, nameY - 50, 6, sn ? 84 : 58, 3);
+  g.fill();
+  g.font = `900 60px ${SERIF}`;
+  const nf = !d.nameStyle || d.nameStyle === 'auto' ? (d.rarity | 0 ? nameFill(g, d, 58, nameY, 420) : '#ffffff') : nameFill(g, d, 58, nameY, 420);
+  const nm = d.name || ' ';
+  g.save();
+  g.lineJoin = 'round';
+  g.lineWidth = 7;
+  g.strokeStyle = 'rgba(0,0,0,0.55)';
+  g.translate(58, nameY);
+  g.scale(Math.max(0.5, Math.min(1, 400 / Math.max(1, g.measureText(nm).width))), 1);
+  g.strokeText(nm, 0, 0);
+  g.fillStyle = nf;
+  g.fillText(nm, 0, 0);
+  g.restore();
+  if (sn) {
+    shadow(true);
+    g.font = `700 19px ${SANS}`;
+    g.letterSpacing = '5px';
+    g.fillStyle = 'rgba(255,255,255,0.9)';
+    fitX(g, sn.toUpperCase(), 60, nameY + 32, 400);
+    g.letterSpacing = '0px';
+    shadow(false);
+  }
+  // 右下：稀有度章（六角形；N 珍珠白、R 銀、SR 金、SSR 彩虹）
+  const R = d.rarity | 0;
+  const rs = [FOIL.white, FOIL.silver, FOIL.gold, FOIL.prism][R] || FOIL.white;
+  const cx = 516;
+  const cy = 768;
+  g.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 6 + (i * Math.PI) / 3;
+    g.lineTo(cx + Math.cos(a) * 32, cy + Math.sin(a) * 32);
+  }
+  g.closePath();
+  shadow(true);
+  g.fillStyle = foil(g, cx - 32, cy - 32, cx + 32, cy + 32, rs);
+  g.fill();
+  shadow(false);
+  g.lineWidth = 2;
+  g.strokeStyle = 'rgba(0,0,0,0.35)';
+  g.stroke();
+  g.textAlign = 'center';
+  g.fillStyle = R === 0 ? '#5a5650' : foilInk(rs);
+  g.font = `900 ${R >= 2 ? 17 : 22}px ${SANS}`;
+  g.fillText(['N', 'R', 'SR', 'SSR'][R], cx, cy + (R >= 2 ? 6 : 8));
+  // 卡號：最下面正中間（左右的角線中間）
+  if (d.set) {
+    g.font = `700 12px ${SANS}`;
+    g.fillStyle = 'rgba(255,255,255,0.8)';
+    g.fillText(d.set, W0 / 2, 830);
+  }
+  g.textAlign = 'left';
+  return c;
+}
+
+// 3D 卡（cardkit）用的深度：框在前面、卡圖往後退一點（像隔著窗看）；style＝'duel'（正方形卡圖）／'monster'（橫的卡圖）／'full'（全圖）／'star'（照片）
 //   mask＝立體加工的主體遮罩（整張卡大小、白＝主體）：主體在框跟卡圖背景中間（深度往卡片裡面，使用者 2026-11-01：「立體感往裡面做」）
-//   ui＝全圖卡字那層的遮罩（fullUiMask）：徽章、戰力、效果欄跟框一樣在最前面
+//   ui＝全圖卡、明星卡字那層的遮罩（uiMask）：徽章、戰力、效果欄、簽名、名字跟框一樣在最前面
 export function framedDepth(style = 'duel', w = 64, mask = null, ui = null) {
-  const A = style === 'monster' ? { x: ART_M.x, y: ART_M.y, w: ART_M.w, h: ART_M.h } : style === 'full' ? { x: 11, y: 11, w: W0 - 22, h: H0 - 22 } : { x: ART.x, y: ART.y, w: ART.s, h: ART.s };
+  const A = style === 'monster' ? { x: ART_M.x, y: ART_M.y, w: ART_M.w, h: ART_M.h } : style === 'full' ? { x: 11, y: 11, w: W0 - 22, h: H0 - 22 } : style === 'star' ? STAR_IN : { x: ART.x, y: ART.y, w: ART.s, h: ART.s };
   const h = Math.round((w * H0) / W0);
   const c = canvasOf(w, h);
   const g = c.getContext('2d');
@@ -977,7 +1222,8 @@ export const MTYPES = {
 export const MTYPE_KEYS = Object.keys(MTYPES);
 export const STAGES = ['basic', 'stage1', 'stage2'];
 export const MBORDERS = ['yellow', 'silver', 'gold', 'black'];
-export const STYLES = ['duel', 'monster', 'full'];
+export const STYLES = ['duel', 'monster', 'full', 'star'];
+export const hasUi = (style) => style === 'full' || style === 'star'; // 有「字那層」遮罩的樣式（字疊在整張卡圖上）
 const ART_M = { x: 48, y: 108, w: 494, h: 336 }; // 寶可夢風的卡圖（橫的）
 
 // 能量記號：圓章＋白色圖案（雷、無色是深色圖案）
@@ -1440,6 +1686,7 @@ export async function makeArtMask(art) {
 function artBox(d) {
   if (d.style === 'monster') return { x: ART_M.x, y: ART_M.y, w: ART_M.w, h: ART_M.h };
   if (d.style === 'full') return { x: 11, y: 11, w: W0 - 22, h: H0 - 22 };
+  if (d.style === 'star') return STAR_IN;
   return { x: ART.x, y: ART.y, w: ART.s, h: ART.s };
 }
 // 整張卡大小的遮罩：主體＝白，其他黑；c.top＝主體頭頂在卡的哪裡（0–1）
@@ -1462,11 +1709,11 @@ function drawDesignMask(d, mbmp, art, W = W0) {
   g.restore();
   const id = g.getImageData(0, 0, c.width, c.height);
   const px = id.data;
-  // 全圖卡：字都疊在卡圖上 → 照字那層的形狀（徽章的星形、戰力的字、標籤、效果欄、名字帶）挖掉，主體就沿著字的邊切，不會切成方塊
+  // 全圖卡、明星卡：字都疊在卡圖上 → 照字那層的形狀（徽章的星形、戰力的字、標籤、效果欄、名字帶、簽名）挖掉，主體就沿著字的邊切，不會切成方塊
   //   （使用者 2026-11-01 圈了徽章：「去背的部分」— 以前用長方形挖，徽章旁邊的臉一半浮一半不浮）
-  if (d.style === 'full') {
-    const ui = fullUiMask(d, c.width).getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    const yCut = Math.round(532 * k) * c.width * 4; // 效果欄以下（效果欄、名字帶跟它們中間的縫）整段都不算主體
+  if (hasUi(d.style)) {
+    const ui = uiMask(d, c.width).getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const yCut = d.style === 'full' ? Math.round(532 * k) * c.width * 4 : Infinity; // 全圖卡：效果欄以下（效果欄、名字帶跟它們中間的縫）整段都不算主體
     for (let i = 0; i < px.length; i += 4) if (ui[i] > 128 || i >= yCut) px[i] = px[i + 1] = px[i + 2] = 0;
     g.putImageData(id, 0, 0);
   }
@@ -1481,11 +1728,11 @@ function drawDesignMask(d, mbmp, art, W = W0) {
   }
   return c;
 }
-// 全圖卡「字那層」的遮罩（白＝字、標籤、外框，黑＝卡圖）：立體時這層留在最前面，主體也沿著它切
-export function fullUiMask(d, W = W0) {
-  const ui = drawFullCard(d, null, W, { uiOnly: true });
+// 全圖卡、明星卡「字那層」的遮罩（白＝字、標籤、簽名、外框，黑＝卡圖）：立體時這層留在最前面，主體也沿著它切
+export function uiMask(d, W = W0) {
+  const ui = (d.style === 'star' ? drawStarCard : drawFullCard)(d, null, W, { uiOnly: true });
   const id = ui.getContext('2d').getImageData(0, 0, ui.width, ui.height);
-  const yCut = Math.round(532 * (W / W0)) * ui.width * 4; // 效果欄以下整段留在前面（兩塊中間的縫也是）
+  const yCut = d.style === 'full' ? Math.round(532 * (W / W0)) * ui.width * 4 : Infinity; // 全圖卡：效果欄以下整段留在前面（兩塊中間的縫也是）
   for (let i = 0; i < id.data.length; i += 4) {
     const v = id.data[i + 3] > 60 || i >= yCut ? 255 : 0; // 半透明的效果欄也算（整塊留在前面）
     id.data[i] = id.data[i + 1] = id.data[i + 2] = v;
@@ -1506,9 +1753,9 @@ export async function designMask(d, W = CARD_OUT[0]) {
   return mb ? drawDesignMask(d, mb, art, W) : null;
 }
 
-// 卡圖（沒有＝null）；順便把框用的自己的圖解好（drawDesignCard 是同步的）
+// 卡圖（沒有＝null）；順便把框用的自己的圖、明星卡的簽名解好（drawDesignCard 是同步的）
 export async function artOf(d) {
-  await loadFrameImg(d);
+  await Promise.all([loadFrameImg(d), loadSig(d)]);
   return d?.art?.b64 ? createImageBitmap(b64Blob(d.art)).catch(() => null) : null;
 }
 
@@ -1616,7 +1863,7 @@ export class CardStudio {
         b = bk.toDataURL('image/jpeg', 0.88);
       }
       // t＝完整卡面（框那層從這張挖），b＝背景（主體糊掉），s＝主體，ui＝全圖卡的字那層（留在最前面）
-      const ui = ds.style === 'full' ? fullUiMask(ds, 300).toDataURL('image/png') : null;
+      const ui = hasUi(ds.style) ? uiMask(ds, 300).toDataURL('image/png') : null;
       this.holo.set({ t: url, s, b, st, ui, r: ds.rarity | 0, fin: fin3dOf(ds), shape: 'card', tag: false, name: '', framed: ds.style || 'duel' });
     }, 250);
   }
@@ -1782,7 +2029,7 @@ export class CardStudio {
   }
   // 依卡片種類顯示／藏起欄位
   sync() {
-    if (this.ds.style === 'monster' || this.ds.style === 'full') return;
+    if (this.ds.style === 'monster' || hasUi(this.ds.style)) return;
     const ty = this.ds.type;
     const st = isST(ty);
     for (const [k, show] of Object.entries({ attr: !st, level: !st && ty !== 'link', arrows: ty === 'link', icon: st, race: !st, stats: !st, def: !st && ty !== 'link' })) {
@@ -1896,7 +2143,7 @@ export class CardStudio {
         return this.d.toast(t('t.badImage'));
       }
       // 遊戲王風＝正方形、寶可夢風＝橫的、全圖卡＝整張卡的形狀
-      const c = await this.d.openCrop({ bmp, out: ds.style === 'monster' ? [720, 490] : ds.style === 'full' ? [590, 860] : [600, 600], title: t('cs.artCrop') });
+      const c = await this.d.openCrop({ bmp, out: ds.style === 'monster' ? [720, 490] : hasUi(ds.style) ? [590, 860] : [600, 600], title: t('cs.artCrop') });
       if (!c) return;
       this.art = c;
       const url = c.toDataURL('image/webp', 0.86);
@@ -2018,6 +2265,7 @@ export class CardStudio {
     };
     if (ds.style === 'monster') this.buildMonster({ group, chips, input, set, artGroup, frameGroup });
     else if (ds.style === 'full') this.buildFull({ group, chips, input, set, artGroup });
+    else if (ds.style === 'star') this.buildStar({ group, chips, input, set, artGroup });
     else {
       // 卡片種類
       chips(group(t('cs.type')), TYPE_KEYS, () => ds.type, (k) => t('cs.t.' + k), (k) => {
@@ -2235,6 +2483,112 @@ export class CardStudio {
     const tx = group(t('cs.text'));
     input(tx, 'ftext', { area: true, rows: 5, max: 400 });
     tx.append(el('p', 'cs-hint', t('cs.fTextHint')));
+    const ids = group(t('cs.set'));
+    input(ids, 'set', { max: 14 });
+  }
+
+  // 明星卡風的欄位：框（白黑銀金彩虹＋自訂色）、名字＋英文名、照片、團體／年份／小標／限量編號、親筆簽名（簽名板＋墨水色）、卡號
+  buildStar({ group, chips, input, set, artGroup }) {
+    const { t } = this.d;
+    const ds = this.ds;
+    // 以前做的卡切過來：明星卡的欄位還沒有 → 先放範例
+    const def = defaultDesign(t);
+    for (const k of ['sframe', 'sname', 'sgroup', 'year', 'stag', 'serial', 'sink']) if (ds[k] === undefined) ds[k] = def[k];
+    const fr = group(t('cs.frame'));
+    const fchips = chips(fr, SFRAMES, () => (ds.frame ? '' : ds.sframe || 'white'), (k) => t('cs.sf.' + k), (k) => {
+      ds.frame = '';
+      set('sframe', k);
+    });
+    const crow = el('div', 'cs-row');
+    const fc = el('input');
+    fc.type = 'color';
+    fc.value = /^#[0-9a-f]{6}$/i.test(ds.frame) ? ds.frame : '#e85a8a';
+    fc.setAttribute('aria-label', t('cs.frameColor'));
+    fc.oninput = () => {
+      set('frame', fc.value);
+      fchips.querySelectorAll('.chip').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+    };
+    crow.append(el('span', 'cs-check', t('cs.frameColor')), fc);
+    fr.append(crow);
+    const nm = group(t('cs.name'));
+    input(nm, 'name', { max: 30 });
+    chips(nm, NAME_STYLES, () => ds.nameStyle || 'auto', (k) => t('cs.n.' + k), (k) => set('nameStyle', k));
+    input(group(t('cs.sName')), 'sname', { max: 30, ph: 'SUPER STAR' });
+    artGroup();
+    const top = group(t('cs.sTop'));
+    const row = (pairs) => {
+      const r = el('div', 'cs-row');
+      for (const [lab, k, max, size] of pairs) {
+        const l = el('label', 'cs-stat');
+        l.append(t(lab) + ' ');
+        input(l, k, { max }).size = size;
+        r.append(l);
+      }
+      top.append(r);
+    };
+    row([['cs.sGroup', 'sgroup', 24, 14]]);
+    row([['cs.sYear', 'year', 8, 5], ['cs.sSerial', 'serial', 9, 7]]);
+    row([['cs.sTag', 'stag', 12, 9]]);
+    top.append(el('p', 'cs-hint', t('cs.sTopHint')));
+    // 親筆簽名：用手指／滑鼠在簽名板上簽（越快越細），放開就印到卡上
+    const sg = group(t('cs.sig'));
+    const pad = el('canvas', 'cs-sigpad');
+    pad.width = 600;
+    pad.height = 200;
+    const pg = pad.getContext('2d');
+    const old = ds.sig?.b64 && SIG.get(ds.sig.b64);
+    if (old) pg.drawImage(old, 0, 0, pad.width, pad.height);
+    let last = null;
+    const at = (e) => {
+      const r = pad.getBoundingClientRect();
+      return { x: ((e.clientX - r.left) / r.width) * pad.width, y: ((e.clientY - r.top) / r.height) * pad.height, t: e.timeStamp, w: 8 };
+    };
+    pad.onpointerdown = (e) => {
+      pad.setPointerCapture(e.pointerId);
+      last = at(e);
+      last.mx = last.x;
+      last.my = last.y;
+      pg.fillStyle = '#fff';
+      pg.beginPath();
+      pg.arc(last.x, last.y, 4, 0, Math.PI * 2);
+      pg.fill();
+    };
+    pad.onpointermove = (e) => {
+      if (!last) return;
+      const p = at(e);
+      // 越快越細（4–12 px），跟上一筆平均一下不會忽粗忽細；畫到兩點的中間（平滑的曲線）
+      const v = Math.hypot(p.x - last.x, p.y - last.y) / Math.max(1, p.t - last.t);
+      p.w = last.w * 0.6 + Math.max(4, Math.min(12, 12 - v * 2.5)) * 0.4;
+      p.mx = (last.x + p.x) / 2;
+      p.my = (last.y + p.y) / 2;
+      pg.strokeStyle = '#fff';
+      pg.lineCap = pg.lineJoin = 'round';
+      pg.lineWidth = p.w;
+      pg.beginPath();
+      pg.moveTo(last.mx, last.my);
+      pg.quadraticCurveTo(last.x, last.y, p.mx, p.my);
+      pg.stroke();
+      last = p;
+    };
+    const done = () => {
+      if (!last) return;
+      last = null;
+      const url = pad.toDataURL('image/png');
+      ds.sig = { b64: url.split(',')[1], mime: 'image/png' };
+      const keep = canvasOf(pad.width, pad.height);
+      keep.getContext('2d').drawImage(pad, 0, 0);
+      cacheSig(ds.sig, keep);
+      this.redraw();
+    };
+    pad.onpointerup = pad.onpointercancel = done;
+    const clr = el('button', 'btn ghost', t('cs.sigClear'));
+    clr.type = 'button';
+    clr.onclick = () => {
+      pg.clearRect(0, 0, pad.width, pad.height);
+      set('sig', null);
+    };
+    sg.append(pad, el('p', 'cs-hint', t('cs.sigHint')), clr, el('div', 'cs-label cs-sublabel', t('cs.ink')));
+    chips(sg, SINKS, () => (SINKS.includes(ds.sink) ? ds.sink : 'gold'), (k) => t('cs.ink.' + k), (k) => set('sink', k));
     const ids = group(t('cs.set'));
     input(ids, 'set', { max: 14 });
   }

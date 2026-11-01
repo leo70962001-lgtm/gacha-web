@@ -70,7 +70,7 @@ export async function encodeConfig(cfg) {
       if (it.framed && it.img) {
         const pad = [0, '', null, '', 0, '', ''];
         while (row.length < 10) row.push(pad[row.length - 3]);
-        row.push(it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : 'y'); // f＝全圖卡風（2026-10-30）
+        row.push(it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : it.framed === 'star' ? 's' : 'y'); // f＝全圖卡風（2026-10-30）、s＝明星卡風（2026-11-01）
       }
       // 這張卡自己的表面加工（カード工房的立體加工，2026-11-01）：沒有就照機台的 SR／SSR 設定
       if (FRONT_FINISHES.includes(it.fin)) {
@@ -130,7 +130,7 @@ export async function encodeConfig(cfg) {
   // 全圖卡字那層的遮罩（2026-11-01，3D 卡的徽章、戰力、效果欄留在最前面）：[[獎品編號, 長度, 格式], …]，圖接在台紙圖後面；舊版看不懂 u 就照舊
   const us = [];
   cfg.items.forEach((it, i) => {
-    if (!it.ui || !it.img || it.framed !== 'full') return;
+    if (!it.ui || !it.img || (it.framed !== 'full' && it.framed !== 'star')) return;
     imgs.push(it.ui.bytes);
     us.push([i, it.ui.bytes.length, it.ui.mime === 'image/webp' ? 'w' : 'p']);
   });
@@ -197,7 +197,7 @@ export async function decodeConfig(token) {
       uid: typeof uid === 'string' && /^[0-9A-Za-z]{4,12}$/.test(uid) ? uid : null,
       mask,
       sticker: typeof stk === 'string' && finFromCode(stk[0]) ? { fin: finFromCode(stk[0]), baked: stk[1] === 'b' } : null,
-      framed: img && yc === 'y' ? 'duel' : img && yc === 'm' ? 'monster' : img && yc === 'f' ? 'full' : false,
+      framed: img && yc === 'y' ? 'duel' : img && yc === 'm' ? 'monster' : img && yc === 'f' ? 'full' : img && yc === 's' ? 'star' : false,
       fin: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === fc) || null,
     };
   });
@@ -266,7 +266,7 @@ export async function decodeConfig(token) {
     if (!Number.isInteger(len) || len <= 0 || len > 60000 || off + len > buf.length) break; // 長度不對 → 後面的位置都對不上
     const bytes = buf.slice(off, off + len);
     off += len;
-    if (Number.isInteger(i) && items[i]?.framed === 'full') items[i].ui = { bytes, mime: fmt === 'w' ? 'image/webp' : 'image/png' };
+    if (Number.isInteger(i) && (items[i]?.framed === 'full' || items[i]?.framed === 'star')) items[i].ui = { bytes, mime: fmt === 'w' ? 'image/webp' : 'image/png' };
   }
   let bgm = { k: 'preset', id: BGM_DEFAULT };
   const bm = Array.isArray(j.bm) ? j.bm : [];

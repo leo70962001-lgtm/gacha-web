@@ -19,7 +19,7 @@ import { mountNowPlaying } from './nowplaying.js';
 import { MemberCard } from './member.js';
 import { guessCountry, deviceType } from './geo.js';
 import { MachineStats } from './stats.js';
-import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT, artOf, designMask, fullUiMask, FIN3D, defaultDesign } from './cardstudio.js';
+import { CardStudio, BGM_IDS, listWorks, drawDesignCard, studioFonts, CARD_OUT, artOf, designMask, uiMask, hasUi, FIN3D, defaultDesign } from './cardstudio.js';
 import { applyAppTheme, cardSplash, drawPrizePost, FEEDS, POST, canShareFiles, downloadFiles } from './cardpack.js';
 // 獎品的影音在播 → 背景音樂先停：<audio>／<video> bgm.js 自己會發現；YouTube、SoundCloud、Spotify 是 iframe → 這裡停，關掉才回來
 function nowPlaying(box, m, o) {
@@ -236,12 +236,12 @@ function loadDraft(uid = shop.cur) {
     qty: Math.min(LIMITS.qty, Math.max(1, it.qty | 0)),
     img: it.img ? { bytes: Uint8Array.from(atob(it.img.b64), (ch) => ch.charCodeAt(0)), mime: it.img.mime } : null,
     mask: it.img && it.mask?.b64 ? { bytes: Uint8Array.from(atob(it.mask.b64), (ch) => ch.charCodeAt(0)), mime: it.mask.mime } : null,
-    ui: it.img && it.framed === 'full' && it.ui?.b64 ? { bytes: Uint8Array.from(atob(it.ui.b64), (ch) => ch.charCodeAt(0)), mime: it.ui.mime } : null, // 全圖卡字那層的遮罩
+    ui: it.img && hasUi(it.framed) && it.ui?.b64 ? { bytes: Uint8Array.from(atob(it.ui.b64), (ch) => ch.charCodeAt(0)), mime: it.ui.mime } : null, // 全圖卡、明星卡字那層的遮罩
     noMask: !!it.noMask,
     media: draftMedia(it.media),
     uid: typeof it.uid === 'string' ? it.uid : null,
     sticker: it.sticker && STICKER_FINS.includes(it.sticker.fin) ? { fin: it.sticker.fin, baked: !!it.sticker.baked } : null,
-    framed: it.framed && it.img ? (it.framed === 'monster' || it.framed === 'full' ? it.framed : 'duel') : false, // 舊草稿 true＝遊戲王風
+    framed: it.framed && it.img ? (['monster', 'full', 'star'].includes(it.framed) ? it.framed : 'duel') : false, // 舊草稿 true＝遊戲王風
     fin: FRONT_FINISHES.includes(it.fin) ? it.fin : null, // 這張卡自己的表面加工（カード工房，2026-11-01）
     design: it.framed && it.design && typeof it.design === 'object' ? it.design : null,
   }));
@@ -3316,7 +3316,7 @@ async function albumSync() {
     const it = play.cfg.items[i];
     const nm = it.name;
     const th = thumbs[i];
-    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : 1 } : {}), ...(it.fin ? { f: it.fin } : {}), ...(th.u ? { u: th.u } : {}) };
+    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : it.framed === 'star' ? 's' : 1 } : {}), ...(it.fin ? { f: it.fin } : {}), ...(th.u ? { u: th.u } : {}) };
     const n = play.got[i] || 0;
     const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0) + (e.cut[nm] || 0))); // 舊資料沒有 base：用 got 推回去
     if (base) e.base[nm] = base;
@@ -3390,11 +3390,11 @@ async function studioItem(design, card, qty, old) {
   }
   // 全圖卡：字那層（徽章、戰力、效果欄…）的遮罩 → 3D 卡把這層留在最前面（PNG，黑白的很小）
   let ui = null;
-  if (design.style === 'full') {
-    const ub = await new Promise((r) => fullUiMask(design, 120).toBlob(r, 'image/png'));
+  if (hasUi(design.style)) {
+    const ub = await new Promise((r) => uiMask(design, 120).toBlob(r, 'image/png'));
     if (ub) ui = { bytes: new Uint8Array(await ub.arrayBuffer()), mime: 'image/png' };
   }
-  return { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask, ui, noMask: !mask, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: design.style === 'monster' || design.style === 'full' ? design.style : 'duel', fin: FIN3D.includes(design.fin3d) ? design.fin3d : null, design };
+  return { name: (design.name || t('defaultPrize')).slice(0, LIMITS.name), rarity: design.rarity | 0, qty, img, mask, ui, noMask: !mask, media: old?.media || null, uid: old?.uid || newUid(), sticker: old?.sticker || null, framed: ['monster', 'full', 'star'].includes(design.style) ? design.style : 'duel', fin: FIN3D.includes(design.fin3d) ? design.fin3d : null, design };
 }
 // 做好的卡放進轉卡機：整張卡面＝獎品照片（framed），設計留在草稿裡可以再改；音樂＝獎品的影音
 async function addStudioCard({ design, card, music, target, qty, edit }) {
@@ -4323,7 +4323,7 @@ function openCardView(e, name) {
   cardPlayer?.stop();
   const md = it.md && mediaFromLink(it.md);
   $('v-tilt').parentElement.hidden = $('v-name').hidden = !!md;
-  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, ui: it.u || null, r: it.r, fin: it.f || finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: it.y === 'm' ? 'monster' : it.y === 'f' ? 'full' : it.y ? 'duel' : false };
+  const hdv = { t: it.t, s: it.s, b: it.b, st: it.st, ui: it.u || null, r: it.r, fin: it.f || finOf(e.fin, it.r), shape: e.kind === 'card' ? 'card' : 'round', name, framed: it.y === 'm' ? 'monster' : it.y === 'f' ? 'full' : it.y === 's' ? 'star' : it.y ? 'duel' : false };
   cardPlayer = md ? nowPlaying($('v-media'), md, { art: it.t, artNode: npHolo({ ...hdv, tag: false }).node, title: name, artist: titleOf(e), rarity: it.r }) : null;
   if (!md) $('v-media').textContent = '';
   // 有去背：背景層用「主體柔化掉」的圖、主體自己一層浮到最前面；沒有就整張一層（holo.js）

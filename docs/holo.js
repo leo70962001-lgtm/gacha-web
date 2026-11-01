@@ -48,7 +48,7 @@ function setGlitter() {
 //   卡面挖掉卡圖那一格（＋窗邊的內陰影）＝最前面的一層；卡圖背景在最後面、主體在中間 → 斜的時候卡圖在窗裡面動，什麼都不會跑出框
 //   位置照 cardstudio.js 的卡面（590×860）：遊戲王風正方形窗、寶可夢風橫的窗、全圖卡＝整張
 //   全圖卡有 ui（字那層的遮罩：徽章、戰力、標籤、效果欄、名字帶的真正形狀）→ 照它留在最前面；舊卡沒有 → 只留效果欄、名字帶兩塊
-const WIN = { duel: [70, 158, 450, 450], monster: [48, 108, 494, 336], full: [11, 11, 568, 838] };
+const WIN = { duel: [70, 158, 450, 450], monster: [48, 108, 494, 336], full: [11, 11, 568, 838], star: [16, 16, 558, 828] };
 const KEEP = { full: [[24, 532, 542, 212], [16, 742, 558, 106]] };
 const frames = new Map(); // style|卡面網址|ui（背景層：b|網址|ui）→ Promise<objectURL>
 const loadIm = (url) =>
@@ -209,7 +209,7 @@ export class Holo {
     el.classList.toggle('no-tag', d.tag === false || !!d.framed);
     el.classList.toggle('framed', !!d.framed); // カード工房的卡：圖本身就有框
     el.classList.toggle('fm', d.framed === 'monster'); // 寶可夢風：卡圖是橫的（閃的範圍不一樣）
-    el.classList.toggle('ff', d.framed === 'full'); // 全圖卡風：整張都是卡圖
+    el.classList.toggle('ff', d.framed === 'full' || d.framed === 'star'); // 全圖卡風、明星卡風：整張都是卡圖
     el.style.setProperty('--rc', `var(--r-${R})`);
     const back = d.s ? d.b || d.t : d.t;
     this.$('.t-photo').style.backgroundImage = `url("${back}")`;
