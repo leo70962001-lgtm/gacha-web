@@ -5108,7 +5108,7 @@ async function boot() {
     onGridCapsule: (i) => openOne(i),
     onGridCard: (i) => viewGridCard(i),
   });
-  window.__gacha = { machine, showResult, get play() { return play; }, get draft() { return draft; } }; // 除錯用
+  window.__gacha = { machine, showResult, addStudioCard, get play() { return play; }, get draft() { return draft; }, get shop() { return shop; } }; // 除錯用（addStudioCard：用腳本批次放卡）
   const ro = new ResizeObserver(() => updateInsets());
   ro.observe($('stage'));
   ro.observe($('hud').querySelector('.bottom'));
