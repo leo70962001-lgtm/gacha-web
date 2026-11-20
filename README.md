@@ -52,6 +52,20 @@
 - **深度往裡面**（同一天，使用者截了浮出框的預覽＋「立體感往裡面做 參考寶可夢的立體卡效果」）：工房的卡改成窗戶式 — holo.js `frameOverlay` 把卡面挖掉卡圖那格（遊戲王風正方形、寶可夢風橫的、全圖卡整張但字的那幾塊留著）＋窗邊內陰影 → `--frame` 放在最前面；主體 `translateZ(-15px) scale(1.0197)`、背景 `translateZ(-38px) scale(1.05)`（退多少放大多少，perspective 760px 正面看剛好對齊）；主體層 `inset: 0`（以前 5% 會錯位，看起來像跑出框）。機台 3D 卡的深度：框 165、主體 130（只在卡圖那格）、背景 95。照片獎品的「浮出框」照舊
 - **全圖卡字那層的遮罩**（同一天，使用者圈了徽章＋「去背的部分」：以前用長方形挖，徽章旁邊的臉一半浮一半不浮、斜的時候後面還有一份錯開的字）：`drawFullCard(d, null, W, { uiOnly: true })` 只畫字那層 → `fullUiMask(d, W)`（白＝徽章星形、戰力的字、角色標籤、外框一圈＋532 以下整段）。用在：`drawDesignMask` 主體沿它切；holo.js `frameOverlay(url, style, ui)` 照它把卡面放回窗裡（沒有 ui 的舊卡才用 `KEEP` 長方形）、`backFill(url, ui)` 背景層把字挖掉、模糊的自己一層層墊回去（不會看到第二份字）；機台 `drawCardLayers(..., ui)` → `framedDepth(style, 128, mask, ui)` 字跟框一樣 165、`inpaintBehind` 連字一起補。放進機台存 `item.ui`（120 px PNG，約 1.5 KB）→ 草稿 b64、連結 `json.u = [[獎品編號, 長度, 格式]]`（圖接在台紙圖後面，舊版忽略）、`cutLayers` 的 `u`（data URL）→ 結果卡 `ui`、收集簿 item `u` → 大卡 `hdv.ui`
 
+## 3D 閃卡 v3：SAR 全息閃卡（2026-11-20）
+
+使用者貼了 X 上 Gemini 做的「寶可夢 SAR／UR 全息閃卡 3D 懸浮動圖」（Python＋OpenCV 的提示詞：分區遮罩、光柵、虹彩、掃光、燙金、Sobel 微浮雕、四芒星、前後粒子、8 層厚度、金屬倒角、反向影子）＋「3d卡的效果參考這個 強化」。逐格看了參考影片，用 BOMB MAIDS 立繪合成的深色塔羅卡跟 `tools/maid_cards.js` 的明星卡對照。全部在 `web/holo.js`＋index.html 的「3D 閃卡 v3」那段 CSS。
+- **分區遮罩** `zoneMaps(url)`（300 px 寬算一次、快取在 `frames`）：dark（亮度低）、bright（亮度高）、pale（淺又不鮮豔，排除純白、皮膚、金線）、xp／xn／yp／yn（糊一下再 Sobel，強度用這張圖第 96 百分位正規化）、stars（16 px 一格最亮、周圍較暗、分開的點）、hue（鮮豔像素的色相直方圖）。三層各自算：`.t-back`（背景）、`.t-subj`（主體，`no-irid`）、`.t-face`（工房卡＋立體的框／字，`no-irid`）；做好那層加 `.zon`
+- **舊的整張染色關掉**：`.zon > .t-tint/.t-shine/.t-stint/.t-sshine` 不顯示（以前 レインボー 會把臉、衣服都染成彩虹）；金／レインボー／銀只留亮粉；遮罩還沒好之前 `.zpend` 先不染（算不出來才回到舊的）
+- 各層的新子元素：`z-irid`（暗部：細斜光柵＋各加工的底紋＋深色虹彩，screen）、`z-pale`（淺色背景：光柵＋淡彩虹，multiply）、`z-foil`（亮部：金／銀／彩虹反光帶，overlay）、`z-ex`／`z-ey`（白色，遮罩照光的方向換正負那張，opacity＝|傾斜|×`--emb`）
+- 底紋：holo 水波（repeating-radial）、texture 斜格子、rainbow 亮粉、gold 放射（repeating-conic）＋偏金；強度 `--irid`／`--foil` 照加工、`--emb` 照稀有度
+- 實體：`t-edge` 六片 3 px 框疊在 −2…−12 px（深淺交錯＝拉絲側面）、`t-rim` 2.5 px 金屬亮邊（conic，`--ra`＝光的角度）、影子 `translate(--tx * −18px, …)`、SR+ `t-aura` 主色光暈呼吸
+- 演出：`t-sweep` 115° 亮帶（背景 300%、`--sw` 每格算，3.4 秒一輪），`t-stars` 四芒星照亮帶算 opacity（`u`＝亮帶掃到那點的進度，公式在 placeStars），`t-pb`／`t-pf` 光粒（CSS 動畫，SR 只有後面、SSR 前後）；寬 < 150 px（`.tiny`，開店頁的小預覽）不放星星、光粒、光暈
+- 自己晃：5.2 秒一圈，Y ±17.6°、X ±10.6°、Z ±1.2°、上下 ±4 px（`tilt(x, y, moved, fy, rz)`）
+- `.t-glare` 以前浮在 40 px，斜的時候滑出卡外，在深色底上是一塊灰 → 貼在卡面（1 px）；只有照片獎品（主體浮在 30 px）還在 40 px，縮 0.947
+- **toBlob 很慢**：一直有動畫的頁面上 `canvas.toBlob` 要等瀏覽器空檔，一張 PNG 等快 1 秒（7 張遮罩＝7 秒，立體卡要 4 秒才出來）→ 遮罩、`frameOverlay`、`backFill` 都改 `toDataURL`（同步，7 張 17 ms），立體分層 0.3 秒就好
+- 轉卡機 3D 場景裡彈出來的卡（three.js 的 shader）沒動
+
 ## 畫面美化（2026-11-02）
 
 使用者：「優化界面跟美觀」。手機（375／320）、桌機（1280）、深色模式、中日英都截圖或量過（每頁找超出畫面寬度的元素）。

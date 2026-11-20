@@ -766,7 +766,8 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .t-fshine { padding: 14px; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; } /* 只有框那一圈 */
 .t-tint, .t-shine, .t-fshine, .t-stint, .t-sshine { display: none; }
 /* 反光（每張都有，一般卡只有這個）：光點附近亮、對角暗一點 */
-.t-glare { inset: 0; transform: translateZ(40px); background: radial-gradient(farthest-corner circle at var(--mx) var(--my), rgba(255,255,255,.55) 6%, rgba(255,255,255,.16) 30%, rgba(0,0,0,.16) 95%); opacity: calc(.3 + var(--fc) * .55); }
+.t-glare { inset: 0; transform: translateZ(1px); background: radial-gradient(farthest-corner circle at var(--mx) var(--my), rgba(255,255,255,.5) 0%, rgba(255,255,255,.14) 26%, rgba(0,0,0,0) 55%, rgba(0,0,0,.14) 100%); opacity: calc(.25 + var(--fc) * .5); } /* 貼在卡面上（以前浮在 40px，斜的時候會滑出卡外變成一塊灰） */
+.tilt.pop:not(.framed) .t-glare { transform: translateZ(40px) scale(.947); } /* 照片獎品：主體浮在 30px，反光要在它前面 */
 .t-tag { left: 10%; right: 10%; top: auto; bottom: 7%; padding: 6px 10px; text-align: center; background: rgba(28,35,64,.92); color: #fff; font-weight: 900; font-size: 15px; border-radius: 12px; border: 2px solid #fff; transform: translateZ(46px); box-shadow: 0 12px 20px rgba(0,0,0,.4); }
 .tilt.round .t-tag { bottom: 12%; }
 .tilt.no-tag .t-tag { display: none; }
@@ -809,6 +810,88 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .tilt.framed.pop .t-back { transform: translateZ(-38px) scale(1.05); }
 .tilt.framed.pop .t-photo { filter: none; }
 .tilt.framed.pop .t-subj { inset: 0; transform-origin: 50% 50%; transform: translateZ(-15px) scale(1.0197); clip-path: none; -webkit-mask-image: none; mask-image: none; }
+/* ===== 3D 閃卡 v3（使用者 2026-11-20：「3d卡的效果參考這個 強化」— 寶可夢 SAR 全息閃卡的 3D 懸浮動圖） =====
+   分區（holo.js 的 zoneMaps 從圖算遮罩）：暗部 z-irid 虹彩光柵、亮部 z-foil 燙金、z-ex／z-ey 線稿微浮雕；原圖的顏色留著（舊的整張 tint／shine 在有遮罩時關掉）
+   實體：t-edge 六層厚度、t-rim 金屬亮邊（最亮的地方跟著光 --ra 轉）、影子往傾斜的反方向跑、t-aura 背後呼吸的光暈
+   演出：t-sweep 斜掃的玻璃亮帶、t-stars 四芒星（亮帶掃過最亮，JS 控 opacity）、t-pb／t-pf 前後漂浮的光粒 */
+.tilt { --hue: 220; --tx: 0; --ty: 0; --ra: 0deg; --ex: 0; --ey: 0; --sw: 1; --irid: 0; --foil: 0; --emb: .3;
+  --e1: #9aa3b2; --e2: #eef1f5;
+  --rimg: conic-gradient(from var(--ra), #ffffff, #b3bac6 9%, #5c6474 22%, #c9cfd9 36%, #ffffff 50%, #8a93a2 64%, #4f5766 77%, #d5dae2 90%, #ffffff);
+  --f1: rgba(200, 208, 222, .7); --f2: #ffffff;
+  --irb: repeating-linear-gradient(-30deg, #d4106c 0%, #d48a10 6%, #10c46a 12%, #108ed4 18%, #7a10d4 24%, #d4106c 30%); }
+.tilt.fx-holo { --irid: .75; --foil: .35; --rimg: conic-gradient(from var(--ra), #ffffff, #ff9ccf 10%, #ffe28a 22%, #9cffc8 34%, #ffffff 50%, #8fd8ff 64%, #c7a2ff 78%, #ff9ccf 90%, #ffffff); }
+.tilt.fx-texture { --irid: .6; --foil: .4; }
+.tilt.fx-rainbow { --irid: 1; --foil: .75; --f1: rgba(255, 120, 200, .75); --f2: #fff3a8;
+  --rimg: conic-gradient(from var(--ra), #ffffff, #ff7ab8 8%, #ffd36b 18%, #7dffb0 30%, #6fd2ff 42%, #b28bff 54%, #ff7ab8 66%, #ffd36b 78%, #ffffff 90%); }
+.tilt.fx-gold { --irid: .5; --foil: .9; --e1: #8a6420; --e2: #e2bd62; --f1: rgba(200, 144, 28, .85); --f2: #ffe9a8;
+  --rimg: conic-gradient(from var(--ra), #fff6d0, #e3b85a 9%, #8a5e14 22%, #e9c46a 36%, #fffbe8 50%, #c08a2a 64%, #6e4a0e 77%, #f0cf72 90%, #fff6d0); }
+.tilt.fx-silver { --irid: .35; --foil: .75; }
+.tilt.r1 { --emb: .38; }
+.tilt.r2 { --emb: .48; }
+.tilt.r3 { --emb: .58; }
+
+/* 影子：往傾斜的反方向跑（光從亮點那邊打過來） */
+.t-shadow { transform: translateZ(-60px) translate(calc(var(--tx) * -18px), calc(18px + var(--ty) * 12px)); }
+/* 背後呼吸的光暈（主色）：SR 以上 */
+.t-aura { inset: -22% -30%; display: none; border-radius: 50% !important; transform: translateZ(-90px); background: radial-gradient(closest-side, hsl(var(--hue) 90% 66% / .5), hsl(var(--hue) 90% 55% / .18) 55%, transparent); animation: tAura 3.4s ease-in-out infinite; }
+.tilt:is(.r2, .r3) .t-aura { display: block; }
+@keyframes tAura { 50% { opacity: .5; scale: .9; } }
+/* 厚度：六片金屬框疊在卡後面（正面看不到，斜的時候從邊上露出來） */
+.t-edge { inset: 0; border: 3px solid var(--ec, var(--e1)); transform: translateZ(calc(var(--i) * -2px)); }
+/* 金屬亮邊：只有外面一圈，最亮的地方跟著光轉 */
+.t-rim { inset: 0; padding: 2.5px; transform: translateZ(.6px); background: var(--rimg); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: calc(.55 + var(--fc) * .45); }
+.tilt.pop:not(.framed) .t-rim { padding: 3px; }
+/* 斜掃的玻璃亮帶：R 淡淡的、SR／SSR 明顯 */
+.t-sweep { inset: 0; display: none; transform: translateZ(.8px); background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,.1) 45%, rgba(255,255,255,.45) 49.3%, rgba(255,255,255,.6) 50%, rgba(255,255,255,.45) 50.7%, rgba(255,255,255,.1) 55%, transparent 60%) calc(var(--sw) * 100%) calc(var(--sw) * 100%) / 300% 300% no-repeat; }
+.tilt.r1 .t-sweep { display: block; opacity: .3; }
+.tilt.r2 .t-sweep { display: block; opacity: .5; }
+.tilt.r3 .t-sweep { display: block; opacity: .65; }
+/* 四芒星：亮點上，JS 每格算 opacity／scale */
+.t-stars { transform: translateZ(2px); }
+.t-stars i { inset: auto; position: absolute; width: var(--s); height: var(--s); translate: -50% -50%; opacity: 0; border-radius: 0;
+  background: radial-gradient(closest-side, #fff, rgba(255,255,255,.85) 30%, transparent) center / 100% 9% no-repeat, radial-gradient(closest-side, #fff, rgba(255,255,255,.85) 30%, transparent) center / 9% 100% no-repeat, radial-gradient(closest-side, #fff 0 22%, hsl(var(--hue) 100% 88% / .6) 45%, transparent) center / 42% 42% no-repeat;
+  filter: drop-shadow(0 0 4px hsl(var(--hue) 100% 85% / .9)); }
+/* 光粒：後面 14 顆、前面 7 顆，SR 以上 */
+.t-parts { inset: -18% -24%; display: none; }
+.tilt:is(.r2, .r3) .t-parts { display: block; }
+.t-pb { transform: translateZ(-55px); }
+.t-pf { transform: translateZ(48px); }
+.tilt.r2 .t-pf { display: none; }
+.t-parts i { inset: auto; position: absolute; left: var(--x); top: var(--y); width: var(--z); height: var(--z); border-radius: 50%; background: hsl(var(--hue) 100% 92%); box-shadow: 0 0 6px 1px hsl(var(--hue) 100% 72% / .85); opacity: 0; animation: tPart var(--d) linear var(--dl) infinite; }
+@keyframes tPart { 0% { opacity: 0; transform: translate(0, 0); } 25%, 70% { opacity: var(--o); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)); } }
+.tilt.tiny :is(.t-stars, .t-parts, .t-aura) { display: none; }
+
+/* 分區（.zon＝那一層的遮罩做好了） */
+.z-irid, .z-foil, .z-ex, .z-ey { display: none; }
+.zon > :is(.t-tint, .t-shine, .t-stint, .t-sshine) { display: none !important; } /* 不再整張染色 */
+.tilt.zpend :is(.t-tint, .t-stint) { display: none !important; }
+/* 金／レインボー／銀：亮粉留著（只要亮粉、不要彩虹上色），照片很亮、沒什麼暗部的卡也閃 */
+.tilt:is(.fx-gold, .fx-rainbow, .fx-silver) .zon > .t-shine { display: block !important; background: var(--glitter) calc(var(--bx) * -1.5) calc(var(--by) * -1.5) / 150px 150px; mix-blend-mode: color-dodge; opacity: calc(.35 + var(--fc) * .4); filter: none; }
+/* 暗部：虹彩＋光柵（細斜線）＋各加工自己的底紋，跟著傾斜流動 */
+.zon:not(.no-irid) > .z-irid { display: block; -webkit-mask: var(--zd); mask: var(--zd); mix-blend-mode: screen; opacity: calc(var(--irid) * (.22 + var(--fc) * .45));
+  background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.55) 0 1.5px, transparent 1.5px 3.5px), var(--irb);
+  background-size: auto, 260% 260%; background-position: 0 0, calc(25% + var(--mx) / 2) calc(25% + var(--my) / 2); }
+/* ホロ：水波紋 */
+.tilt.fx-holo .zon > .z-irid { background-image: repeating-linear-gradient(45deg, rgba(0,0,0,.5) 0 1.5px, transparent 1.5px 3.5px), repeating-radial-gradient(circle at 18% 115%, transparent 0 9px, rgba(0,0,0,.45) 10px 12px), var(--irb); background-size: auto, auto, 260% 260%; background-position: 0 0, 0 0, calc(25% + var(--mx) / 2) calc(25% + var(--my) / 2); }
+/* テクスチャ：斜格子 */
+.tilt.fx-texture .zon > .z-irid { background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgba(0,0,0,.6) 6px 8px), repeating-linear-gradient(-45deg, transparent 0 6px, rgba(0,0,0,.6) 6px 8px), var(--irb); background-size: auto, auto, 260% 260%; background-position: 0 0, 0 0, calc(25% + var(--mx) / 2) calc(25% + var(--my) / 2); }
+/* レインボー：宇宙星斑（亮粉） */
+.tilt.fx-rainbow .zon > .z-irid { background-image: var(--glitter), repeating-linear-gradient(45deg, rgba(0,0,0,.5) 0 1.5px, transparent 1.5px 3.5px), var(--irb); background-size: 150px 150px, auto, 260% 260%; background-position: calc(var(--bx) * -1.2) calc(var(--by) * -1.2), 0 0, calc(25% + var(--mx) / 2) calc(25% + var(--my) / 2); background-blend-mode: screen, normal, normal; }
+/* 金：放射太陽紋，虹彩偏金 */
+.tilt.fx-gold .zon > .z-irid { background-image: repeating-conic-gradient(from 0deg at 50% 36%, rgba(0,0,0,.55) 0 2deg, transparent 2deg 5deg), repeating-linear-gradient(45deg, rgba(0,0,0,.45) 0 1.5px, transparent 1.5px 3.5px), var(--irb); background-size: auto, auto, 260% 260%; background-position: 0 0, 0 0, calc(25% + var(--mx) / 2) calc(25% + var(--my) / 2); filter: sepia(.5) saturate(1.4); }
+.tilt.fx-silver .zon > .z-irid { filter: saturate(.25) brightness(1.3); }
+/* 亮部：燙金／銀的反光帶，跟著光點走 */
+.zon > .z-foil { display: block; -webkit-mask: var(--zb); mask: var(--zb); mix-blend-mode: overlay; opacity: calc(var(--foil) * (.45 + var(--fc) * .55));
+  background: linear-gradient(110deg, transparent 18%, var(--f1) 36%, var(--f2) 47%, #fff 50%, var(--f2) 53%, var(--f1) 64%, transparent 82%) calc(var(--mx) * 1.3 - 15%) calc(var(--my) * 1.3 - 15%) / 280% 280% no-repeat; }
+/* 淺色、不鮮豔的地方（淺色背景、白）：ホロ／テクスチャ／レインボー＝淡淡的彩虹光柵，像真的全息貼紙（深色背景的卡靠 z-irid，淺色的靠這層）；主體那層不上 */
+.z-pale { display: none; }
+.tilt:is(.fx-holo, .fx-texture, .fx-rainbow) .zon:not(.no-irid) > .z-pale { display: block; -webkit-mask: var(--zp); mask: var(--zp); mix-blend-mode: multiply; opacity: calc(var(--irid) * (.42 + var(--fc) * .5));
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.6) 0 1.5px, transparent 1.5px 3.5px), var(--rb-30); background-size: auto, 260% 260%; background-position: 0 0, calc(25% + var(--mx) / 2) calc(25% + var(--my) / 2); }
+.tilt.fx-texture .zon:not(.no-irid) > .z-pale { background-image: var(--lat), var(--rb133); background-size: auto, 300% 300%; }
+/* 線稿的微浮雕：面向光的那一側亮（holo.js 照光的方向換 --zx／--zy） */
+.zon > :is(.z-ex, .z-ey) { display: block; background: #fff; mix-blend-mode: screen; }
+.zon > .z-ex { -webkit-mask: var(--zx); mask: var(--zx); opacity: calc(var(--ex) * var(--emb)); }
+.zon > .z-ey { -webkit-mask: var(--zy); mask: var(--zy); opacity: calc(var(--ey) * var(--emb)); }
 .app[data-mode="play"] .panel { display: none; }
 .app[data-mode="create"] .hud { display: none; }
 .stage { position: relative; min-height: 0; overflow: hidden; background: var(--stage); }
