@@ -435,7 +435,8 @@ export class Spectacle {
   }
 
   // 金蛋表面一閃一閃的亮點（跟著扭蛋動）
-  addGlints(group, n, card = false) {
+  // pts＝卡片正面的亮點（卡片座標，machine._makeCard 用 brightSpots 找的）：正面那幾顆就放在亮點上
+  addGlints(group, n, card = false, pts = null) {
     this.glints = this.glints || [];
     for (let i = 0; i < n; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.starTex, color: i % 2 ? '#fff6c8' : '#ffffff', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
@@ -443,6 +444,8 @@ export class Spectacle {
       s.position.copy(dir.multiplyScalar(0.068));
       // 卡片：亮點貼在卡面兩側（卡片 0.19 × 0.277）
       if (card) s.position.set(rnd(-0.08, 0.08), rnd(-0.12, 0.12), i % 2 ? 0.004 : -0.004);
+      const pt = card && i % 2 && pts?.[(i - 1) / 2];
+      if (pt) s.position.set(pt.x, pt.y, 0.006);
       s.renderOrder = 6;
       s.scale.setScalar(0.001);
       s.raycast = () => {};

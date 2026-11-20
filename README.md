@@ -64,7 +64,11 @@
 - 自己晃：5.2 秒一圈，Y ±17.6°、X ±10.6°、Z ±1.2°、上下 ±4 px（`tilt(x, y, moved, fy, rz)`）
 - `.t-glare` 以前浮在 40 px，斜的時候滑出卡外，在深色底上是一塊灰 → 貼在卡面（1 px）；只有照片獎品（主體浮在 30 px）還在 40 px，縮 0.947
 - **toBlob 很慢**：一直有動畫的頁面上 `canvas.toBlob` 要等瀏覽器空檔，一張 PNG 等快 1 秒（7 張遮罩＝7 秒，立體卡要 4 秒才出來）→ 遮罩、`frameOverlay`、`backFill` 都改 `toDataURL`（同步，7 張 17 ms），立體分層 0.3 秒就好
-- 轉卡機 3D 場景裡彈出來的卡（three.js 的 shader）沒動
+- 轉卡機 3D 場景裡翻開的卡（three.js 的 shader）：同一天接著做，見下一段
+- **機台的 3D 卡 v3**（`web/cardkit.js` 的 FS，使用者：「Yes, do it」）：正面 `uZone=1`（卡背 0，照舊）。GLSL 裡直接拿這一點的顏色分區（亮度、鮮豔度，跟 CSS 的 zoneMaps 同一組門檻），主體＝深度圖 `sw`、章／名字帶＝`ovm` 不上虹彩：暗部 screen 虹彩×光柵×各加工底紋、淺色 multiply 淡彩虹、亮部 overlay 反光帶、`lumAt` 四點取亮度做浮雕（光的方向＝`ptr`）；金／銀框、亮粉照舊；外圈金屬亮邊（描邊裡面 0.014–0.026 寬，`atan` 跟光的角度比）、`uRar` 控制的斜掃亮帶。`uRar`＝真的稀有度（`makeCard(..., layers, rarity)`）
+- 機台：卡邊材質金（`fm === 3`）／銀（其他加工）／白；SR+ 正面的星芒（`fx.addGlints(g, n, true, pts)`）放在 `brightSpots(front.photo)`（holo.js 匯出，跟 CSS 的四芒星同一個 `findSpots`）
+- **舊 bug**：工房的卡（framed）在機台裡深度是分段的（卡圖 95／主體 130／框、字 165），但 `sw = smoothstep(0.4, 0.7, depth)` 是給照片獎品的 → 主體只算 32%，人物跟補過的模糊背景混在一起、霧霧的。`drawCardLayers` 回傳 `framed`，cardkit `uSw` 改 0.40–0.47
+- 測試：預覽窗格隱藏時沒有 rAF → `renderer.setAnimationLoop(null)`、`clock.getDelta = () => 1/60`、手動 `_frame()`（MessageChannel 讓出）推進；`#h-btn` 一路按到 `machine.revealed`；WebGL 畫面要在 `_frame()` 後馬上 `toDataURL` 疊成 `<img>` 才截得到；`play.remaining` 只留要測的那張
 
 ## 畫面美化（2026-11-02）
 

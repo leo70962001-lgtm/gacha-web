@@ -3,6 +3,9 @@
 //   uMode 0＝一般卡（只有反光）、1＝ホロ（只有圖片窗的背景是虹色雷射＋直條紋，主體不閃）、
 //   2＝フルアート（整張斜格紋理＋虹光）、3＝レインボーレア＋金（整張亮粉、虹色、金框）
 //   每種都疊一層跟著光點走的反光（overlay），光點＝卡片斜的方向
+// v3（使用者 2026-11-20：「3d卡的效果參考這個 強化」→ 機台翻開的卡也照 SAR 全息閃卡）：正面（uZone）改成分區 —
+//   暗的地方虹彩光柵、淺色背景淡淡的彩虹、亮的地方燙金反光帶、線稿微浮雕，主體（深度圖的前面）跟字不上彩虹；
+//   再加金屬亮邊（跟著光轉）、斜掃的玻璃亮帶（R 以上）。卡背照舊（整張的閃法）
 import * as THREE from 'three';
 
 export const CARD_W = 0.19; // 公尺（剛好塞進出卡口 0.209 寬的細縫）
@@ -47,6 +50,7 @@ void main(){
 }`;
 const FS = `uniform sampler2D map; uniform float uMode; uniform float uTime; uniform float uWhite; uniform float uOpacity; uniform float uSil;
 uniform sampler2D photo; uniform sampler2D bgPhoto; uniform sampler2D depthMap; uniform sampler2D overMap; uniform float uLayered; uniform vec4 uWin; uniform float uDepth;
+uniform float uZone; uniform float uRar; uniform vec2 uSw;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vVo;
 // 圖片的深度：0.85＝背景退到卡面後面、−0.5＝主體浮到卡面前面（像 iPhone 空間照片的主體往前跳）
 float hgt(vec2 w) { return 0.85 - 1.35 * texture2D(depthMap, w).r; }
@@ -70,6 +74,11 @@ vec3 dodge(vec3 b, vec3 s) { return min(vec3(1.), b / max(vec3(0.02), 1. - s)); 
 vec3 overlay3(vec3 b, vec3 s) { return mix(2. * b * s, 1. - 2. * (1. - b) * (1. - s), step(0.5, b)); }
 vec3 contrastSat(vec3 c, float k, float sat) { c = (c - 0.5) * k + 0.5; float l = dot(c, vec3(.299, .587, .114)); return clamp(mix(vec3(l), c, sat), 0., 1.); }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+// 浮雕用：圖片窗裡（照片／補好的背景照主體權重混）或卡面的亮度
+float lumAt(vec2 uv, float lay, float s) {
+  vec3 c = lay > 0.5 ? mix(texture2D(bgPhoto, uv).rgb, texture2D(photo, uv).rgb, s) : texture2D(map, uv).rgb;
+  return dot(c, vec3(.2126, .7152, .0722));
+}
 // 沿著視線往卡片裡面走（視差遮擋）：從最前面（−0.5）走到最後面（0.85），第一次走到「表面底下」的地方就是看到的點
 //   之前只逼近三次，主體邊緣斜著看會有一條背景色的帶子；一步一步走＋最後一段內插就不會
 vec3 march(vec2 z, vec2 d) {
@@ -100,6 +109,8 @@ void main(){
   vec4 ov = uLayered > 0.5 ? texture2D(overMap, vUv + par * 0.018) : vec4(0.);
   float sw = 0.; // 主體（白）／背景（黑）
   float inArt = 0.; // 圖片窗（不是框）
+  vec2 ep = vUv; // 浮雕取亮度的地方（圖片窗裡＝照片上的點）
+  float eLay = 0.;
   if (ov.a > 0.5) col = ov.rgb;
   else {
     // 主體跑出框：框的地方，如果主體位移過來、而且是「前面」的東西，就畫在框上面
@@ -113,9 +124,11 @@ void main(){
       // 3D 照片：背景退後、主體浮出
       vec2 p = clamp(hit.xy, 0.002, 0.998);
       // 落在背景 → 用「主體補掉」的背景圖（不然斜的時候背景裡會再看到一次主體的邊）
-      sw = smoothstep(0.4, 0.7, texture2D(depthMap, p).r);
+      sw = smoothstep(uSw.x, uSw.y, texture2D(depthMap, p).r); // 照片獎品 0.4–0.7；工房的卡 0.40–0.47（卡圖 95＝0.37、主體 130＝0.51）
       inArt = 1.;
       col = mix(texture2D(bgPhoto, p).rgb, texture2D(photo, p).rgb, sw);
+      ep = p;
+      eLay = 1.;
       // 窗框落在圖片上的影子：往卡片斜的方向偏（凹進去的感覺）
       vec2 ws = w + par * 0.035;
       float e = min(min(ws.x, 1. - ws.x), min(ws.y, 1. - ws.y));
@@ -134,7 +147,68 @@ void main(){
   float fc = clamp(length(par) * 1.7, 0., 1.); // 離中間多遠＝多斜（越斜越亮）
   float spot = 1. - smoothstep(0.0, 0.85, distance(vUv * vec2(0.686, 1.), ptr * vec2(0.686, 1.)));
   float I = 0.3 + 0.7 * fc;
-  if (uMode > 0.5 && uMode < 1.5) {
+  if (uZone > 0.5) {
+    // ---- v3 分區（正面）：照這一點本身的亮度、鮮豔度分區；主體（sw）跟章、名字帶不上虹彩 ----
+    float m = uMode;
+    float art = uLayered > 0.5 ? inArt : 1.;
+    float zw = art * (1. - ovm);
+    vec3 base = col;
+    float L = dot(base, vec3(.2126, .7152, .0722));
+    float mxc = max(base.r, max(base.g, base.b));
+    float S = mxc > 0.001 ? (mxc - min(base.r, min(base.g, base.b))) / mxc : 0.;
+    float subj = inArt * sw;
+    float dark = smoothstep(0.74, 0.16, L) * (1. - subj) * zw;
+    float pale = smoothstep(0.55, 0.75, L) * (1. - smoothstep(0.9, 0.97, L)) * (1. - smoothstep(0.1, 0.32, S)) * (1. - subj) * zw;
+    float brt = smoothstep(0.6, 0.9, L) * zw;
+    vec2 q = vec2(vUv.x * 0.686, vUv.y);
+    float grat = 0.5 + 0.5 * sin((q.x + q.y) * 720.); // 細斜光柵
+    float pat = 1.;
+    if (m > 0.5 && m < 1.5) pat = 0.55 + 0.45 * sin(length(q - vec2(0.1, -0.12)) * 260.); // ホロ：水波紋
+    else if ((m > 1.5 && m < 2.5) || m > 4.5) { float d1 = abs(sin((q.x + q.y) * 160.)); float d2 = abs(sin((q.x - q.y) * 160.)); pat = 0.35 + 0.65 * smoothstep(0.25, 0., min(d1, d2)); } // テクスチャ・銀：斜格子
+    else if (m > 2.5 && m < 3.5) pat = 0.5 + 0.5 * sin(atan(q.y - 0.64, q.x - 0.343) * 90.); // 金：放射太陽紋
+    vec3 rb = sunK(dot(vUv, vec2(0.5, 0.87)) * 1.7 + par.x * 1.8 - par.y * 1.3 + uTime * 0.03);
+    float iridK = m < 0.5 ? 0. : m < 1.5 ? .75 : m < 2.5 ? .6 : m < 3.5 ? .5 : m < 4.5 ? 1. : .35;
+    vec3 irc = (m > 2.5 && m < 3.5) ? mix(rb, vec3(1., .78, .35), .45) : m > 4.5 ? vec3(dot(rb, vec3(.333))) : rb;
+    // 暗部：虹彩×光柵×底紋（screen）
+    vec3 ir = irc * 0.8 * grat * pat * dark * iridK * (0.25 + 0.5 * fc);
+    col = 1. - (1. - col) * (1. - ir);
+    // 淺色背景：淡淡的彩虹（multiply）— ホロ、テクスチャ、レインボー
+    float paleK = ((m > 0.5 && m < 2.5) || (m > 3.5 && m < 4.5)) ? iridK : 0.;
+    vec3 pc = sun(dot(vUv, vec2(0.5, 0.87)) * 1.7 + par.x * 1.8 - par.y * 1.3);
+    col *= mix(vec3(1.), pc * (0.78 + 0.22 * grat) * ((m > 1.5 && m < 2.5) ? 0.85 + 0.15 * pat : 1.), pale * paleK * (0.42 + 0.5 * fc));
+    // 亮部：燙金／銀／虹的反光帶，跟著光點走（overlay）
+    float fb = exp(-pow((dot(q, vec2(0.8, 0.6)) - (0.62 + par.x * 1.1 + par.y * 0.7)) / 0.16, 2.));
+    vec3 fcol = (m > 2.5 && m < 3.5) ? vec3(1., .86, .5) : (m > 3.5 && m < 4.5) ? rb : vec3(1.);
+    float foilK = m < 0.5 ? 0.15 : m < 2.5 ? .35 : m < 3.5 ? .9 : .75;
+    col = mix(col, overlay3(col, fcol), brt * fb * foilK * (0.45 + 0.55 * fc));
+    // 線稿的微浮雕：亮度當高度，面向光點那一側亮
+    vec2 ts = eLay > 0.5 ? 1.5 / vec2(textureSize(photo, 0)) : 1.5 / vec2(textureSize(map, 0));
+    float gx = lumAt(ep + vec2(ts.x, 0.), eLay, sw) - lumAt(ep - vec2(ts.x, 0.), eLay, sw);
+    float gy = lumAt(ep + vec2(0., ts.y), eLay, sw) - lumAt(ep - vec2(0., ts.y), eLay, sw);
+    vec2 ld = ptr - 0.5;
+    float emb = clamp(-(gx * ld.x + gy * ld.y) * 3.5, 0., 0.6); // 字的邊（對比很強）不要變成白框
+    col += vec3(emb) * (0.22 + 0.06 * uRar) * zw * min(1., length(ld) * 2.2);
+    // 金框、銀框、亮粉（照舊，主體上淡一點）
+    if (frame > 0.5 && m > 2.5 && m < 3.5) {
+      float lum = dot(col, vec3(.3, .59, .11));
+      col = mix(col, mix(vec3(.55, .33, .05), vec3(1., .86, .45), smoothstep(0.15, 0.9, lum + 0.35 * spot)), 0.65);
+    }
+    if (frame > 0.5 && m > 4.5) {
+      float lum = dot(col, vec3(.3, .59, .11));
+      col = mix(col, mix(vec3(.34, .37, .44), vec3(.96, .97, 1.), smoothstep(0.25, 1.15, lum + 0.3 * spot)), 0.45);
+    }
+    if (m > 2.5) {
+      vec2 cell = vUv * vec2(120., 175.);
+      vec2 id = floor(cell);
+      vec2 f = fract(cell) - 0.5;
+      float h1 = hash(id), h2 = hash(id + 7.3), h3 = hash(id + 19.1);
+      float tw = sin(h1 * 40. + par.x * (18. + 30. * h2) + par.y * (18. + 30. * h3) + uTime * 0.6);
+      float g = smoothstep(0.9, 1., tw) * smoothstep(0.42, 0.0, length(f)) * step(0.4, h2) * (1. - 0.8 * subj) * (1. - ovm);
+      vec3 gc = m > 4.5 ? vec3(1.) : (frame > 0.5 && m < 3.5) ? vec3(1., .9, .55) : sun(h3 + par.x * 0.5);
+      col = dodge(col, gc * g * (0.5 + 0.5 * spot));
+      col += gc * g * 0.5;
+    }
+  } else if (uMode > 0.5 && uMode < 1.5) {
     // ホロ（regular holo）：110° 的六色雷射（400% 大、斜的時候反方向滑）× 直的細掃描線 × 兩組會干涉的直條（3%）
     float t = dot(vUv, vec2(0.94, -0.34)) * 2.2 - par.x * 2.6 + par.y * 3.5;
     vec3 rb = sunK(t);
@@ -187,6 +261,26 @@ void main(){
   float gv = mix(1., 0., smoothstep(0.08, 0.95, gd));
   float ga = mix(0.8, 0.45, smoothstep(0.1, 0.9, gd));
   col = mix(col, overlay3(col, vec3(gv)), ga * (0.18 + 0.22 * fc));
+  if (uZone > 0.5) {
+    // 金屬亮邊：外框描邊裡面一圈（512 px 寬的卡面：描邊 0–7、框 7–18 px），最亮的地方跟著光點轉
+    float dx = min(vUv.x, 1. - vUv.x);
+    float dy = min(vUv.y, 1. - vUv.y) / 0.686;
+    float dq = min(dx, dy);
+    float rimB = smoothstep(0.012, 0.016, dq) * smoothstep(0.027, 0.021, dq);
+    vec2 lv = ptr - 0.5;
+    float ang = atan((vUv.y - 0.5) / 0.686, vUv.x - 0.5);
+    float lit = 0.5 + 0.5 * cos(ang - atan(lv.y, lv.x));
+    lit = pow(lit, 3.) * (0.4 + 0.6 * fc) + 0.15;
+    vec3 rimC = (uMode > 2.5 && uMode < 3.5) ? mix(vec3(.45, .3, .06), vec3(1., .95, .75), lit)
+      : ((uMode > 0.5 && uMode < 1.5) || (uMode > 3.5 && uMode < 4.5)) ? mix(vec3(.35, .38, .48), vec3(1.), lit) * mix(vec3(1.), sun(ang * 0.32 + lv.x), 0.45)
+      : mix(vec3(.32, .35, .42), vec3(1.), lit);
+    col = mix(col, rimC, rimB * 0.9);
+    // 斜掃的玻璃亮帶：3.4 秒一次（中間停一下），斜的時候往同一邊推；SR 以上明顯、R 淡淡的
+    float sp = fract(uTime / 3.4) * 1.9 - 0.45 + par.x * 0.3;
+    float s2 = vUv.x * 0.9 + (1. - vUv.y) * 0.45;
+    float band = exp(-pow((s2 - sp) / 0.045, 2.)) + 0.35 * exp(-pow((s2 - sp) / 0.12, 2.));
+    col += vec3(band) * (uRar < 0.5 ? 0. : uRar < 1.5 ? 0.12 : uRar < 2.5 ? 0.2 : 0.26);
+  }
   if (uSil > 0.001) {
     // 剪影：整張變暗、四周亮一圈稀有度色（SSR 彩虹、SR 金、其他藍）
     float d = min(min(vUv.x, 1. - vUv.x), min(vUv.y, 1. - vUv.y));
@@ -205,6 +299,7 @@ function faceMat(tex, mode) {
     uniforms: {
       map: { value: tex }, uMode: { value: mode }, uTime: { value: 0 }, uWhite: { value: 0 }, uOpacity: { value: 1 }, uSil: { value: 0 },
       photo: { value: null }, bgPhoto: { value: null }, depthMap: { value: null }, overMap: { value: null }, uLayered: { value: 0 }, uWin: { value: new THREE.Vector4() }, uDepth: { value: 0.2 },
+      uZone: { value: 0 }, uRar: { value: 0 }, uSw: { value: new THREE.Vector2(0.4, 0.7) },
     },
     vertexShader: VS,
     fragmentShader: FS,
@@ -222,11 +317,13 @@ export function cardTex(canvas) {
 }
 
 // 一張卡：front／back＝貼圖（back 是共用的，不跟著卡片丟掉）；mode＝閃卡種類
-// layers＝{ photo, depth, win:[u0,v0,u1,v1] }：正面的圖片窗做 3D 視差
-export function makeCard(frontTex, backTex, frontMode, backMode, edgeMat, layers = null) {
+// layers＝{ photo, depth, win:[u0,v0,u1,v1] }：正面的圖片窗做 3D 視差；rarity＝真的稀有度（玻璃亮帶的強弱）
+export function makeCard(frontTex, backTex, frontMode, backMode, edgeMat, layers = null, rarity = 0) {
   geos();
   const g = new THREE.Group();
   const fm = faceMat(frontTex, frontMode);
+  fm.uniforms.uZone.value = 1; // 正面用 v3 分區閃法
+  fm.uniforms.uRar.value = rarity;
   if (layers) {
     fm.uniforms.photo.value = layers.photo;
     fm.uniforms.bgPhoto.value = layers.bg || layers.photo;
@@ -234,6 +331,8 @@ export function makeCard(frontTex, backTex, frontMode, backMode, edgeMat, layers
     fm.uniforms.overMap.value = layers.over;
     fm.uniforms.uWin.value.set(...layers.win);
     fm.uniforms.uLayered.value = 1;
+    // 工房的卡：深度是分段的，主體 0.51 → 以前用 0.4–0.7 只算三成主體，人物跟補過的模糊背景混在一起變霧霧的
+    if (layers.framed) fm.uniforms.uSw.value.set(0.4, 0.47);
   }
   const bm = faceMat(backTex, backMode);
   const front = new THREE.Mesh(faceGeo, fm);

@@ -476,6 +476,7 @@ export function drawCardLayers(item, thumb, rarity = item.rarity, mask = null, u
     hg.drawImage(um, 0, 0);
   }
   return {
+    framed: !!item.framed, // 深度是分段的（卡圖 95／主體 130／框、字 165）→ cardkit 判斷主體的門檻不一樣
     frame,
     photo,
     bg: hole ? inpaintBehind(photo, hole) : null,

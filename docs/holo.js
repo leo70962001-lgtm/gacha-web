@@ -147,6 +147,69 @@ function keep(key, p) {
   return p;
 }
 
+// 四芒星的位置：16 px 一格取最亮的點（周圍要暗一點才像亮點，整片白的不算），挑亮又分得開的幾個（0–1 座標）
+//   CSS 閃卡（zoneMaps）、轉卡機的 3D 卡（machine.js 的亮點星芒）共用
+function findSpots(L, A, W, H, max = 7) {
+  const cell = 16;
+  const cand = [];
+  for (let cy = 0; cy < H; cy += cell)
+    for (let cx = 0; cx < W; cx += cell) {
+      let best = -1;
+      let bx = 0;
+      let by = 0;
+      for (let y = cy; y < Math.min(H, cy + cell); y++)
+        for (let x = cx; x < Math.min(W, cx + cell); x++) {
+          const i = y * W + x;
+          const v = L[i] * A[i];
+          if (v > best) {
+            best = v;
+            bx = x;
+            by = y;
+          }
+        }
+      let ring = 0;
+      let rk = 0;
+      for (const [dx, dy] of [[-6, 0], [6, 0], [0, -6], [0, 6], [-4, -4], [4, 4], [-4, 4], [4, -4]]) {
+        const xx = bx + dx;
+        const yy = by + dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        ring += L[yy * W + xx];
+        rk++;
+      }
+      const pop = best - (rk ? ring / rk : best);
+      if (best > 0.72) cand.push({ x: bx / W, y: by / H, v: best + pop * 1.5 });
+    }
+  cand.sort((a, b) => b.v - a.v);
+  const out = [];
+  for (const s of cand) {
+    if (out.length >= max) break;
+    if (s.x < 0.06 || s.x > 0.94 || s.y < 0.04 || s.y > 0.96) continue;
+    if (out.every((t) => Math.hypot((t.x - s.x) * W, (t.y - s.y) * H) > W * 0.16)) out.push(s);
+  }
+  return out;
+}
+// 圖（canvas／img）→ 亮點（3D 卡用）
+export function brightSpots(src, max = 6) {
+  const sw = src?.width || 0;
+  const sh = src?.height || 0;
+  if (!sw || !sh) return [];
+  const W = 300;
+  const H = Math.max(8, Math.round((W * sh) / sw));
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(src, 0, 0, W, H);
+  const px = g.getImageData(0, 0, W, H).data;
+  const L = new Float32Array(W * H);
+  const A = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    L[i] = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
+    A[i] = px[i * 4 + 3] / 255;
+  }
+  return findSpots(L, A, W, H, max);
+}
+
 // 分區遮罩（參考寶可夢 SAR 閃卡的做法：照圖本身的亮度、邊緣分區，原圖不重畫）：
 //   dark＝暗的地方（背景、深色衣服）→ 虹彩光柵；bright＝亮的地方（金線、白色）→ 燙金反光；pale＝淺又不鮮豔（淺色背景）→ 淡淡的全息；
 //   xp／xn／yp／yn＝亮度的 Sobel 梯度（四個方向各一張）→ 光從哪邊來就亮哪一張（線稿邊緣的微浮雕）；
@@ -252,44 +315,7 @@ function zoneMaps(url) {
       YP.data[o + 3] = GY[i] > 0 ? 255 * gy : 0;
       YN.data[o + 3] = GY[i] < 0 ? 255 * gy : 0;
     }
-    // 四芒星：16 px 一格取最亮的點，挑亮又分得開的幾個
-    const cell = 16;
-    const cand = [];
-    for (let cy = 0; cy < H; cy += cell)
-      for (let cx = 0; cx < W; cx += cell) {
-        let best = -1;
-        let bx = 0;
-        let by = 0;
-        for (let y = cy; y < Math.min(H, cy + cell); y++)
-          for (let x = cx; x < Math.min(W, cx + cell); x++) {
-            const i = y * W + x;
-            const v = L[i] * A[i];
-            if (v > best) {
-              best = v;
-              bx = x;
-              by = y;
-            }
-          }
-        // 周圍要暗一點才像亮點（整片白的不算）
-        let ring = 0;
-        let rk = 0;
-        for (const [dx, dy] of [[-6, 0], [6, 0], [0, -6], [0, 6], [-4, -4], [4, 4], [-4, 4], [4, -4]]) {
-          const xx = bx + dx;
-          const yy = by + dy;
-          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
-          ring += L[yy * W + xx];
-          rk++;
-        }
-        const pop = best - (rk ? ring / rk : best);
-        if (best > 0.72) cand.push({ x: bx / W, y: by / H, v: best + pop * 1.5 });
-      }
-    cand.sort((a, b) => b.v - a.v);
-    const stars = [];
-    for (const s of cand) {
-      if (stars.length >= 7) break;
-      if (s.x < 0.06 || s.x > 0.94 || s.y < 0.04 || s.y > 0.96) continue;
-      if (stars.every((t) => Math.hypot((t.x - s.x) * W, (t.y - s.y) * H) > W * 0.16)) stars.push(s);
-    }
+    const stars = findSpots(L, A, W, H);
     let hi = 0;
     for (let i = 1; i < 36; i++) if (hues[i] > hues[hi]) hi = i;
     const sum = hues.reduce((a, b) => a + b, 0);

@@ -5,7 +5,8 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { sfx } from './sfx.js';
 import { RARITY, drawLid, drawPrice, drawArrow, drawLabel, drawCard, drawSide, drawBoard, drawCardBack, CARD_PX, CARD_WIN } from './decor.js';
-import { makeCard, cardTex, stepCards, CARD_H } from './cardkit.js';
+import { makeCard, cardTex, stepCards, CARD_H, CARD_W } from './cardkit.js';
+import { brightSpots } from './holo.js';
 import { t } from './i18n.js';
 import { Spectacle, TIERS } from './fx.js';
 
@@ -552,6 +553,9 @@ export class Machine {
     // 卡背（N/R 一般、SR 金、SSR 彩虹）與卡邊
     this.backTex = [0, 0, 2, 3].map((tier) => cardTex(drawCardBack(this.art.cardback, tier)));
     this.cardEdge = toon({ color: 0xffffff });
+    // 卡邊（厚度）：金的加工＝金邊、ホロ／テクスチャ／レインボー／銀＝銀邊（使用者 2026-11-20：SAR 閃卡的金屬卡邊）
+    this.cardEdgeGold = toon({ color: 0xd9b04e });
+    this.cardEdgeSilver = toon({ color: 0xc3cad6 });
     this.stickTargets.card = stickables(gltf.scene, this.decals);
     this.kinds.card = { group: cardG, handle, handleBase: this.handleBase, slotHit: this.slotHit, slotRing: this.slotRing, decals: this.decals, mats: cm };
     Object.assign(this, keep); // 目前還是扭蛋機，setKind 再切
@@ -654,11 +658,18 @@ export class Machine {
       const { x, y, w, h } = CARD_WIN;
       const depth = cardTex(front.depth);
       depth.colorSpace = THREE.NoColorSpace;
-      layers = { photo: cardTex(front.photo), bg: front.bg ? cardTex(front.bg) : null, depth, over: cardTex(front.over), win: [x / W, 1 - (y + h) / H, (x + w) / W, 1 - y / H] };
+      layers = { photo: cardTex(front.photo), bg: front.bg ? cardTex(front.bg) : null, depth, over: cardTex(front.over), win: [x / W, 1 - (y + h) / H, (x + w) / W, 1 - y / H], framed: !!front.framed };
     }
-    const g = makeCard(cardTex(face || drawCardBack(null, 0)), this.backTex[shown], fm, bm, this.cardEdge, layers);
+    const edge = fm === 3 ? this.cardEdgeGold : fm > 0 ? this.cardEdgeSilver : this.cardEdge;
+    const g = makeCard(cardTex(face || drawCardBack(null, 0)), this.backTex[shown], fm, bm, edge || this.cardEdge, layers, rarity);
     addOutline(g.userData.edge, 0.0024, this.hullCache);
-    if (shown >= 2) this.show.addGlints(g, shown === 3 ? 6 : 4, true);
+    // 亮點星芒：正面的放在圖上最亮的幾個點（holo.js 的 brightSpots，跟 CSS 閃卡同一套），背面照舊隨便放
+    let pts = null;
+    if (front?.photo && rarity >= 2) {
+      const [u0, v0, u1, v1] = layers.win;
+      pts = brightSpots(front.photo, rarity === 3 ? 5 : 3).map((p) => ({ x: (u0 + p.x * (u1 - u0) - 0.5) * CARD_W, y: (v1 - p.y * (v1 - v0) - 0.5) * CARD_H }));
+    }
+    if (shown >= 2) this.show.addGlints(g, shown === 3 ? 6 : 4, true, pts);
     g.userData.upgrade = () => {
       g.userData.setBack(this.backTex[3], this.backModes?.[3] ?? 3);
       this.show.addGlints(g, 3, true);
