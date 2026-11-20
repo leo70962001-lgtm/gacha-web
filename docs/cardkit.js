@@ -179,7 +179,8 @@ void main(){
     // 亮部：燙金／銀／虹的反光帶，跟著光點走（overlay）
     float fb = exp(-pow((dot(q, vec2(0.8, 0.6)) - (0.62 + par.x * 1.1 + par.y * 0.7)) / 0.16, 2.));
     vec3 fcol = (m > 2.5 && m < 3.5) ? vec3(1., .86, .5) : (m > 3.5 && m < 4.5) ? rb : vec3(1.);
-    float foilK = m < 0.5 ? 0.15 : m < 2.5 ? .35 : m < 3.5 ? .9 : .75;
+    fcol = mix(fcol, vec3(1.), subj); // 人物身上的反光只用白的（不染色，使用者：「要讓圖看的到」）
+    float foilK = (m < 0.5 ? 0.15 : m < 2.5 ? .35 : m < 3.5 ? .9 : .6) * (1. - 0.6 * subj);
     col = mix(col, overlay3(col, fcol), brt * fb * foilK * (0.45 + 0.55 * fc));
     // 線稿的微浮雕：亮度當高度，面向光點那一側亮
     vec2 ts = eLay > 0.5 ? 1.5 / vec2(textureSize(photo, 0)) : 1.5 / vec2(textureSize(map, 0));
@@ -279,7 +280,7 @@ void main(){
     float sp = fract(uTime / 3.4) * 1.9 - 0.45 + par.x * 0.3;
     float s2 = vUv.x * 0.9 + (1. - vUv.y) * 0.45;
     float band = exp(-pow((s2 - sp) / 0.045, 2.)) + 0.35 * exp(-pow((s2 - sp) / 0.12, 2.));
-    col += vec3(band) * (uRar < 0.5 ? 0. : uRar < 1.5 ? 0.12 : uRar < 2.5 ? 0.2 : 0.26);
+    col += vec3(band) * (uRar < 0.5 ? 0. : uRar < 1.5 ? 0.1 : uRar < 2.5 ? 0.16 : 0.2);
   }
   if (uSil > 0.001) {
     // 剪影：整張變暗、四周亮一圈稀有度色（SSR 彩虹、SR 金、其他藍）

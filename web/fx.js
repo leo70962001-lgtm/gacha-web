@@ -238,8 +238,9 @@ export class Spectacle {
         this.seam.material.color.set(BEAM[3]);
         this.capLight.color.set(BEAM[3]);
         sfx.upgrade();
-        this._coreFlash(home, '#fff3c4', 0.35, 0.35);
-        this._ring(home, '#ffd54a', 0, 0.45, 0.5);
+        const bk = this._behind(home);
+        this._coreFlash(bk, '#fff3c4', 0.35, 0.35);
+        this._ring(bk, '#ffd54a', 0, 0.45, 0.5);
         m.cb.onUpgrade?.();
       }
     });
@@ -264,8 +265,9 @@ export class Spectacle {
     this.seam.material.opacity = 0;
     this.aura.removeFromParent();
     this.aura.material.opacity = 0;
-    // 中心爆光
-    this._coreFlash(at, BEAM[rarity], T.glow, rarity >= 2 ? 0.7 : 0.5);
+    // 中心爆光（轉卡機：光芒、中心光、光圈、光柱都在卡片後面，見 _behind）
+    const bk = this._behind(at);
+    this._coreFlash(bk, BEAM[rarity], T.glow, rarity >= 2 ? 0.7 : 0.5);
     this._placeLight(at);
     this.capLight.color.set(BEAM[rarity]);
     const L = this.capLight;
@@ -278,7 +280,7 @@ export class Spectacle {
       u.uC.value.set(i ? '#ffffff' : R.glow);
       u.uN.value = [8, 12, 16, 20][rarity] + i * 6;
       u.uRainbow.value = rarity === 3 && i === 0 ? 1 : 0;
-      r.position.copy(at);
+      r.position.copy(bk);
       r.visible = true;
       const sc = [0.3, 0.42, 0.56, 0.72][rarity] * (i ? 0.8 : 1); // 鏡頭前 1.2 m，太大會整片白
       const dur = [1.2, 1.5, 2.6, 3.4][rarity];
@@ -291,11 +293,11 @@ export class Spectacle {
       });
     });
     // 衝擊波
-    for (let i = 0; i < T.rings; i++) this._ring(at, i === 0 ? '#ffffff' : BEAM[rarity], i * 0.14, 0.75 + i * 0.12, [0, 0.55, 0.75, 1.0][rarity] + i * 0.15);
+    for (let i = 0; i < T.rings; i++) this._ring(bk, i === 0 ? '#ffffff' : BEAM[rarity], i * 0.14, 0.75 + i * 0.12, [0, 0.55, 0.75, 1.0][rarity] + i * 0.15);
     // 光柱
     if (T.pillar) {
       const p = this.pillar;
-      p.position.copy(at);
+      p.position.copy(bk);
       p.material.uniforms.uC.value.set(BEAM[rarity]);
       p.visible = true;
       m.tween(rarity === 3 ? 2.6 : 1.8, (k) => {
@@ -338,6 +340,17 @@ export class Spectacle {
     if (T.coins) this._coinRain(at, Math.round(T.coins * red));
     // 鏡頭震動
     if (T.camShake && !m.reduced) m.shakeT = T.camShake;
+  }
+
+  // 轉卡機（使用者 2026-11-20：「要讓圖看的到」）：光芒、中心光、光圈、光柱以前永遠畫在最上面、又剛好在卡片正中間 → 卡面整片白
+  //   → 往鏡頭反方向推到卡片後面 10 cm、正對鏡頭、打開深度測試：卡片擋住，只從四周透出來（像參考的背光）；轉蛋機照舊（扭蛋要被光包住）
+  _behind(at) {
+    const card = this.m.kind === 'card';
+    for (const mat of [...this.rays.map((r) => r.material), this.core.material, ...this.rings.map((r) => r.material), this.pillar.material]) mat.depthTest = card;
+    if (!card) return at;
+    // 光芒、光柱是很大的平面：正對鏡頭（不然斜的那一邊會跑到卡片前面）
+    for (const o of [...this.rays, this.pillar]) o.quaternion.copy(this.m.camera.quaternion);
+    return at.clone().addScaledVector(at.clone().sub(this.m.camera.position).normalize(), 0.1);
   }
 
   // 補光放在扭蛋和鏡頭之間、偏上（放在扭蛋中心會把殼內側照爆）
@@ -413,7 +426,7 @@ export class Spectacle {
     const r = this.rays[0];
     const u = r.material.uniforms;
     this.persisting = true;
-    r.position.copy(at);
+    r.position.copy(this._behind(at));
     r.visible = true;
     u.uRainbow.value = 1;
     u.uN.value = 20;

@@ -68,6 +68,8 @@
 - **機台的 3D 卡 v3**（`web/cardkit.js` 的 FS，使用者：「Yes, do it」）：正面 `uZone=1`（卡背 0，照舊）。GLSL 裡直接拿這一點的顏色分區（亮度、鮮豔度，跟 CSS 的 zoneMaps 同一組門檻），主體＝深度圖 `sw`、章／名字帶＝`ovm` 不上虹彩：暗部 screen 虹彩×光柵×各加工底紋、淺色 multiply 淡彩虹、亮部 overlay 反光帶、`lumAt` 四點取亮度做浮雕（光的方向＝`ptr`）；金／銀框、亮粉照舊；外圈金屬亮邊（描邊裡面 0.014–0.026 寬，`atan` 跟光的角度比）、`uRar` 控制的斜掃亮帶。`uRar`＝真的稀有度（`makeCard(..., layers, rarity)`）
 - 機台：卡邊材質金（`fm === 3`）／銀（其他加工）／白；SR+ 正面的星芒（`fx.addGlints(g, n, true, pts)`）放在 `brightSpots(front.photo)`（holo.js 匯出，跟 CSS 的四芒星同一個 `findSpots`）
 - **舊 bug**：工房的卡（framed）在機台裡深度是分段的（卡圖 95／主體 130／框、字 165），但 `sw = smoothstep(0.4, 0.7, depth)` 是給照片獎品的 → 主體只算 32%，人物跟補過的模糊背景混在一起、霧霧的。`drawCardLayers` 回傳 `framed`，cardkit `uSw` 改 0.40–0.47
+- **「要讓圖看的到」**（使用者看了參考影片 2：光都在卡的四周、圖一直清楚）：fx.js 的光芒（rays）、中心光（core）、光圈（rings）、光柱（pillar）原本 `depthTest: false`＋renderOrder 50 以上、位置＝卡片中心 → SR／SSR 翻開後卡面整片白、SSR 的持續彩虹光芒也蓋在卡上。`_behind(at)`：轉卡機時往鏡頭反方向推 10 cm、打開 depthTest（卡片 depthWrite 擋住，只從四周透出來）；轉蛋機照舊。人物身上的反光帶改白色、×0.4（shader `subj`、CSS `.t-subj.zon > .z-foil`），亮帶 SSR 0.26→0.2
+- 測試注意：本機預覽伺服器掛掉時，PWA 的 service worker 會給快取的舊檔（測到的是舊 fx.js）→ 先看 `__gacha.machine.show._behind` 之類的新函式在不在
 - 測試：預覽窗格隱藏時沒有 rAF → `renderer.setAnimationLoop(null)`、`clock.getDelta = () => 1/60`、手動 `_frame()`（MessageChannel 讓出）推進；`#h-btn` 一路按到 `machine.revealed`；WebGL 畫面要在 `_frame()` 後馬上 `toDataURL` 疊成 `<img>` 才截得到；`play.remaining` 只留要測的那張
 
 ## 畫面美化（2026-11-02）

@@ -888,6 +888,8 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .tilt:is(.fx-holo, .fx-texture, .fx-rainbow) .zon:not(.no-irid) > .z-pale { display: block; -webkit-mask: var(--zp); mask: var(--zp); mix-blend-mode: multiply; opacity: calc(var(--irid) * (.42 + var(--fc) * .5));
   background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.6) 0 1.5px, transparent 1.5px 3.5px), var(--rb-30); background-size: auto, 260% 260%; background-position: 0 0, calc(25% + var(--mx) / 2) calc(25% + var(--my) / 2); }
 .tilt.fx-texture .zon:not(.no-irid) > .z-pale { background-image: var(--lat), var(--rb133); background-size: auto, 300% 300%; }
+/* 主體（人物）身上的反光：只用白的、淡一點，原本的顏色不變（使用者 2026-11-20：「要讓圖看的到」） */
+.t-subj.zon > .z-foil { --f1: rgba(255, 255, 255, .5); --f2: #ffffff; opacity: calc(var(--foil) * (.25 + var(--fc) * .35)); }
 /* 線稿的微浮雕：面向光的那一側亮（holo.js 照光的方向換 --zx／--zy） */
 .zon > :is(.z-ex, .z-ey) { display: block; background: #fff; mix-blend-mode: screen; }
 .zon > .z-ex { -webkit-mask: var(--zx); mask: var(--zx); opacity: calc(var(--ex) * var(--emb)); }
