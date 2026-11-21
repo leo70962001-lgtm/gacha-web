@@ -88,6 +88,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .app[data-mode="shop"] #page-shop, .app[data-mode="album"] #page-album, .app[data-mode="browse"] #page-browse, .app[data-mode="studio"] #page-studio, .app[data-mode="stickers"] #page-stickers, .app[data-mode="profile"] #page-profile { display: block; }
 .page { display: none; overflow-y: auto; min-height: 0; background: radial-gradient(circle, color-mix(in srgb, var(--stroke) 10%, transparent) 1.3px, transparent 1.9px) 0 0 / 22px 22px, var(--stage); }
 .page-inner { max-width: 980px; margin: 0 auto; padding: 22px var(--gutter-r) 48px var(--gutter-l); display: grid; gap: 18px; }
+.page-inner, .browse-pane { grid-template-columns: minmax(0, 1fr); } /* grid 的欄預設是 auto（最寬內容）→ 不寫會被一列不換行的按鈕撐寬，出現橫向捲軸 */
 .page-head h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; }
 .page-head .lede { margin: 4px 0 0; }
 .modes .tab-ico { display: inline-flex; align-items: center; gap: 6px; }
@@ -103,7 +104,30 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .bar.tightest .modes .tab-ico { padding-inline: 8px; }
 .card-box { background: var(--surface); border: 2px solid var(--stroke); border-radius: 18px; box-shadow: 3px 3px 0 var(--stroke); }
 /* 逛機台（使用者 2026-10-26：「追加用戶做好的機器的瀏覽頁面」） */
-.browse-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.browse-bar { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; }
+.browse-bar .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.browse-bar .chips::-webkit-scrollbar { display: none; }
+.browse-bar .chip { flex: none; white-space: nowrap; }
+.browse-kinds .chip[aria-selected="true"] { background: var(--sun); color: #1c2340; border-color: var(--stroke); }
+.browse-kinds { padding-right: 10px; border-right: 2px solid color-mix(in srgb, var(--stroke) 25%, transparent); }
+#browse-q { margin-left: auto; }
+/* 三步驟（怎麼玩） */
+.how { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 12px; background: color-mix(in srgb, var(--sun) 22%, var(--surface)); }
+.how ol { display: flex; flex: 1; gap: 6px 16px; margin: 0; padding: 0; list-style: none; flex-wrap: wrap; }
+.how li { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; }
+.how li b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--surface); font: 12px/1 var(--font-num); flex: none; }
+.how .hs { display: none; }
+#browse-sort-sel { display: none; }
+.browse-find { display: flex; gap: 6px; margin-left: auto; min-width: 0; }
+.how-x { border: 0; background: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 4px; align-self: flex-start; }
+.browse-view { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); justify-self: stretch; }
+.browse-view button { text-align: center; }
+/* 機台頁的「回去」：深色、一眼看得出是按鈕；手機用短的字 */
+.chip-back { background: var(--ink) !important; color: var(--surface) !important; border-color: var(--ink) !important; font-weight: 900; }
+.chip-back .pb-short { display: none; }
+.chip-back.nudge { animation: back-nudge 0.9s ease-in-out 4; }
+@keyframes back-nudge { 50% { transform: translateX(-4px); box-shadow: 0 0 0 5px color-mix(in srgb, var(--sun) 70%, transparent); } }
+.link-back { justify-self: center; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 700; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 2px 6px; }
 #browse-sort .chip[aria-selected="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 #browse-q { flex: 1; min-width: 160px; max-width: 320px; font: inherit; padding: 7px 12px; border-radius: 999px; border: 2px solid var(--stroke); background: var(--surface); color: var(--ink); }
 .browse-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
@@ -1579,8 +1603,9 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   .modes .tab-ico span { font-size: 10.5px; line-height: 1.15; }
   .modes .tab-badge { position: absolute; top: -3px; right: 0; margin: 0; }
   /* 名牌的小按鈕要排一列（機台才不會變小）→「‹ 回去」只留箭頭 */
-  .chip-back { padding-inline: 8px; font-size: 14px; line-height: 1; }
+  .chip-back { padding-inline: 8px; font-size: 13px; line-height: 1; }
   .chip-back .pb-txt { display: none; }
+  .chip-back .pb-short { display: inline; }
   .stage-tip { left: 8px; bottom: 8px; max-width: calc(100% - 16px); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .panel h1 { font-size: 24px; }
   .lede { font-size: 14px; }
@@ -1677,11 +1702,12 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 .tk-rar.r3 { background: linear-gradient(90deg, #f0a800, #ff6fb5, #4aa8ff); }
 @keyframes tkIn { from { transform: translateY(70%); opacity: 0; } }
 @keyframes tkBlink { 50% { opacity: .25; } }
-.browse-view { justify-self: start; }
+.browse-view { justify-self: stretch; }
 .browse-pane { display: grid; gap: 14px; }
 .browse-pane[hidden] { display: none; }
 .theme-banner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 12px 14px; background: linear-gradient(115deg, color-mix(in srgb, var(--sun) 38%, var(--surface)), var(--surface) 62%); }
 .th-l { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.th-go { cursor: pointer; }
 .th-emo { font-size: 34px; line-height: 1; flex: none; }
 .th-tx { display: grid; min-width: 0; }
 .th-tx small { color: var(--muted); font-size: 12px; font-weight: 700; }
@@ -1691,6 +1717,35 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 .th-last { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .th-last:empty { display: none; }
 .th-last small { color: var(--muted); width: 100%; font-size: 12px; font-weight: 700; }
+@media (max-width: 600px) {
+  .browse-head .lede { font-size: 13px; margin-top: 2px; }
+  .how { padding: 6px 8px; }
+  .how ol { gap: 4px 10px; }
+  .how li { font-size: 12px; gap: 4px; }
+  .how li b { width: 18px; height: 18px; font-size: 11px; }
+  .theme-banner { grid-template-columns: minmax(0, 1fr) auto; padding: 8px 10px; gap: 6px 8px; }
+  .th-emo { font-size: 24px; }
+  .th-tx b { font-size: 16px; }
+  .th-tx small { font-size: 11px; }
+  .th-acts { flex-wrap: nowrap; gap: 6px; }
+  .th-acts .btn { padding: 4px 9px; font-size: 12px; }
+  .th-last { display: none; }
+  .ev-strip { margin-top: 2px; padding: 4px 8px; font-size: 12px; }
+  .browse-bar { gap: 6px; }
+    .browse-bar .chips { width: 100%; }
+  .browse-kinds { border-right: 0; padding-right: 0; }
+  .browse-sorts { display: none !important; }
+  .browse-find { width: 100%; margin-left: 0; }
+  #browse-q { flex: 1; min-width: 0; min-height: 36px; }
+  #browse-sort-sel { display: block; flex: none; font: inherit; font-weight: 700; font-size: 13px; border: 2px solid var(--stroke); border-radius: 999px; padding: 4px 10px; background: var(--surface); color: var(--ink); max-width: 46%; }
+  /* 三步驟：手機一行（短字＋箭頭） */
+  .how ol { flex-wrap: nowrap; gap: 4px; }
+  .how li { font-size: 13px; }
+  .how li + li::before { content: '→'; color: var(--muted); margin-right: 2px; }
+  .how .hl { display: none; }
+  .how .hs { display: inline; }
+  .ticker { min-height: 30px; padding: 3px 10px 3px 6px; }
+}
 .th-win { display: inline-flex; gap: 4px; align-items: center; border: 1.5px solid var(--stroke); background: var(--surface); border-radius: 999px; padding: 2px 10px 2px 6px; font-weight: 700; font-size: 12px; cursor: pointer; color: var(--ink); max-width: 100%; }
 .th-win i { font-style: normal; }
 .bcard-by { display: flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0; font: inherit; font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; min-width: 0; text-align: left; }
@@ -1858,6 +1913,38 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 
 /* 留言板、發文 */
 .talk-card { width: min(100%, 460px); }
+/* 評價 */
+.rv { display: grid; gap: 8px; border: 2px solid var(--stroke); border-radius: 14px; padding: 10px 12px; background: color-mix(in srgb, var(--sun) 14%, var(--surface)); }
+.rv-sum { display: flex; align-items: center; gap: 12px; }
+.rv-avg { font: 34px/1 var(--font-num); }
+.rv-avg small { display: block; font: 700 12px/1.3 var(--font-body); color: var(--muted); }
+.rv-dist { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.rv-dist span { display: grid; grid-template-columns: 22px minmax(0, 1fr) 24px; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); }
+.rv-dist i { display: block; height: 6px; border-radius: 3px; background: rgba(28, 35, 64, 0.12); position: relative; overflow: hidden; }
+.rv-dist i::after { content: ''; position: absolute; inset: 0; width: calc(var(--p) * 100%); background: #f2a900; }
+.rv-stars { display: inline-flex; gap: 2px; }
+.rv-star { border: 0; background: none; font-size: 26px; line-height: 1; cursor: pointer; color: #c9ccd6; padding: 0 1px; }
+.rv-star.on { color: #f2a900; text-shadow: 0 1px 0 rgba(28, 35, 64, 0.35); }
+.rv-form { display: grid; gap: 6px; }
+.rv-form .row { display: flex; gap: 6px; }
+.rv-form input { flex: 1; min-width: 0; font: inherit; border: 2px solid var(--stroke); border-radius: 10px; padding: 6px 10px; background: var(--surface); color: var(--ink); }
+.rv-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.rv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 26dvh; overflow: auto; }
+.rv-list li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; align-items: start; }
+.rv-list b { font-size: 13px; }
+.rv-list .st { color: #f2a900; font-size: 12px; letter-spacing: 1px; }
+.rv-list p { margin: 1px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.rv-list small { color: var(--muted); font-size: 11px; }
+.tk-sub { margin: 4px 0 -4px; font-size: 14px; }
+.r-rate { display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; font-size: 14px; }
+.r-rate { flex-wrap: wrap; row-gap: 0; }
+.r-rate > span:first-child { white-space: nowrap; }
+.r-rate .rv-star { font-size: 30px; }
+@media (max-width: 640px) {
+  .r-rate { gap: 4px; font-size: 13px; }
+  .r-rate .rv-star { font-size: 26px; }
+}
+.bcard-rate { color: #b77d00; font-weight: 900; }
 .tk-list { overflow: auto; min-height: 120px; max-height: 44dvh; overscroll-behavior: contain; }
 .tk { display: flex; gap: 8px; align-items: flex-start; padding: 6px 2px; }
 .tk .av { cursor: pointer; }
@@ -1925,10 +2012,13 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   .fly-msg, .fly-stamp, .fly-pull, .fly-heart, .heart-fly, .coin-fly, .tk-line, .tk-dot { animation-duration: .01s !important; animation-iteration-count: 1 !important; }
 }
 @media (max-width: 640px) {
-  .theme-banner { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
-  .th-acts { justify-content: stretch; }
-  .th-acts .btn { flex: 1; }
-  .th-tx b { font-size: 18px; }
+  /* 每週主題：手機一行（點左邊＝看參加的機台，右邊只留「參加」） */
+  .theme-banner { grid-template-columns: minmax(0, 1fr) auto; padding: 7px 10px; gap: 4px 8px; }
+  .th-acts { justify-content: flex-end; flex-wrap: nowrap; }
+  .th-acts .btn { flex: none; padding: 4px 10px; font-size: 12px; }
+  .th-acts .btn:not(.primary) { display: none; }
+  .th-tx b { font-size: 15px; }
+  .theme-banner .ev-strip { grid-column: 1 / -1; }
   .sq-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .post-body { padding: 6px 8px 8px; gap: 5px; }
   .st-btn .stb-txt { display: none; }
@@ -1997,7 +2087,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
           <button class="rx-chip" id="p-rx" type="button" hidden></button>
           <span class="plate-price" id="p-price2"></span>
           <div class="chips">
-            <button class="chip chip-back" id="p-back" type="button"><span aria-hidden="true">‹</span> <span class="pb-txt" id="p-back-txt"></span></button>
+            <button class="chip chip-back" id="p-back" type="button"><span aria-hidden="true">‹</span> <span class="pb-txt" id="p-back-txt"></span><span class="pb-short" id="p-back-short"></span></button>
             <span class="chip" id="p-kinds"></span>
             <span class="chip" id="p-left"></span>
             <button class="chip" id="p-odds" data-i18n="oddsBtn">機率公開</button>
@@ -2256,20 +2346,30 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
     </section>
     <section class="page" id="page-browse" hidden aria-labelledby="browse-title">
       <div class="page-inner">
-        <header class="page-head">
+        <header class="page-head browse-head">
           <h1 id="browse-title" data-i18n="browse.title">逛機台</h1>
           <p class="lede" data-i18n="browse.lede">大家做好、公開的轉蛋機和轉卡機，點「去轉」就能玩。</p>
         </header>
+        <!-- 使用者 2026-11-21：「把尋找商店的頁面整理讓用戶更好理解 這個頁面是最重要的」→ 三步驟怎麼玩（可以關掉）、機台排在第一屏 -->
+        <div class="how card-box" id="browse-how" hidden>
+          <ol>
+            <li><b>1</b><span class="hl" data-i18n="how.1">選一台喜歡的機台</span><span class="hs" data-i18n="how.1s">選機台</span></li>
+            <li><b>2</b><span class="hl" data-i18n="how.2">按「去轉」投幣轉一轉</span><span class="hs" data-i18n="how.2s">去轉</span></li>
+            <li><b>3</b><span class="hl" data-i18n="how.3">轉到的收進收藏</span><span class="hs" data-i18n="how.3s">收藏</span></li>
+          </ol>
+          <button type="button" class="how-x" id="browse-how-x" data-i18n-aria="close" aria-label="關閉">✕</button>
+        </div>
         <div class="resume card-box" id="browse-resume" hidden></div>
-        <!-- 大家正在轉（跑馬燈）＋ 機台／廣場／排行（社群 social.js） -->
-        <div class="ticker card-box" id="soc-ticker" hidden aria-live="polite"></div>
         <div class="seg browse-view" id="browse-view" role="tablist"></div>
         <div class="browse-pane" id="browse-machines">
           <div class="theme-banner card-box" id="soc-theme"></div>
           <div class="browse-bar">
-            <div class="chips" id="browse-sort" role="tablist"></div>
-            <input id="browse-q" type="search" data-i18n-aria="browse.search" aria-label="搜尋">
+            <div class="chips browse-kinds" id="browse-kind" role="tablist" data-i18n-aria="browse.kindLabel" aria-label="機台種類"></div>
+            <div class="chips browse-sorts" id="browse-sort" role="tablist" data-i18n-aria="browse.sortLabel" aria-label="排序"></div>
+            <div class="browse-find"><input id="browse-q" type="search" data-i18n-aria="browse.search" aria-label="搜尋"><select id="browse-sort-sel" data-i18n-aria="browse.sortLabel" aria-label="排序"></select></div>
           </div>
+          <!-- 大家正在轉（跑馬燈，social.js）：放在機台列表正上面 -->
+          <div class="ticker card-box" id="soc-ticker" hidden aria-live="polite"></div>
           <p class="album-empty card-box" id="browse-empty" hidden></p>
           <div class="browse-grid" id="browse-grid"></div>
           <button class="btn" id="browse-more" hidden data-i18n="browse.more">再多看一些</button>
@@ -2334,6 +2434,8 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <button class="btn sun" id="r-share" data-i18n="sh.share">分享</button>
       <button class="btn" id="r-post" data-i18n="soc.toSquare">發到廣場</button>
     </div>
+    <div class="r-rate" id="r-rate" hidden><span data-i18n="rv.ask">這台好玩嗎？</span><span class="rv-stars" id="r-rate-stars"></span></div>
+    <button type="button" class="link-back" id="r-browse" hidden><span aria-hidden="true">‹</span> <span data-i18n="browse.findOther">看看其他機台</span></button>
   </div>
 </div>
 <!-- 抽到的卡分享出去（使用者 2026-10-30：「抽到自己喜歡的卡的時候下面多一個分享」）：選尺寸 → 預覽 → 分享／存圖、複製貼文文字、發文連結 -->
@@ -2383,6 +2485,9 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   <div class="sheet-card talk-card" role="dialog" aria-modal="true" aria-labelledby="tk-title">
     <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
     <h2 id="tk-title" data-i18n="soc.talkTitle">留言板</h2>
+    <!-- 玩家評價（使用者 2026-11-21：「讓做的人可以知道玩的人的感受或評價」，12_reviews.sql） -->
+    <div class="rv" id="tk-rev"></div>
+    <h3 class="tk-sub" data-i18n="soc.talkSub">留言</h3>
     <ul class="tk-list" id="tk-list"></ul>
     <div class="tk-stamps" id="tk-stamps"></div>
     <div class="tk-compose">

@@ -2518,8 +2518,10 @@ async function enterPlay(token) {
 function renderPlate() {
   const cfg = play.cfg;
   const bk = t(BACK_LABEL[play.back] || 'tab.browse');
-  $('p-back-txt').textContent = bk;
+  $('p-back-txt').textContent = t('back.to', { p: bk });
+  $('p-back-short').textContent = (play.back || 'browse') === 'browse' ? t('back.s.browse') : bk;
   $('p-back').setAttribute('aria-label', t('back.to', { p: bk }));
+  $('r-browse').hidden = (play.back || 'browse') !== 'browse';
   $('p-shop').textContent = cfg.shop || '';
   $('p-shop').hidden = !cfg.shop;
   $('p-name').textContent = cfg.name;
@@ -2590,7 +2592,7 @@ function setPhase(ph) {
   $('h-text').textContent = text;
   const b = $('h-btn');
   b.hidden = !s.btn;
-  if (s.btn) b.textContent = tk(s.btn);
+  if (s.btn) b.textContent = ph === 'soldout' && (play.back || 'browse') === 'browse' ? t('browse.findOther') : tk(s.btn); // 賣完了：回去找別台
   b.disabled = ph === 'coin' && play.coins <= 0;
   // 10 連抽：投幣階段、剩 2 顆以上才出現（剩不到 10 顆就抽剩下的）
   const ten = $('h-ten');
@@ -2832,6 +2834,46 @@ function showResult(idx, first, view = false) {
   $('r-sub').textContent = t('resultSub', { n: play.pulls, p: pct(it.qty / total), c: owned(idx) });
   openSheet('sheet-result', view ? $('r-close') : $('r-again'));
   resHolo.start(() => !$('sheet-result').hidden);
+  paintRate(!view);
+}
+// 評價（使用者 2026-11-21：「可以增加討論區或留言區讓做的人可以知道玩的人的感受或評價」）
+//   轉完別人公開的機台 → 結果下面問「這台好玩嗎？」，點星星＝打開留言板、星數先選好；評過（或點過）的這台不再問
+const RATED = 'clatter.rated';
+const ratedSet = () => new Set(Array.isArray(store.get(RATED)) ? store.get(RATED) : []);
+function markRated(id) {
+  const s = ratedSet();
+  if (!id || s.has(id)) return;
+  s.add(id);
+  store.set(RATED, [...s].slice(-300));
+}
+async function paintRate(show) {
+  const box = $('r-rate');
+  box.hidden = true;
+  const sid = playSid();
+  if (!show || !sid || !play?.cloud || play.fromDraft || social?.revOk === false || ratedSet().has(sid)) return;
+  const idx = resultIdx;
+  const w = await loadWallet().catch(() => null);
+  const own = social?.stage?.info?.o;
+  if (!w || (own && own === w.id) || resultIdx !== idx || $('sheet-result').hidden) return;
+  const row = $('r-rate-stars');
+  row.textContent = '';
+  const lit = (n) => [...row.children].forEach((x, j) => x.classList.toggle('on', j < n));
+  for (let i = 1; i <= 5; i++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rv-star';
+    b.textContent = '★';
+    b.setAttribute('aria-label', t('rv.starN', { n: i }));
+    b.onpointerenter = () => lit(i);
+    b.onclick = () => {
+      markRated(sid);
+      afterResult();
+      social.openTalk(i);
+    };
+    row.append(b);
+  }
+  row.onpointerleave = () => lit(0);
+  box.hidden = false;
 }
 // 抽到的卡發到廣場（社群）：有去背的用去背做好的大圖，沒有就用獎品圖
 async function postResult() {
@@ -3038,7 +3080,7 @@ function hintAction() {
   else if (ph === 'turn') machine.autoTurn();
   else if (ph === 'take') take();
   else if (ph === 'open') openIt();
-  else if (ph === 'soldout') openCollection();
+  else if (ph === 'soldout') (play.back || 'browse') === 'browse' ? backFromPlay() : openCollection(); // 賣完了：回去找別台
   else if (ph === 'multiOpen') openAll();
 }
 
@@ -3536,7 +3578,9 @@ function resumePlay() {
   nextBack = play?.back || null;
   enterPlay(tok);
 }
-function backFromPlay() {
+function backFromPlay(viaHistory = false) {
+  // 是從逛機台點進來的那一筆紀錄 → 用瀏覽器的上一頁回去（網址、紀錄都對得起來），popstate 再切畫面
+  if (!viaHistory && history.state?.clatter === 'play') return history.back();
   const m = play?.back || 'browse';
   if (m === 'studio' || m === 'stickers' || m === 'shop' || m === 'create' || m === 'album') setMode(m);
   else setMode('browse');
@@ -5407,7 +5451,7 @@ async function toggleListed(on) {
   }
 }
 
-const browse = { sort: 'new', items: [], done: false, loading: false };
+const browse = { sort: 'new', kind: 'all', items: [], done: false, loading: false, ratings: {} };
 function renderBrowse(load = true) {
   const sort = $('browse-sort');
   if (!sort.childElementCount)
@@ -5426,6 +5470,40 @@ function renderBrowse(load = true) {
     b.textContent = b.dataset.k === 'theme' ? themeName() : t('browse.' + b.dataset.k);
     b.setAttribute('aria-selected', String(b.dataset.k === browse.sort));
   }
+  // 手機：排序收成搜尋框旁邊的選單
+  const sel = $('browse-sort-sel');
+  sel.textContent = '';
+  for (const k of ['new', 'hot', 'likes', 'follow', 'theme']) sel.append(new Option(k === 'theme' ? themeName() : t('browse.' + k), k, false, k === browse.sort));
+  sel.onchange = () => {
+    browse.sort = sel.value;
+    loadBrowse(true);
+  };
+  // 機台種類：全部／轉蛋機／轉卡機／おみくじ（找得到自己想玩的那種）
+  const kinds = $('browse-kind');
+  if (!kinds.childElementCount)
+    for (const k of ['all', 'capsule', 'card', 'omikuji']) {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.type = 'button';
+      b.setAttribute('role', 'tab');
+      b.dataset.k = k;
+      b.onclick = () => {
+        browse.kind = k;
+        for (const x of kinds.children) x.setAttribute('aria-selected', String(x === b));
+        drawBrowse();
+      };
+      kinds.append(b);
+    }
+  for (const b of kinds.children) {
+    b.textContent = t('browse.kind.' + b.dataset.k);
+    b.setAttribute('aria-selected', String(b.dataset.k === browse.kind));
+  }
+  // 三步驟：沒關掉、也還沒轉過的人才顯示
+  $('browse-how').hidden = !!store.get('clatter.howDone');
+  $('browse-how-x').onclick = () => {
+    store.set('clatter.howDone', 1);
+    $('browse-how').hidden = true;
+  };
   social?.renderBrowseTop();
   $('browse-q').placeholder = t('browse.search');
   renderResume();
@@ -5467,6 +5545,7 @@ async function loadBrowse(reset) {
     browse.items = [];
     browse.done = false;
     for (const b of $('browse-sort').children) b.setAttribute('aria-selected', String(b.dataset.k === browse.sort));
+    $('browse-sort-sel').value = browse.sort;
   }
   try {
     // 社群版（讚、店主、追蹤中、主題）；伺服器還沒裝 10_social.sql → 舊的列表
@@ -5481,12 +5560,36 @@ async function loadBrowse(reset) {
     browse.items.push(...(Array.isArray(rows) ? rows : []));
     browse.done = !Array.isArray(rows) || rows.length < 24;
     drawBrowse();
+    loadRatings(Array.isArray(rows) ? rows.map((r) => r?.id).filter(Boolean) : []);
   } catch (e) {
     $('browse-empty').hidden = false;
     $('browse-empty').textContent = t('browse.offline');
   } finally {
     browse.loading = false;
   }
+}
+// 卡片上的平均星數（伺服器還沒有 12_reviews.sql → 不顯示）
+async function loadRatings(ids) {
+  ids = ids.filter((id) => /^[0-9A-Za-z]{10}$/.test(id) && !(id in browse.ratings));
+  if (!ids.length || social?.revOk === false) return;
+  let m;
+  try {
+    m = await srpc('ratings', { p_ids: ids });
+  } catch (e) {
+    if (e.message === 'e.notReady' && social) social.revOk = false;
+    return;
+  }
+  for (const id of ids) browse.ratings[id] = Array.isArray(m?.[id]) ? m[id] : null;
+  for (const id of ids) if (browse.ratings[id]) document.querySelectorAll(`.bcard[data-id="${id}"] .bcard-meta`).forEach((meta) => paintCardRate(meta, id));
+}
+function paintCardRate(meta, id) {
+  const r = browse.ratings[id];
+  if (!r || meta.querySelector('.bcard-rate')) return;
+  const sp = document.createElement('span');
+  sp.className = 'bcard-rate';
+  sp.textContent = `★ ${Number(r[0]).toFixed(1)} (${r[1] | 0})`;
+  sp.title = t('rv.count', { n: r[1] | 0 });
+  meta.prepend(sp);
 }
 // 別人的摘要：字截長度、圖只收 data:image 的 base64
 const okImg = (u) => (typeof u === 'string' && u.length < 60000 && /^data:image\/(webp|png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(u) ? u : null);
@@ -5495,9 +5598,11 @@ function drawBrowse() {
   const grid = $('browse-grid');
   grid.textContent = '';
   const q = $('browse-q').value.trim().toLowerCase();
-  const list = browse.items.filter((r) => r && /^[0-9A-Za-z]{10}$/.test(r.id) && r.meta && (!q || (str(r.meta.n, 40) + ' ' + str(r.meta.s, 40)).toLowerCase().includes(q)));
+  const list = browse.items.filter((r) => r && /^[0-9A-Za-z]{10}$/.test(r.id) && r.meta && (browse.kind === 'all' || kindOf(r.meta.k) === browse.kind) && (!q || (str(r.meta.n, 40) + ' ' + str(r.meta.s, 40)).toLowerCase().includes(q)));
   $('browse-empty').hidden = list.length > 0;
-  $('browse-empty').textContent = t(q ? 'browse.noMatch' : browse.sort === 'follow' ? 'browse.emptyFollow' : browse.sort === 'theme' ? 'browse.emptyTheme' : 'browse.empty');
+  $('browse-empty').textContent = t(q ? 'browse.noMatch' : browse.kind !== 'all' ? 'browse.emptyKind' : browse.sort === 'follow' ? 'browse.emptyFollow' : browse.sort === 'theme' ? 'browse.emptyTheme' : 'browse.empty');
+  // 選了某一種但這一頁剛好沒有 → 自動多載一頁
+  if (!list.length && browse.kind !== 'all' && !browse.done && !browse.loading && browse.items.length) setTimeout(() => loadBrowse(false), 0);
   $('browse-more').hidden = browse.done || !!q;
   for (const r of list) grid.append(browseCard(r));
 }
@@ -5509,6 +5614,7 @@ function browseCard(r) {
     const kind = kindOf(m.k);
     const art = document.createElement('article');
     art.className = 'bcard card-box';
+    art.dataset.id = r.id;
     const cover = document.createElement('div');
     cover.className = 'bcard-cover';
     cover.style.setProperty('--c', (THEMES[m.th] || THEMES.red).body);
@@ -5554,6 +5660,7 @@ function browseCard(r) {
       sp.textContent = txt;
       meta.append(sp);
     }
+    paintCardRate(meta, r.id);
     const go = document.createElement('button');
     go.className = 'btn primary';
     go.textContent = t('browse.play');
@@ -5622,14 +5729,26 @@ function browseCard(r) {
   }
 }
 // 去轉某台（逛機台、廣場、通知、個人頁）：跟打開分享連結一樣，網址換成這台（重新整理、切回「轉轉看」都還是這台）
+function backTip() {
+  if (store.get('clatter.tipBack')) return;
+  store.set('clatter.tipBack', 1);
+  setTimeout(() => {
+    if (app.dataset.mode !== 'play') return;
+    $('p-back').classList.add('nudge');
+    toast(t('tip.back'));
+    setTimeout(() => $('p-back').classList.remove('nudge'), 4000);
+  }, 1400);
+}
 async function playMachine(id, talk = false) {
   if (!/^[0-9A-Za-z]{10}$/.test(id || '')) return;
-  history.replaceState(null, '', location.pathname + location.search + '#s.' + id);
   const from = app.dataset.mode;
+  if (from === 'browse' || from === 'profile') history.pushState({ clatter: 'play' }, '', location.pathname + location.search + '#s.' + id);
+  else history.replaceState(null, '', location.pathname + location.search + '#s.' + id);
   nextBack = from === 'profile' || from === 'play' ? 'browse' : from;
   setMode('play');
   playSrc = 'browse';
   await enterPlay('s.' + id);
+  backTip();
   if (talk) setTimeout(() => social.openTalk(), 600);
 }
 
@@ -5755,7 +5874,7 @@ async function boot() {
 
   social = new Social({
     wallet: () => loadWallet(),
-    toast, openSheet, closeSheet, sfx, store, setMode, playMachine, browseCard, resume: resumePlay,
+    toast, openSheet, closeSheet, sfx, store, setMode, playMachine, browseCard, resume: resumePlay, markRated,
     curMode: () => app.dataset.mode,
     album: () => store.get('clatter.album') || {},
     localStats,
@@ -5908,6 +6027,10 @@ async function boot() {
   $('btn-collection').onclick = openCollection;
   $('p-col').onclick = openCollection;
   $('r-again').onclick = afterResult;
+  $('r-browse').onclick = () => {
+    afterResult();
+    backFromPlay();
+  };
   $('r-close').onclick = closeResult;
   $('r-share').onclick = () => openPrizeShare(resultIdx, !$('r-new').hidden);
   $('r-col').onclick = () => {
@@ -6004,6 +6127,9 @@ async function boot() {
   // 等台紙、貼紙畫好再拿掉載入畫面
   await new Promise((r) => setTimeout(r, 200));
   $('loading').hidden = true;
+  addEventListener('popstate', () => {
+    if (app.dataset.mode === 'play' && !isMachineHash(location.hash.slice(1))) backFromPlay(true);
+  });
   addEventListener('hashchange', () => {
     const tok = location.hash.slice(1);
     if (tok.startsWith('f.')) openInvite(tok.slice(2));

@@ -344,16 +344,17 @@ export class Social {
         : n.k === 'fol' ? t('soc.n.fol', { who })
         : n.k === 'plike' ? t('soc.n.plike', { who, m: str(n.x, 40) || t('soc.yourPost') })
         : n.k === 'preact' ? t('soc.n.preact', { who, m: str(n.x, 40) || t('soc.yourPost') })
+        : n.k === 'rev' ? t('soc.n.rev', { who, s: '★'.repeat(Math.max(1, Math.min(5, n.s | 0))) })
         : t('soc.n.buy', { who, m: mn, n: n.n | 0 });
       tx.append(line);
-      if (n.k === 'cmt' && n.x) tx.append(el('q', '', str(n.x, 120)));
+      if ((n.k === 'cmt' || n.k === 'rev') && n.x) tx.append(el('q', '', str(n.x, 140)));
       tx.append(el('small', '', ago(n.t)));
       li.append(tx);
       if (n.s != null && (n.k === 'cmt' || n.k === 'preact')) li.append(stampEl(n.s, 'stamp-img sm'));
       li.tabIndex = 0;
       li.onclick = () => {
         this.c.closeSheet('sheet-me');
-        if ((n.k === 'cmt' || n.k === 'like' || n.k === 'buy') && isId(n.m)) this.c.playMachine(n.m, n.k === 'cmt');
+        if ((n.k === 'cmt' || n.k === 'rev' || n.k === 'like' || n.k === 'buy') && isId(n.m)) this.c.playMachine(n.m, n.k === 'cmt' || n.k === 'rev');
         else if (isId(n.w)) this.openProfile(n.w);
       };
       ul.append(li);
@@ -840,6 +841,10 @@ export class Social {
     const tx = el('div', 'th-tx');
     tx.append(el('small', '', t('soc.weekly', { d: themeDaysLeft() })), el('b', '', th[lang] || th.zh));
     left.append(tx);
+    left.classList.add('th-go');
+    left.setAttribute('role', 'button');
+    left.tabIndex = 0;
+    left.onclick = () => this.c.browseSort('theme'); // 點主題＝看參加的機台（手機只剩這個入口）
     const acts = el('div', 'th-acts');
     acts.append(
       btn('btn', t('soc.thSee'), () => this.c.browseSort('theme')),
@@ -1414,7 +1419,7 @@ export class Social {
   }
 
   // ---------- 留言板 ----------
-  async openTalk() {
+  async openTalk(pre = 0) {
     const S = this.stage;
     if (!S) return;
     $('tk-list').textContent = '';
@@ -1431,7 +1436,121 @@ export class Social {
         tray.append(b);
       }
     this.c.openSheet('sheet-talk', $('tk-input'));
+    this.loadReviews(pre); // 評價（伺服器還沒有 12_reviews.sql → 那一塊不顯示）
     await this.loadTalk();
+  }
+
+  // ---------- 玩家評價（使用者 2026-11-21：「可以增加討論區或留言區讓做的人可以知道玩的人的感受或評價」）----------
+  //   上面：平均星數＋分布；轉過的人可以打 1–5 顆星＋一句感想（再打一次＝改）；店主看得到每一則，也會收到通知
+  async loadReviews(pre = 0) {
+    const S = this.stage;
+    const box = $('tk-rev');
+    if (!S) return;
+    box.hidden = false;
+    let r;
+    try {
+      r = await srpc('reviews', { p_m: S.mid, ...(await this.viewer()), p_limit: 30 });
+    } catch (e) {
+      box.hidden = true;
+      if (e.message === 'e.notReady') this.revOk = false;
+      return;
+    }
+    this.revOk = true;
+    if (this.stage !== S) return;
+    this.meId = (await this.w())?.id || null;
+    this.drawReviews(r, pre);
+  }
+  drawReviews(r, pre = 0) {
+    const S = this.stage;
+    const box = $('tk-rev');
+    box.textContent = '';
+    const n = r?.n | 0;
+    const sum = el('div', 'rv-sum');
+    const avg = el('div', 'rv-avg', n ? Number(r.avg).toFixed(1) : '—');
+    avg.append(el('small', '', '★ ' + t('rv.count', { n })));
+    const dist = el('div', 'rv-dist');
+    for (let s = 5; s >= 1; s--) {
+      const c = (r?.dist || [])[s - 1] | 0;
+      const row = el('span');
+      const bar = el('i');
+      bar.style.setProperty('--p', String(n ? c / n : 0));
+      row.append(el('em', '', s + '★'), bar, el('em', '', String(c)));
+      dist.append(row);
+    }
+    sum.append(avg, dist);
+    box.append(sum);
+    const own = S?.info?.o && S.info.o === this.meId;
+    if (r?.mine) this.c.markRated?.(S.mid); // 評過了 → 結果畫面不再問
+    if (r?.can) {
+      // 打星＋一句感想
+      const f = el('div', 'rv-form');
+      let stars = pre || r.mine?.s || 0;
+      const row = el('span', 'rv-stars');
+      const paint = () => [...row.children].forEach((b, i) => b.classList.toggle('on', i < stars));
+      for (let i = 1; i <= 5; i++) {
+        const b = btn('rv-star', '★', () => {
+          stars = i;
+          paint();
+        });
+        b.setAttribute('aria-label', t('rv.starN', { n: i }));
+        row.append(b);
+      }
+      paint();
+      const inp = document.createElement('input');
+      inp.maxLength = 140;
+      inp.value = r.mine?.b || '';
+      inp.placeholder = t('rv.ph');
+      inp.setAttribute('aria-label', t('rv.ph'));
+      const send = btn('btn primary', t(r.mine ? 'rv.update' : 'rv.send'), async () => {
+        if (!stars) return this.c.toast(t('rv.pickStar'));
+        send.disabled = true;
+        try {
+          const nr = await this.call('review_set', { p_m: S.mid, p_stars: stars, p_body: inp.value.trim() || null });
+          this.c.toast(t('rv.thanks'));
+          this.c.sfx.tap?.();
+          this.drawReviews(nr);
+        } catch (e) {
+          send.disabled = false;
+          if (e.message === 'e.locked') this.c.toast(t('rv.playFirst')); // 伺服器：沒轉過／自己的機台
+          else this.err(e);
+        }
+      });
+      const line = el('div', 'row');
+      line.append(inp, send);
+      f.append(el('b', '', t(r.mine ? 'rv.yours' : 'rv.ask')), row, line);
+      if (r.mine)
+        f.append(
+          btn('link-back', t('rv.del'), async () => {
+            try {
+              this.drawReviews(await this.call('review_del', { p_m: S.mid }));
+            } catch (e) {
+              this.err(e);
+            }
+          }),
+        );
+      box.append(f);
+    } else box.append(el('p', 'rv-hint', t(own ? 'rv.ownerHint' : 'rv.playFirst')));
+    const list = r?.list || [];
+    if (list.length) {
+      const ul = el('ul', 'rv-list');
+      for (const x of list) {
+        const li = el('li');
+        const av = avatarEl(x.av, x.nm, x.w, 30);
+        av.onclick = () => {
+          this.c.closeSheet('sheet-talk');
+          this.openProfile(x.w);
+        };
+        const tx = el('div');
+        const top = el('div');
+        top.append(el('b', '', nameOf(x.nm, x.w) + ' '), el('span', 'st', '★'.repeat(x.s | 0) + '☆'.repeat(5 - (x.s | 0))));
+        tx.append(top);
+        if (x.b) tx.append(el('p', '', str(x.b, 140)));
+        tx.append(el('small', '', ago(x.t)));
+        li.append(av, tx);
+        ul.append(li);
+      }
+      box.append(ul);
+    }
   }
   async loadTalk() {
     const S = this.stage;
@@ -1565,6 +1684,9 @@ addStrings({
     'soc.yourMachine': '你的機台', 'soc.yourPost': '你的貼文',
     'soc.n.like': '{who} 按讚了「{m}」', 'soc.n.cmt': '{who} 在{m}留言', 'soc.n.fol': '{who} 開始追蹤你',
     'soc.n.plike': '{who} 按讚了你的貼文「{m}」', 'soc.n.preact': '{who} 對「{m}」丟了スタンプ', 'soc.n.buy': '{who} 轉了「{m}」×{n}',
+    'soc.n.rev': '{who} 評價了你的機台 {s}', 'soc.talkSub': '留言',
+    'rv.count': '{n} 則評價', 'rv.ask': '這台好玩嗎？', 'rv.yours': '你的評價', 'rv.starN': '{n} 顆星', 'rv.ph': '一句感想（可以不寫，140 字）', 'rv.send': '送出評價', 'rv.update': '更新', 'rv.del': '刪掉我的評價',
+    'rv.pickStar': '先選幾顆星', 'rv.thanks': '謝謝你的評價！店主會看到', 'rv.playFirst': '轉過這台就能評價', 'rv.ownerHint': '玩家給的星數跟感想會出現在這裡，也會通知你',
     'soc.streak': '連續登入 {n} 天', 'soc.claim': '領取', 'soc.claimed': '已領', 'soc.go': '去做',
     'soc.m.login': '每日登入', 'soc.m.login.d': '連續第 7 天有 60 枚',
     'soc.m.pull': '轉一次別人的機台', 'soc.m.pull.d': '逛機台找一台喜歡的',
@@ -1632,6 +1754,9 @@ addStrings({
     'soc.yourMachine': 'あなたのマシン', 'soc.yourPost': 'あなたの投稿',
     'soc.n.like': '{who} が「{m}」にいいねしました', 'soc.n.cmt': '{who} が{m}にコメントしました', 'soc.n.fol': '{who} があなたをフォローしました',
     'soc.n.plike': '{who} が投稿「{m}」にいいねしました', 'soc.n.preact': '{who} が「{m}」にスタンプを送りました', 'soc.n.buy': '{who} が「{m}」を {n} 回まわしました',
+    'soc.n.rev': '{who} があなたのマシンを評価しました {s}', 'soc.talkSub': 'コメント',
+    'rv.count': '{n} 件の評価', 'rv.ask': 'このマシン、どうだった？', 'rv.yours': 'あなたの評価', 'rv.starN': '星 {n} つ', 'rv.ph': 'ひとこと感想（なくてもOK・140 文字）', 'rv.send': '評価を送る', 'rv.update': '更新', 'rv.del': '自分の評価を消す',
+    'rv.pickStar': '星の数を選んでください', 'rv.thanks': '評価ありがとう！店主に届きます', 'rv.playFirst': 'このマシンを回すと評価できます', 'rv.ownerHint': 'プレイヤーの星と感想がここに出ます。通知も届きます',
     'soc.streak': '連続ログイン {n} 日', 'soc.claim': '受け取る', 'soc.claimed': '受取済み', 'soc.go': 'やる',
     'soc.m.login': '毎日ログイン', 'soc.m.login.d': '7 日目は 60 枚',
     'soc.m.pull': 'ほかの人のマシンを 1 回まわす', 'soc.m.pull.d': 'マシンをさがすで好きな 1 台を',
@@ -1699,6 +1824,9 @@ addStrings({
     'soc.yourMachine': 'your machine', 'soc.yourPost': 'your post',
     'soc.n.like': '{who} liked “{m}”', 'soc.n.cmt': '{who} commented on {m}', 'soc.n.fol': '{who} started following you',
     'soc.n.plike': '{who} liked your post “{m}”', 'soc.n.preact': '{who} sent a stamp to “{m}”', 'soc.n.buy': '{who} pulled “{m}” ×{n}',
+    'soc.n.rev': '{who} rated your machine {s}', 'soc.talkSub': 'Comments',
+    'rv.count': '{n} reviews', 'rv.ask': 'How was this machine?', 'rv.yours': 'Your review', 'rv.starN': '{n} stars', 'rv.ph': 'A short comment (optional, 140 chars)', 'rv.send': 'Send review', 'rv.update': 'Update', 'rv.del': 'Delete my review',
+    'rv.pickStar': 'Pick how many stars first', 'rv.thanks': 'Thanks! The owner will see your review', 'rv.playFirst': 'Play this machine to rate it', 'rv.ownerHint': "Players' stars and comments show up here, and you get a notice",
     'soc.streak': '{n}-day login streak', 'soc.claim': 'Claim', 'soc.claimed': 'Claimed', 'soc.go': 'Go',
     'soc.m.login': 'Daily login', 'soc.m.login.d': 'Day 7 pays 60 coins',
     'soc.m.pull': "Pull someone else's machine", 'soc.m.pull.d': 'Find one you like in Browse',

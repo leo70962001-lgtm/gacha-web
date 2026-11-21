@@ -518,3 +518,19 @@ Gemini（gemini.google.com 圖片模式）生成兩張，原圖在 `D:\ai\gemini
 - **測試**：背景分頁 rAF 停住 → `setAnimationLoop(null)`、`clock.getDelta = () => 1/60`、手動 `_frame()`；用 `/__snap` 存畫面。使用者自己在玩的分頁不要接管。
 - **季節活動（2026-11-21）**：`supabase/11_events.sql`（已在正式資料庫跑過）：`soc_event_list()` 一年 10 個活動（月日，玩家時區）、`event_claims` 表、`events` / `event_claim` RPC（五個任務＋全部完成 +50）；social.js `eventCard` 畫在「任務」最上面，逛機台主題橫幅下一行 `ev-strip`。
 - **效果音（2026-11-21）**：Gemini「音楽を作成」4 首（`D:/ai/gemini/gacha/sfx/`）→ `py -I tools/make_sfx.py scan|cut` 切成 `web/assets/sfx/*.mp3`；機台動作的聲音（投幣、把手、掉落、開蛋、出卡）再低通＋降音量（使用者：「這個聲音太尖銳了」）。sfx.js `loadSamples` / `playSample`，沒有檔案就退回合成音。四種特殊演出要聽得出不同（使用者：「這些有些太相近」）：櫻吹雪＝Gemini 琴滑音、流星＝合成的咻＋鈴、花火＝合成口哨＋砰、黃金雨＝Gemini＋金幣聲。本機試聽頁 `web/_sfx.html`（`_*.html` 不會進 docs/）。
+
+## 逛機台整理、回來的路（2026-11-21）
+
+使用者：「把尋找商扁的頁面整理讓用戶更好理解 這個頁面是最重要的 進去商店後回來這裡的指示更明確」。
+- **三步驟**（`#browse-how`）：選機台 → 去轉 → 收進收藏；手機一行短字（`.hl` / `.hs`），按 ✕ 記在 `clatter.howDone`
+- **種類**（`#browse-kind`，`browse.kind`）：全部／轉蛋機／轉卡機／おみくじ，`drawBrowse` 依 `kindOf(meta.k)` 篩，這頁剛好沒有就自動多載一頁
+- **手機排序**：chips 收起來，換成搜尋框旁邊的 `#browse-sort-sel`；主題橫幅一行（點左邊＝看參加的機台）；`.page-inner, .browse-pane { grid-template-columns: minmax(0,1fr) }` 修掉 8px 橫向捲動
+- **回來**：從逛機台／個人頁進機台會 `history.pushState({clatter:'play'})` → 返回鍵（`popstate`）或左上「‹ 逛機台」（`backFromPlay`）回到列表；第一次進去出提示（`clatter.tipBack`）；結果畫面「看看其他機台」（`#r-browse`），賣完的大按鈕也回逛機台
+
+## 玩家評價（2026-11-21）
+
+使用者：「可以增加討論區或留言區讓做的人可以知道玩的人的感受或評價」。伺服器 `supabase/12_reviews.sql`（2026-11-21 已在正式資料庫跑過；第一次因為 `ratings` 裡聚合包聚合失敗，SQL Editor 整段一個交易所以全部沒套用，改成子查詢再跑）。
+- **表** `machine_reviews`（機台＋錢包一則：1–5 星、140 字以內感想、hidden）。RPC：`reviews(m, viewer, vkey, limit)` → `{avg, n, dist, can, mine, list}`；`review_set` 要有 `ledger` 的 `buy`（真的轉過）、不能是店主、5 秒一次；`review_del`；`ratings(ids[])` → `{id: [平均, 則數]}`（最多 60 台）；`notices` 多一種 `rev`
+- **畫面**：留言板最上面 `#tk-rev`（social.js `loadReviews` / `drawReviews`：平均、分布、打星＋一句、清單）；結果畫面 `#r-rate`（app.js `paintRate`：雲端機台、不是自己的、這台還沒評過 → 點星＝`social.openTalk(n)` 星數先選好；評過的記在 `clatter.rated`）；逛機台卡片 `.bcard-rate`（`loadRatings` → `browse.ratings`）
+- 伺服器還沒裝 → `e.notReady` → `social.revOk = false`，三個地方都不顯示
+- 測試：沒有正式資料庫時，在 127.0.0.1 分頁把 `window.fetch` 換掉，攔 `/rpc/reviews|ratings|review_set` 回假資料
