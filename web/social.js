@@ -126,7 +126,7 @@ export function avatarEl(av, nm, w, size = 32) {
 // 圖 → 小的 data:image（貼文、頭像、展示卡）：長邊 max px，webp
 export async function toDataImg(src, max = 360, q = 0.82, square = false) {
   const img = await new Promise((res, rej) => {
-    if (src instanceof HTMLCanvasElement || src instanceof ImageBitmap) return res(src);
+    if (src instanceof HTMLCanvasElement || src instanceof ImageBitmap || (src instanceof HTMLImageElement && src.complete && src.naturalWidth)) return res(src);
     const i = new Image();
     i.crossOrigin = 'anonymous';
     i.onload = () => res(i);
@@ -264,7 +264,12 @@ export class Social {
     const m = this.meCache;
     // 上面：我是誰
     const head = el('div', 'me-head');
-    head.append(avatarEl(m?.avatar, m?.name || '🙂', w?.id, 56));
+    const myAv = avatarEl(m?.avatar, m?.name || '🙂', w?.id, 56);
+    myAv.setAttribute('role', 'button');
+    myAv.tabIndex = 0;
+    myAv.setAttribute('aria-label', t('soc.editProf'));
+    myAv.onclick = () => this.openEdit();
+    head.append(myAv);
     const who = el('div', 'me-who');
     who.append(el('b', '', m?.name || t('soc.noName')), el('small', '', w?.id ? t('soc.code', { c: w.id }) : ''));
     head.append(who);
@@ -505,6 +510,24 @@ export class Social {
     g.textContent = '';
     const list = this.owned();
     $('pe-pick-h').textContent = t(this.pickFor === 'show' ? 'soc.pickShow' : 'soc.pickAv');
+    // 頭像：先放 12 個扭蛋寶寶（スタンプ同一套角色），再放收藏（使用者 2026-11-21：「自己的icon可以上傳或選擇自己喜歡的圖」）
+    if (this.pickFor !== 'show') {
+      for (let i = 0; i < STAMP_N; i++) {
+        const b = btn('pe-item preset' + (this.ed.avatarPreset === i ? ' on' : ''));
+        b.append(stampEl(i));
+        b.title = t('soc.st' + i);
+        b.onclick = async () => {
+          const img = b.querySelector('img');
+          const u = img?.naturalWidth ? await toDataImg(img, 128, 0.85, true).catch(() => null) : null;
+          if (!u) return;
+          this.ed.avatar = u;
+          this.ed.avatarPreset = i;
+          this.drawEdit();
+        };
+        g.append(b);
+      }
+      if (list.length) g.append(el('small', 'pe-sep', t('soc.fromCol')));
+    }
     if (!list.length) {
       g.append(el('p', 'soc-empty', t('soc.noOwned')));
       return;
@@ -523,7 +546,10 @@ export class Social {
           const img = await toDataImg(it.t, 240, 0.82).catch(() => null);
           if (img) this.ed.showcase.push({ img, n: it.n.slice(0, 24), r: it.r, c: it.card ? 1 : 0 });
           this.pickFor = 'av';
-        } else this.ed.avatar = await toDataImg(it.t, 96, 0.8, true).catch(() => this.ed.avatar);
+        } else {
+          this.ed.avatar = await toDataImg(it.t, 96, 0.8, true).catch(() => this.ed.avatar);
+          this.ed.avatarPreset = null;
+        }
         this.drawEdit();
       };
       g.append(b);
@@ -1423,7 +1449,21 @@ export class Social {
     };
     $('pe-av-clear').onclick = () => {
       this.ed.avatar = null;
+      this.ed.avatarPreset = null;
       this.drawEdit();
+    };
+    // 自己的圖：選檔 → 裁成正方形（開店頁封面那個裁切框）→ 128 px webp（資料庫上限 16000 字，超過就降畫質）
+    $('pe-av-up').onclick = async () => {
+      const c = await this.c.pickImage(t('soc.avCrop'));
+      if (!c) return;
+      let q = 0.85;
+      let u = await toDataImg(c, 128, q, true).catch(() => null);
+      while (u && u.length > 15000 && q > 0.4) u = await toDataImg(c, 112, (q -= 0.15), true).catch(() => null);
+      if (!u || u.length > 16000) return this.c.toast(t('t.badImage'));
+      this.ed.avatar = u;
+      this.ed.avatarPreset = null;
+      this.drawEdit();
+      this.c.toast(t('soc.avSet'));
     };
     $('po-send').onclick = () => this.sendPost();
     $('po-back').onclick = () => this.openPicker();
@@ -1492,6 +1532,7 @@ addStrings({
     'soc.tooMany': '太快了，等一下再試', 'soc.gone': '已經不在了', 'soc.inspired': '靈感來自「{n}」', 'soc.remix': '用這台的外觀',
     'soc.toSquare': '發到廣場', 'soc.profTitle': '個人頁', 'soc.peName': '名字', 'soc.peBio': '一句話介紹（選填）', 'soc.peAv': '頭像',
     'soc.peShow': '展示櫃（最多 3 張）', 'soc.peAvPick': '從收藏選', 'soc.peAvClear': '用文字頭像', 'soc.peSave': '存好',
+    'soc.peAvUp': '📷 上傳圖片', 'soc.avCrop': '裁切頭像', 'soc.avSet': '換好了，按「存好」就會更新', 'soc.fromCol': '從收藏選',
     'soc.st0': '好喜歡', 'soc.st1': '好厲害', 'soc.st2': '好好笑', 'soc.st3': '感動', 'soc.st4': '拍手', 'soc.st5': '謝謝',
     'soc.st6': '恭喜', 'soc.st7': '超燃', 'soc.st8': '愛心', 'soc.st9': '閃亮亮', 'soc.st10': '哇', 'soc.st11': '想睡',
     'soc.remixed': '用「{n}」的外觀開了一台新機台：顏色、背景、卡背、加工、音樂都複製了，放你自己的獎品吧',
@@ -1546,6 +1587,7 @@ addStrings({
     'soc.tooMany': '少し時間をおいてください', 'soc.gone': 'もうありません', 'soc.inspired': '「{n}」から着想', 'soc.remix': 'この見た目で作る',
     'soc.toSquare': '広場に投稿', 'soc.profTitle': 'プロフィール', 'soc.peName': '名前', 'soc.peBio': 'ひとこと紹介（任意）', 'soc.peAv': 'アイコン',
     'soc.peShow': 'ショーケース（3 枚まで）', 'soc.peAvPick': 'コレクションから', 'soc.peAvClear': '文字アイコンにする', 'soc.peSave': '保存',
+    'soc.peAvUp': '📷 画像をアップロード', 'soc.avCrop': 'アイコンを切り抜く', 'soc.avSet': '変更しました。「保存」で反映されます', 'soc.fromCol': 'コレクションから',
     'soc.st0': 'すき', 'soc.st1': 'すごい', 'soc.st2': 'わらった', 'soc.st3': '感動', 'soc.st4': 'はくしゅ', 'soc.st5': 'ありがとう',
     'soc.st6': 'おめでとう', 'soc.st7': 'アツい', 'soc.st8': 'ハート', 'soc.st9': 'キラキラ', 'soc.st10': 'わお', 'soc.st11': 'ねむい',
     'soc.remixed': '「{n}」の見た目で新しいマシンを作りました。色・背景・カード裏・加工・BGM をコピー済み。景品はあなたのものを入れてね',
@@ -1600,6 +1642,7 @@ addStrings({
     'soc.tooMany': 'Too fast — try again in a moment', 'soc.gone': "It's gone", 'soc.inspired': 'Inspired by “{n}”', 'soc.remix': 'Use this look',
     'soc.toSquare': 'Post to Square', 'soc.profTitle': 'Profile', 'soc.peName': 'Name', 'soc.peBio': 'One-line bio (optional)', 'soc.peAv': 'Avatar',
     'soc.peShow': 'Showcase (up to 3)', 'soc.peAvPick': 'From collection', 'soc.peAvClear': 'Use letter avatar', 'soc.peSave': 'Save',
+    'soc.peAvUp': '📷 Upload image', 'soc.avCrop': 'Crop your avatar', 'soc.avSet': 'Changed — tap Save to apply', 'soc.fromCol': 'From your collection',
     'soc.st0': 'Love it', 'soc.st1': 'Amazing', 'soc.st2': 'LOL', 'soc.st3': 'So moved', 'soc.st4': 'Clap', 'soc.st5': 'Thanks',
     'soc.st6': 'Congrats', 'soc.st7': 'Fire', 'soc.st8': 'Heart', 'soc.st9': 'Sparkly', 'soc.st10': 'Wow', 'soc.st11': 'Sleepy',
     'soc.remixed': 'Made a new machine with the look of “{n}” — colour, background, card back, finish and music copied. Add your own prizes!',

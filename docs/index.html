@@ -1768,12 +1768,17 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 .pe-slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pe-slot.has::after { content: "✕"; position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); border: 1.5px solid var(--stroke); font-size: 11px; display: grid; place-items: center; color: var(--ink); }
 .pe-pick-h { color: var(--muted); font-size: 12px; }
-.pe-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 6px; max-height: 210px; overflow: auto; padding: 2px; }
-.pe-item { aspect-ratio: 1; border: 2px solid var(--line); border-radius: 10px; padding: 0; overflow: hidden; cursor: pointer; background: var(--surface-2); }
+.pe-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 6px; max-height: 210px; overflow: auto; padding: 3px; }
+.pe-item { height: 60px; min-width: 0; border: 2px solid var(--line); border-radius: 10px; padding: 0; overflow: hidden; cursor: pointer; background: var(--surface-2); }
 .pe-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pe-item.r1 { border-color: var(--r-r); }
 .pe-item.r2 { border-color: var(--r-sr); }
 .pe-item.r3 { border-color: var(--r-ssr); }
+.pe-item.preset { border-radius: 50%; border-color: var(--line); background: var(--surface); }
+.pe-item.preset img { object-fit: contain; padding: 2px; box-sizing: border-box; }
+.pe-item.on { outline: 3px solid var(--accent); outline-offset: 1px; }
+.pe-pick .pe-sep { grid-column: 1 / -1; font-size: 11px; font-weight: 700; color: var(--muted); margin-top: 2px; }
+.me-head > .av { cursor: pointer; }
 
 /* 留言板、發文 */
 .talk-card { width: min(100%, 460px); }
@@ -2266,7 +2271,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
         <div class="field"><label for="pe-bio" data-i18n="soc.peBio">一句話介紹（選填）</label><input id="pe-bio" maxlength="80"></div>
       </div>
     </div>
-    <div class="row pe-av-row"><b data-i18n="soc.peAv">頭像</b><button type="button" class="btn ghost" id="pe-av-btn" data-i18n="soc.peAvPick">從收藏選</button><button type="button" class="btn ghost" id="pe-av-clear" data-i18n="soc.peAvClear">用文字頭像</button></div>
+    <div class="row pe-av-row"><b data-i18n="soc.peAv">頭像</b><button type="button" class="btn sun" id="pe-av-up" data-i18n="soc.peAvUp">上傳圖片</button><button type="button" class="btn ghost" id="pe-av-btn" data-i18n="soc.peAvPick">從收藏選</button><button type="button" class="btn ghost" id="pe-av-clear" data-i18n="soc.peAvClear">用文字頭像</button><input type="file" id="file-av" accept="image/*" hidden></div>
     <b data-i18n="soc.peShow">展示櫃（最多 3 張）</b>
     <div class="pe-show" id="pe-show"></div>
     <small class="pe-pick-h" id="pe-pick-h"></small>

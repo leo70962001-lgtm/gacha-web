@@ -5141,6 +5141,25 @@ async function boot() {
       else if (!draft.listed) toast(t('soc.themeNeedList'));
     },
     remix: (src) => remixFrom(src),
+    // 選一張自己的圖 → 裁成正方形 → canvas（取消＝null）
+    pickImage: (title) =>
+      new Promise((res) => {
+        const inp = $('file-av');
+        inp.value = '';
+        inp.onchange = async () => {
+          const f = inp.files[0];
+          if (!f) return res(null);
+          let bmp;
+          try {
+            bmp = await createImageBitmap(f);
+          } catch (e) {
+            toast(t('t.badImage'));
+            return res(null);
+          }
+          res(await openCrop({ bmp, out: [256, 256], title }));
+        };
+        inp.click();
+      }),
     stageCfg: () => play?.cfg || null,
     browseSort: (k) => {
       browse.sort = k;
