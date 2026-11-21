@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>效果音試聽</title>
+<style>
+  :root { --bg: #fffaf2; --ink: #1c2340; --line: #1c2340; --card: #ffffff; --muted: #5b6278; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #171a26; --ink: #eef0f7; --line: #8a90a8; --card: #22263a; --muted: #a8aec4; } }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, "Noto Sans TC", sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 0 0 14px; }
+  h2 { font-size: 15px; margin: 18px 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .s { background: var(--card); border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 4px; }
+  .s b { font-size: 15px; }
+  .s small { color: var(--muted); }
+  button { font: inherit; font-weight: 700; border: 2px solid var(--line); border-radius: 999px; padding: 5px 14px; background: #ffd23f; color: #1c2340; cursor: pointer; justify-self: start; }
+  .n { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>效果音試聽（Gemini 生成、切好的段落）</h1>
+<p>按「▶」聽。覺得哪一個不對、不好聽，跟我說它的編號（例如 sfx_coin），我換一段或改回合成音。這一頁只在本機，不會發布。</p>
+<div id="root"></div>
+<script>
+const groups = [
+  ['機台動作（第 4 首：實際聲音）', [
+    ['sfx_coin', '投幣（轉蛋機、轉卡機）'],
+    ['sfx_coin_wood', '投進香油錢箱（おみくじ）'],
+    ['sfx_tick', '轉把手的喀一聲（每轉 45° 一次）'],
+    ['sfx_thud', '扭蛋掉進出口'],
+    ['sfx_pop', '扭蛋打開'],
+    ['sfx_card', '卡片從出卡口滑出來'],
+  ]],
+  ['おみくじ（第 2 首）', [
+    ['omi_daikichi', '抽到大吉'],
+    ['omi_kyo', '抽到凶、大凶'],
+    ['omi_suzu', '攪籤時的鈴聲'],
+  ]],
+];
+// 稀有的特殊演出：直接叫遊戲裡的聲音（sfx.js），聽到的就是實際會放的（有的是 Gemini、有的是合成）
+const FX = [
+  ['sakura', '🌸 櫻吹雪', 'Gemini：琴的滑音＋風鈴', (s) => s.sakura()],
+  ['stars', '🌠 流星', '合成：咻——＋亮亮的鈴（連續幾顆）', (s) => [0, 0.35, 0.7, 1.05].forEach((d) => setTimeout(() => s.twinkle(), d * 1000))],
+  ['thunder', '⚡ 雷鳴', 'Gemini：太鼓滾奏＋重擊', (s) => s.thunder()],
+  ['hanabi', '🎆 花火大會', '合成：口哨上升＋砰＋劈哩啪啦（連放 3 發）', (s) => [0, 0.32, 0.64].forEach((d) => s.hanabi(d))],
+  ['gold', '💰 黃金雨', 'Gemini 的華麗段＋金幣一直掉', (s) => s.goldRain()],
+];
+const root = document.getElementById('root');
+let cur = null;
+for (const [title, list] of groups) {
+  const h = document.createElement('h2');
+  h.textContent = title;
+  const g = document.createElement('div');
+  g.className = 'grid';
+  for (const [id, label] of list) {
+    const box = document.createElement('div');
+    box.className = 's';
+    const b = document.createElement('b');
+    b.textContent = label;
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = id;
+    const btn = document.createElement('button');
+    btn.textContent = '▶ 播放';
+    btn.onclick = () => {
+      cur?.pause();
+      cur = new Audio('assets/sfx/' + id + '.mp3');
+      cur.play();
+    };
+    box.append(b, n, btn);
+    g.append(box);
+  }
+  root.append(h, g);
+}
+{
+  const h = document.createElement('h2');
+  h.textContent = '稀有的特殊演出（遊戲裡實際的聲音）';
+  const g = document.createElement('div');
+  g.className = 'grid';
+  for (const [id, label, note, play] of FX) {
+    const box = document.createElement('div');
+    box.className = 's';
+    const b = document.createElement('b');
+    b.textContent = label;
+    const n = document.createElement('small');
+    n.textContent = note;
+    const btn = document.createElement('button');
+    btn.textContent = '▶ 播放';
+    btn.onclick = async () => {
+      const m = await import('./sfx.js');
+      m.unlock();
+      m.loadSamples('assets/sfx/', ['fx_sakura', 'fx_thunder', 'fx_gold', 'sfx_coin']);
+      await new Promise((r) => setTimeout(r, 600));
+      play(m.sfx);
+    };
+    box.append(b, n, btn);
+    g.append(box);
+  }
+  root.append(h, g);
+}
+const h = document.createElement('h2');
+h.textContent = '背景音樂（第 3 首）';
+const box = document.createElement('div');
+box.className = 's';
+box.innerHTML = '<b>神社（おみくじ機台預設）</b><span class="n">bgm/shrine.mp3</span>';
+const a = document.createElement('audio');
+a.controls = true;
+a.src = 'assets/bgm/shrine.mp3';
+box.append(a);
+root.append(h, box);
+</script>
+</body>
+</html>

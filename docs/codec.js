@@ -4,6 +4,7 @@
 // 只用英數字和 . _ - ：claude.ai 的 artifact 連結只會把這類字元的 #錨點 傳進頁面
 import { mediaToLink, mediaFromLink } from './media.js';
 import { STICKER_FINS, finCode, finFromCode } from './sticker.js';
+import { cleanOmi, cleanPaper, cleanBox, FORTUNE_KEYS, fortuneOf, fortuneForRarity } from './omikuji.js';
 
 const te = new TextEncoder();
 const td = new TextDecoder();
@@ -11,7 +12,7 @@ const td = new TextDecoder();
 export const CURRENCIES = ['NT$', '¥', 'HK$', 'US$', '代幣'];
 export const THEME_KEYS = ['red', 'white', 'yellow', 'blue', 'mint', 'pink', 'black'];
 export const LIMITS = { items: 16, name: 24, title: 24, qty: 999, coins: 20 };
-export const BG_PRESETS = ['plain', 'shop', 'night', 'sakura', 'stars', 'cats', 'dogs', 'galaxy'];
+export const BG_PRESETS = ['plain', 'shop', 'night', 'sakura', 'stars', 'cats', 'dogs', 'galaxy', 'shrine', 'torii', 'matsuri']; // 神社三張：2026-11-21 おみくじ用（使用者：「背景也可以追加新的符合參拜的場景」）
 export const BACK_PRESETS = ['shop', 'night', 'sakura', 'stars', 'cats', 'dogs', 'galaxy', 'candy']; // 卡背樣式（Gemini 畫的，assets/tex/back_<id>.webp）
 export const FINISHES = ['gold', 'silver', 'rainbow', 'holo', 'none']; // SR／SSR 卡背的加工
 const FIN_CODE = { gold: 'g', silver: 's', rainbow: 'r', holo: 'h', none: 'n' };
@@ -20,7 +21,8 @@ const FIN_CODE = { gold: 'g', silver: 's', rainbow: 'r', holo: 'h', none: 'n' };
 export const FRONT_FINISHES = ['holo', 'texture', 'rainbow', 'gold', 'silver', 'none'];
 const FRONT_CODE = { holo: 'h', texture: 't', rainbow: 'r', gold: 'g', silver: 's', none: 'n' };
 // 背景音樂（使用者 2026-10-26：「可以設定背景音樂」）：預設曲 assets/bgm/<id>.mp3（Gemini「音楽を作成」做的）；沒設定＝shop
-export const BGM_PRESETS = ['shop', 'arcade', 'sakura', 'night', 'festival', 'dream'];
+export const BGM_PRESETS = ['shop', 'arcade', 'sakura', 'night', 'festival', 'dream', 'shrine']; // shrine：おみくじ用（Gemini 2026-11-21）
+export const FX_STYLES = ['std', 'sakura', 'stars', 'thunder', 'hanabi', 'gold']; // 稀有的特殊演出（fx.js extra）
 export const BGM_DEFAULT = 'shop';
 // 獎品實際的表面加工：獎品自己有選（カード工房）就用它，沒有照機台的設定
 export const itemFin = (cfg, it) => (FRONT_FINISHES.includes(it?.fin) ? it.fin : finOf(cfg?.fin, it?.rarity | 0));
@@ -90,6 +92,14 @@ export async function encodeConfig(cfg) {
     json.b = ['i', bg.img.bytes.length, bg.img.mime === 'image/webp' ? 'w' : 'j'];
   }
   if (cfg.kind === 'card') json.k = 'c'; // 機台種類：沒寫＝轉蛋機
+  else if (cfg.kind === 'omikuji') {
+    json.k = 'o'; // おみくじ（2026-11-21）
+    // 每張籤：[等級, 番號, 籤詩, [[項目, 內容]…], 幸運物]（照獎品順序；舊版看不懂 o 就當一般扭蛋）
+    json.o = cfg.items.map((it) => {
+      const o = cleanOmi(it.omi);
+      return [FORTUNE_KEYS.indexOf(o.f), o.no, o.msg, o.ls, o.lk, o.pp === 'side' ? 's' : 'b'];
+    });
+  }
   if (cfg.fin && (finOf(cfg.fin, 2) !== 'texture' || finOf(cfg.fin, 3) !== 'gold')) json.cf = [FRONT_CODE[finOf(cfg.fin, 2)], FRONT_CODE[finOf(cfg.fin, 3)]]; // 表面加工
   // 卡背：[圖片長度, 格式, 文字, 邊框色, 種類（i 圖／p 樣式／c 顏色）, 樣式 id 或顏色, SR 加工, SSR 加工]（圖片接在背景圖後面）
   const back = cfg.back;
@@ -107,7 +117,7 @@ export async function encodeConfig(cfg) {
   if (sk.length) {
     json.sk = sk.map((x) => {
       imgs.push(x.img.bytes);
-      return [x.img.bytes.length, x.img.mime === 'image/webp' ? 'w' : 'p', finCode(x.fin), x.k === 'card' ? 'c' : 'p', x.m, ...x.p, ...x.n, x.s, x.r || 0];
+      return [x.img.bytes.length, x.img.mime === 'image/webp' ? 'w' : 'p', finCode(x.fin), x.k === 'card' ? 'c' : x.k === 'omikuji' ? 'o' : 'p', x.m, ...x.p, ...x.n, x.s, x.r || 0];
     });
   }
   // 台紙（使用者 2026-10-30：「增加可以編輯景品的功能」）：[放的獎品編號（0＝照獎品順序全部）, 標題, 藏起來的（1 全N種、2 稀有度、4 名字、8 自己的圖上不排）,
@@ -135,6 +145,25 @@ export async function encodeConfig(cfg) {
     us.push([i, it.ui.bytes.length, it.ui.mime === 'image/webp' ? 'w' : 'p']);
   });
   if (us.length) json.u = us;
+  // おみくじ的籤紙（2026-11-21：「圖可以自己改」）
+  if (cfg.kind === 'omikuji' && cfg.omiWrap === 'capsule') json.ow = 'c'; // 籤裝在轉蛋裡
+  // 籤箱設計：[看板大字, 看板說明, 木板的字, 字的顏色, 木頭顏色, 看板圖長度, 格式]（看板圖接在最後面）
+  const ob = cfg.kind === 'omikuji' && cfg.omiBox;
+  let obImg = null;
+  if (ob) {
+    obImg = ob.sign || null;
+    json.ob = [ob.title || '', ob.text || '', ob.label || '', ob.labelC || '', ob.woodC || '', obImg ? obImg.bytes.length : 0, obImg && obImg.mime === 'image/webp' ? 'w' : 'j'];
+  }
+  // 稀有的特殊演出（2026-11-21）：[SR, SSR] 的樣式編號；都是標準就不寫
+  const fx = cfg.fx;
+  if (fx && (FX_STYLES.indexOf(fx.sr) > 0 || FX_STYLES.indexOf(fx.ssr) > 0)) json.fx = [Math.max(0, FX_STYLES.indexOf(fx.sr)), Math.max(0, FX_STYLES.indexOf(fx.ssr))];
+  const op = cfg.kind === 'omikuji' && cfg.omiPaper;
+  if (op && (op.k !== 'washi' || op.c)) {
+    const img = op.k === 'img' && op.img;
+    if (img) imgs.push(img.bytes);
+    json.op = [img ? 'i' : op.k === 'preset' ? 'p' : op.k === 'frame' ? 'f' : '', op.k === 'preset' || op.k === 'frame' ? op.id : '', op.c || '', img ? img.bytes.length : 0, img && img.mime === 'image/webp' ? 'w' : 'j'];
+  }
+  if (obImg) imgs.push(obImg.bytes); // 看板圖（在籤紙圖後面）
   // 背景音樂：['n'] 不要音樂、['p', 預設曲]、['a', 音樂網址]（上傳到雲端的檔案或 mp3 網址）；預設曲 shop 就不寫
   const bm = cfg.bgm;
   if (bm?.k === 'none') json.bm = ['n'];
@@ -202,6 +231,14 @@ export async function decodeConfig(token) {
     };
   });
   if (!items.length) throw new Error('e.empty');
+  if (j.k === 'o') {
+    const os = Array.isArray(j.o) ? j.o : [];
+    items.forEach((it, i) => {
+      const [f, no, msg, ls, lk, pp] = Array.isArray(os[i]) ? os[i] : [];
+      it.omi = cleanOmi({ f: FORTUNE_KEYS[f] || fortuneForRarity(it.rarity), no, msg, ls, lk, pp: pp === 's' ? 'side' : 'box' });
+      it.rarity = fortuneOf(it.omi.f).r;
+    });
+  }
   let bg = { k: 'preset', id: 'plain' };
   const b = Array.isArray(j.b) ? j.b : [];
   if (b[0] === 'p' && BG_PRESETS.includes(b[1])) bg = { k: 'preset', id: b[1] };
@@ -234,7 +271,7 @@ export async function decodeConfig(token) {
     const p = [px, py, pz].map((v) => num(v, 3));
     const n = [nx, ny, nz].map((v) => num(v, 1.01));
     if (!Number.isInteger(m) || m < 0 || m > 500 || p.includes(null) || n.includes(null) || !num(sz, 0.6) || sz < 0.02) continue;
-    stickers.push({ id: 'l' + i + '_' + len, img, fin: finFromCode(fc) || 'flat', k: k === 'c' ? 'card' : 'capsule', m, p, n, s: sz, r: num(rot, 360) || 0 });
+    stickers.push({ id: 'l' + i + '_' + len, img, fin: finFromCode(fc) || 'flat', k: k === 'c' ? 'card' : k === 'o' ? 'omikuji' : 'capsule', m, p, n, s: sz, r: num(rot, 360) || 0 });
   }
   // 台紙（貼紙圖之後）；放的獎品用獎品 uid 記（沒有 uid 的舊獎品補一個）
   let board = null;
@@ -268,6 +305,26 @@ export async function decodeConfig(token) {
     off += len;
     if (Number.isInteger(i) && (items[i]?.framed === 'full' || items[i]?.framed === 'star')) items[i].ui = { bytes, mime: fmt === 'w' ? 'image/webp' : 'image/png' };
   }
+  let omiPaper = null;
+  if (Array.isArray(j.op)) {
+    const [k, id, c, len, fmt] = j.op;
+    let img = null;
+    if (k === 'i' && Number.isInteger(len) && len > 0 && len < 200000 && off + len <= buf.length) {
+      img = { bytes: buf.slice(off, off + len), mime: fmt === 'w' ? 'image/webp' : 'image/jpeg' };
+      off += len;
+    }
+    omiPaper = cleanPaper({ k: img ? 'img' : k === 'p' ? 'preset' : k === 'f' ? 'frame' : 'washi', id, c, img }, BACK_PRESETS);
+  }
+  let omiBox = null;
+  if (Array.isArray(j.ob)) {
+    const [title, text, label, labelC, woodC, len, fmt] = j.ob;
+    let sign = null;
+    if (Number.isInteger(len) && len > 0 && len < 300000 && off + len <= buf.length) {
+      sign = { bytes: buf.slice(off, off + len), mime: fmt === 'w' ? 'image/webp' : 'image/jpeg' };
+      off += len;
+    }
+    omiBox = cleanBox({ title, text, label, labelC, woodC, sign });
+  }
   let bgm = { k: 'preset', id: BGM_DEFAULT };
   const bm = Array.isArray(j.bm) ? j.bm : [];
   if (bm[0] === 'n') bgm = { k: 'none' };
@@ -288,11 +345,15 @@ export async function decodeConfig(token) {
     },
     items,
     bg,
-    kind: j.k === 'c' ? 'card' : 'capsule',
+    kind: j.k === 'c' ? 'card' : j.k === 'o' ? 'omikuji' : 'capsule',
     back,
     board,
     bgm,
     stickers,
+    omiPaper,
+    omiWrap: j.ow === 'c' ? 'capsule' : 'fold',
+    omiBox,
+    fx: Array.isArray(j.fx) ? { sr: FX_STYLES[j.fx[0]] || 'std', ssr: FX_STYLES[j.fx[1]] || 'std' } : null,
     fin: Array.isArray(j.cf) ? { sr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[0]), ssr: Object.keys(FRONT_CODE).find((k) => FRONT_CODE[k] === j.cf[1]) } : null,
   };
 }

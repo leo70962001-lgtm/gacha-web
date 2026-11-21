@@ -6,3 +6,7 @@ renders/fx_frames/*.jpg
 
 # Discord 更新頻道的 webhook 網址（等於頻道的密碼，不能進 repo）
 tools/.discord-webhook
+
+# Poly Haven 原始下載（網頁用的是縮好的 web/assets/tex/wood_ash.webp）、模型檢查圖
+textures/
+renders/omikuji_inspect/

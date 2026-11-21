@@ -25,6 +25,9 @@ const BEAM = ['#ffffff', '#6fb6ff', '#c79bff', '#ffd54a'];
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+// 店家可以自己選的特殊演出（使用者 2026-11-21：「增加一些抽到稀有度高的卡或籤的特殊演出效果 可以給用戶設定」）
+//   SR、SSR 各選一種，疊在原本的演出上：std 標準、sakura 櫻吹雪、stars 流星、thunder 雷鳴、hanabi 花火大會、gold 黃金雨
+export const FX_STYLES = ['std', 'sakura', 'stars', 'thunder', 'hanabi', 'gold'];
 
 export class Spectacle {
   constructor(m) {
@@ -338,6 +341,9 @@ export class Spectacle {
     }
     // 金幣雨
     if (T.coins) this._coinRain(at, Math.round(T.coins * red));
+    // 店家選的特殊演出
+    const st = this.styles?.[rarity];
+    if (st && st !== 'std') this.extra(st, rarity, at);
     // 鏡頭震動
     if (T.camShake && !m.reduced) m.shakeT = T.camShake;
   }
@@ -345,12 +351,249 @@ export class Spectacle {
   // 轉卡機（使用者 2026-11-20：「要讓圖看的到」）：光芒、中心光、光圈、光柱以前永遠畫在最上面、又剛好在卡片正中間 → 卡面整片白
   //   → 往鏡頭反方向推到卡片後面 10 cm、正對鏡頭、打開深度測試：卡片擋住，只從四周透出來（像參考的背光）；轉蛋機照舊（扭蛋要被光包住）
   _behind(at) {
-    const card = this.m.kind === 'card';
+    const card = this.m.kind !== 'capsule'; // おみくじ的籤也一樣（2026-11-21：攤開的籤要看得到字）
     for (const mat of [...this.rays.map((r) => r.material), this.core.material, ...this.rings.map((r) => r.material), this.pillar.material]) mat.depthTest = card;
     if (!card) return at;
     // 光芒、光柱是很大的平面：正對鏡頭（不然斜的那一邊會跑到卡片前面）
     for (const o of [...this.rays, this.pillar]) o.quaternion.copy(this.m.camera.quaternion);
     return at.clone().addScaledVector(at.clone().sub(this.m.camera.position).normalize(), 0.1);
+  }
+
+  // ---------- 特殊演出（店家選的）----------
+  setStyles(s) {
+    this.styles = s || null;
+  }
+
+  extra(style, rarity, at) {
+    const m = this.m;
+    const red = m.reduced ? 0.4 : 1;
+    const cam = m.camera;
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+    if (style === 'sakura') {
+      // 櫻吹雪：一半從中間噴出去、一半從畫面上面飄下來，左右搖、自己轉
+      this._buildPetals();
+      sfx.sakura?.();
+      const n = Math.round(this.petalData.length * red);
+      this.petalData.forEach((d, i) => {
+        d.alive = i < n;
+        d.t = 0;
+        const fall = i % 10 >= 3; // 七成從上面飄下來、三成從中間噴出去
+        d.delay = fall ? rnd(0, 2.4) : 0;
+        if (fall) d.p.copy(at).addScaledVector(right, rnd(-0.7, 0.7)).addScaledVector(up, rnd(0.3, 0.75)).add(new THREE.Vector3(0, 0, rnd(-0.15, 0.15)));
+        else d.p.copy(at);
+        const dir = new THREE.Vector3(rnd(-1, 1), rnd(-0.2, 1), rnd(-0.6, 0.6)).normalize();
+        d.v.copy(fall ? new THREE.Vector3(0, -rnd(0.06, 0.14), 0) : dir.multiplyScalar(rnd(0.4, 1.0)));
+        d.r.set(rnd(0, 6), rnd(0, 6), rnd(0, 6));
+        d.w.set(rnd(-4, 4), rnd(-4, 4), rnd(-4, 4));
+        d.ph = rnd(0, 6);
+        d.right = right.clone();
+      });
+      this.petals.visible = true;
+      this.petalT = 0;
+      this._ring(this._behind(at), '#ffb3cf', 0.05, 0.9, 0.9);
+    } else if (style === 'stars') {
+      // 流星：從畫面左上斜斜劃過，一顆接一顆
+      this._buildStreaks();
+      const n = Math.round(14 * red);
+      this.streakData.forEach((d, i) => {
+        d.alive = i < n;
+        d.t = -0.5 - i * 0.2 - rnd(0, 0.1);
+        d.from = at.clone().addScaledVector(right, rnd(-0.7, 0.2)).addScaledVector(up, rnd(0.25, 0.7));
+        d.dir = right.clone().multiplyScalar(0.85).addScaledVector(up, -0.5).normalize();
+        d.len = rnd(0.5, 0.9);
+      });
+      this.streakT = 0;
+      for (let i = 0; i < 8; i++) m.after(0.5 + i * 0.35, () => sfx.twinkle?.());
+    } else if (style === 'thunder') {
+      // 雷鳴：三道閃電劈下來、整個畫面白一下、震動
+      this._buildBolts();
+      sfx.thunder?.();
+      if (!m.reduced) m.shakeT = Math.max(m.shakeT || 0, 0.6);
+      const strike = (k) => {
+        this.bolts.forEach((b, i) => {
+          if (i > 1 && k % 2) return;
+          b.userData.t = -i * 0.12;
+          b.userData.at = at.clone().addScaledVector(right, rnd(-0.45, 0.45)).addScaledVector(up, rnd(0.15, 0.35));
+          b.material.map = this.boltTex[Math.floor(Math.random() * this.boltTex.length)];
+          b.material.needsUpdate = true; // 換了貼圖要重新編譯（不然第一道閃電是看不到的空材質）
+          b.visible = true;
+        });
+        this._coreFlash(this._behind(at), '#7f9cff', 0.55, 0.3);
+        if (k) sfx.thunder?.();
+      };
+      strike(0);
+      [0.9, 1.9, 2.8].forEach((s, k) => m.after(s, () => strike(k + 1)));
+    } else if (style === 'hanabi') {
+      // 花火大會：四周一發一發放 8 發，越後面越大
+      const n = Math.round(10 * red);
+      for (let i = 0; i < n; i++) {
+        const pos = at.clone().addScaledVector(right, rnd(-0.55, 0.55)).addScaledVector(up, rnd(-0.1, 0.45));
+        m.after(0.6 + i * 0.32, () => this._firework(pos, i % 2 ? 3 : 2, i));
+        sfx.hanabi?.(0.6 + i * 0.32 - 0.62); // 口哨先飄上去，砰的那一下對到煙火炸開
+      }
+    } else if (style === 'gold') {
+      // 黃金雨：金幣從上面一直掉＋彩帶全部換成金色
+      this._coinRain(at, Math.round(80 * red));
+      const gold = ['#ffcf33', '#fff2b0', '#ffb300', '#ffe28a'].map((c) => new THREE.Color(c));
+      this.confettiData.forEach((d, i) => d.alive && this.confetti.setColorAt(i, gold[i % gold.length]));
+      this.confetti.instanceColor.needsUpdate = true;
+      this.pillar.material.uniforms.uC.value.set('#ffd54a');
+      sfx.goldRain?.();
+    }
+  }
+
+  _buildPetals() {
+    if (this.petals) return;
+    // 一片花瓣：上寬下尖、上緣中間一個小缺口
+    const k = 1.8;
+    const sh = new THREE.Shape();
+    sh.moveTo(0, -0.011 * k);
+    sh.bezierCurveTo(0.009 * k, -0.005 * k, 0.011 * k, 0.006 * k, 0.006 * k, 0.011 * k);
+    sh.lineTo(0, 0.008 * k);
+    sh.lineTo(-0.006 * k, 0.011 * k);
+    sh.bezierCurveTo(-0.011 * k, 0.006 * k, -0.009 * k, -0.005 * k, 0, -0.011 * k);
+    const N = 220;
+    this.petals = new THREE.InstancedMesh(new THREE.ShapeGeometry(sh, 6), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true, depthWrite: false }), N);
+    this.petals.renderOrder = 62;
+    this.petals.frustumCulled = false;
+    this.petals.visible = false;
+    const pinks = ['#ffd1e0', '#ffb7cf', '#ffc6d9', '#ffe4ee', '#ff9fc0'].map((c) => new THREE.Color(c));
+    for (let i = 0; i < N; i++) this.petals.setColorAt(i, pinks[i % pinks.length]);
+    this.petalData = Array.from({ length: N }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(), w: new THREE.Vector3(), alive: false, t: 0, delay: 0, ph: 0 }));
+    this.g.add(this.petals);
+  }
+
+  _buildStreaks() {
+    if (this.streaks) return;
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 16;
+    const x = c.getContext('2d');
+    const gr = x.createLinearGradient(0, 0, 256, 0);
+    gr.addColorStop(0, 'rgba(255,255,255,0)');
+    gr.addColorStop(0.85, 'rgba(255,246,200,0.9)');
+    gr.addColorStop(1, 'rgba(255,255,255,1)');
+    x.fillStyle = gr;
+    x.beginPath();
+    x.moveTo(0, 8);
+    x.lineTo(256, 2);
+    x.lineTo(256, 14);
+    x.closePath();
+    x.fill();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.streaks = Array.from({ length: 14 }, () => {
+      const s = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.045), new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, color: 0xfff0b0 }));
+      s.renderOrder = 66;
+      s.visible = false;
+      const head = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.starTex, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true, color: 0xfff6d0 }));
+      head.renderOrder = 67;
+      head.scale.setScalar(0.09);
+      head.position.set(0.5, 0, 0.001);
+      s.add(head);
+      this.g.add(s);
+      return s;
+    });
+    this.streakData = this.streaks.map(() => ({ alive: false, t: 0 }));
+  }
+
+  _buildBolts() {
+    if (this.bolts) return;
+    // 閃電：在畫布上畫幾條折線（外面一圈藍光、中間白），貼在正對鏡頭的長方形上
+    this.boltTex = [0, 1, 2].map(() => {
+      const c = document.createElement('canvas');
+      c.width = 128;
+      c.height = 512;
+      const x = c.getContext('2d');
+      const pts = [[64 + rnd(-20, 20), 0]];
+      for (let y = 40; y <= 512; y += rnd(30, 60)) pts.push([Math.max(14, Math.min(114, pts[pts.length - 1][0] + rnd(-34, 34))), Math.min(512, y)]);
+      for (const [w, col, blur] of [[16, 'rgba(60,110,255,0.55)', 20], [8, 'rgba(110,160,255,0.95)', 8], [3.5, '#ffffff', 0]]) {
+        x.strokeStyle = col;
+        x.lineWidth = w;
+        x.lineJoin = 'round';
+        x.shadowColor = 'rgba(140,180,255,0.9)';
+        x.shadowBlur = blur;
+        x.beginPath();
+        pts.forEach(([px, py], i) => (i ? x.lineTo(px, py) : x.moveTo(px, py)));
+        x.stroke();
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    });
+    this.bolts = [0, 1, 2].map(() => {
+      const b = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 1.04), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, depthTest: false, opacity: 0 }));
+      b.renderOrder = 67;
+      b.visible = false;
+      this.g.add(b);
+      return b;
+    });
+  }
+
+  _stepExtra(dt) {
+    const cam = this.m.camera;
+    const M = new THREE.Matrix4();
+    const Q = new THREE.Quaternion();
+    const S = new THREE.Vector3(1, 1, 1);
+    if (this.petals?.visible) {
+      this.petalT += dt;
+      this.petalData.forEach((d, i) => {
+        d.t += dt;
+        if (!d.alive || d.t < d.delay) return this.petals.setMatrixAt(i, M.makeScale(0, 0, 0));
+        d.v.y = Math.max(d.v.y - 0.5 * dt, -0.22); // 慢慢飄（空氣阻力，最快每秒 22 cm）
+        d.v.x *= 1 - 1.5 * dt;
+        d.v.z *= 1 - 1.5 * dt;
+        d.p.addScaledVector(d.v, dt).addScaledVector(d.right, Math.sin(d.t * 2.4 + d.ph) * 0.08 * dt);
+        d.r.x += d.w.x * dt;
+        d.r.y += d.w.y * dt;
+        d.r.z += d.w.z * dt;
+        this.petals.setMatrixAt(i, M.compose(d.p, Q.setFromEuler(d.r), S));
+      });
+      this.petals.instanceMatrix.needsUpdate = true;
+      this.petals.material.opacity = Math.max(0, 1 - Math.max(0, this.petalT - 5) / 1);
+      if (this.petalT > 6) this.petals.visible = false;
+    }
+    if (this.streakData) {
+      this.streaks.forEach((s, i) => {
+        const d = this.streakData[i];
+        if (!d.alive) return (s.visible = false);
+        d.t += dt;
+        const k = d.t / 0.55;
+        if (k < 0 || k > 1) return (s.visible = false);
+        s.visible = true;
+        const head = d.from.clone().addScaledVector(d.dir, d.len * easeOut(k));
+        s.position.copy(head).addScaledVector(d.dir, -0.18);
+        s.quaternion.copy(cam.quaternion);
+        // 在畫面上沿著 dir 的角度
+        const ang = Math.atan2(d.dir.clone().applyQuaternion(cam.quaternion.clone().invert()).y, d.dir.clone().applyQuaternion(cam.quaternion.clone().invert()).x);
+        s.rotateZ(ang);
+        s.scale.set(0.42, 1, 1);
+        s.children[0].scale.set(0.09 / 0.42, 0.09, 1);
+        s.material.opacity = Math.sin(k * Math.PI);
+        if (k > 0.98) d.alive = false;
+      });
+    }
+    if (this.bolts) {
+      for (const b of this.bolts) {
+        if (!b.visible) continue;
+        const u = b.userData;
+        u.t += dt;
+        if (u.t < 0) {
+          b.material.opacity = 0;
+          continue;
+        }
+        if (u.t > 0.7) {
+          b.visible = false;
+          continue;
+        }
+        b.position.copy(u.at);
+        b.quaternion.copy(cam.quaternion);
+        // 閃三下：亮、暗、亮、慢慢淡
+        const f = u.t < 0.08 ? 1 : u.t < 0.14 ? 0.15 : u.t < 0.22 ? 1 : Math.max(0, 1 - (u.t - 0.22) / 0.48);
+        b.material.opacity = f;
+      }
+    }
   }
 
   // 補光放在扭蛋和鏡頭之間、偏上（放在扭蛋中心會把殼內側照爆）
@@ -497,6 +740,7 @@ export class Spectacle {
   // ---------- 每一格 ----------
   step(dt) {
     this.time += dt;
+    this._stepExtra(dt);
     if (this.glints?.length) {
       this.glints = this.glints.filter((o) => {
         if (!o.group.parent) return false;

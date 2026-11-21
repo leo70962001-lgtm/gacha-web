@@ -32,7 +32,7 @@ SHELL_TAIL = '</body></html>'
 if os.path.isdir(OUT):
     shutil.rmtree(OUT)
 # gacha.glb 不用放：網頁讀的是 gacha.b64.txt
-shutil.copytree(WEB, OUT, ignore=shutil.ignore_patterns('index.html', '*.glb'))
+shutil.copytree(WEB, OUT, ignore=shutil.ignore_patterns('index.html', '*.glb', '_*.html'))
 with open(os.path.join(WEB, 'index.html'), encoding='utf-8') as f:
     body = f.read()
 with open(os.path.join(OUT, 'index.html'), 'w', encoding='utf-8') as f:

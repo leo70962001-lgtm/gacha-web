@@ -84,6 +84,37 @@ function roomIR(sec) {
 const vary = (f, c = 0.03) => f * (1 + (Math.random() * 2 - 1) * c);
 const rpan = (k = 0.3) => (Math.random() * 2 - 1) * k;
 
+// ---- Gemini 生成的效果音（使用者 2026-11-21：「音效也調整一下 對應各種的用gemini生成」「把音效的品質提升」）----
+//   assets/sfx/<name>.mp3（tools/make_sfx.py 從 Gemini「音楽を作成」的曲子切出來）；載好了就播，沒有就退回下面合成的聲音
+const samples = {};
+export function loadSamples(base, names) {
+  onUnlock(async (c) => {
+    for (const n of names) {
+      if (samples[n]) continue;
+      try {
+        const r = await fetch(base + n + '.mp3');
+        if (!r.ok) continue;
+        samples[n] = await c.decodeAudioData(await r.arrayBuffer());
+      } catch (e) {
+        /* 載不到就用合成的 */
+      }
+    }
+  });
+}
+export const hasSample = (n) => !!samples[n];
+function playSample(name, { gain = 1, pan = 0, wet = 0.06, at = 0, rate = 1 } = {}) {
+  const b = samples[name];
+  if (!b || !ready()) return false;
+  const src = ctx.createBufferSource();
+  src.buffer = b;
+  src.playbackRate.value = rate;
+  const g = out(pan, wet);
+  g.gain.value = gain;
+  src.connect(g);
+  src.start(now() + at);
+  return true;
+}
+
 // 一個聲音的出口：pan＝左右（−1..1）、wet＝送進殘響多少
 function out(pan = 0, wet = 0.12) {
   const g = ctx.createGain();
@@ -177,8 +208,10 @@ function knock(at, f, v, pan = 0) {
 }
 
 export const sfx = {
-  coin() {
+  coin(kind = '') {
     if (!ready()) return;
+    // Gemini 的投幣聲（使用者 2026-11-21：「全部的音效都提升」「特別是投幣」）：おみくじ＝投進木頭香油錢箱
+    if (playSample(kind === 'omikuji' && samples.sfx_coin_wood ? 'sfx_coin_wood' : 'sfx_coin', { gain: 1, pan: rpan(0.12), rate: vary(1, 0.03) })) return;
     const t = now();
     const p = rpan(0.15);
     clink(t, vary(1850, 0.04), 0.32, p);
@@ -191,6 +224,7 @@ export const sfx = {
   // 把手的棘輪：塑膠「喀」＋機身共鳴
   tick() {
     if (!ready()) return;
+    if (playSample('sfx_tick', { gain: 0.8, rate: vary(1, 0.06) })) return;
     const t = now();
     noise(t, 0.022, 0.32, 'bandpass', vary(3100, 0.06), 2600, 4, { wet: 0.05 });
     tone('triangle', vary(260, 0.04), 170, t, 0.05, 0.1, { wet: 0.05 });
@@ -205,6 +239,7 @@ export const sfx = {
   // 扭蛋掉進出口：空心塑膠「咚」＋小彈一下
   thud(v = 1) {
     if (!ready()) return;
+    if (playSample('sfx_thud', { gain: Math.min(1, 0.35 + v * 0.7), rate: vary(1, 0.04) })) return;
     const t = now();
     const f = vary(1100, 0.08);
     tone('sine', vary(165, 0.05), 62, t, 0.22, 0.42 * v, { wet: 0.08 });
@@ -237,6 +272,7 @@ export const sfx = {
   // 轉卡機：卡片從出卡口滑出來（紙擦過塑膠的沙一聲＋喀）
   cardOut() {
     if (!ready()) return;
+    if (playSample('sfx_card', { gain: 0.7 })) return; // 使用者 2026-11-21：「這個聲音太尖銳了」→ 檔案已低通，這裡再小聲一點
     const t = now();
     noise(t, 0.24, 0.32, 'bandpass', 2800, 900, 1.2, { wet: 0.08 });
     noise(t, 0.2, 0.08, 'highpass', 6000, 6000, 1, { wet: 0.05 });
@@ -252,6 +288,10 @@ export const sfx = {
   // 開蛋：塑膠扣「啪」＋空氣「啵」＋一點亮晶晶
   pop() {
     if (!ready()) return;
+    if (playSample('sfx_pop', { gain: 1, rate: vary(1, 0.03) })) {
+      bell(2093, now() + 0.08, 0.5, 0.04); // 一點亮晶晶照舊
+      return;
+    }
     const t = now();
     noise(t, 0.03, 0.4, 'bandpass', 3200, 3200, 3, { wet: 0.1 });
     noise(t + 0.01, 0.12, 0.45, 'bandpass', 700, 3500, 1.5, { wet: 0.12 });
@@ -348,8 +388,45 @@ export const sfx = {
     for (let i = 0; i < 10; i++) noise(t + 0.15 + Math.random() * 0.55, 0.025, 0.05, 'highpass', 5000, 5000, 1, { pan: p + rpan(0.3), wet: 0.4 });
   },
   // 開獎音：稀有度越高，音階越長、越亮（鐵琴＋殘響；SR 以上加和弦，SSR 再加合唱）
+  // 特殊演出：花火大會、黃金雨（Gemini 的音；沒有就不另外出聲，原本的煙火、金幣聲照舊）
+  fxSample(name) {
+    if (!ready()) return;
+    playSample(name);
+  },
+  // 花火大會的一發：口哨往上飄 → 砰（很低的爆炸）→ 劈哩啪啦
+  hanabi(at = 0) {
+    if (!ready()) return;
+    const t = now() + at;
+    const p = rpan(0.6);
+    tone('sine', vary(700, 0.1), vary(2100, 0.1), t, 0.6, 0.05, { pan: p, wet: 0.3 });
+    tone('sine', 95, 38, t + 0.62, 0.9, 0.5, { pan: p, wet: 0.35 });
+    noise(t + 0.62, 0.7, 0.3, 'lowpass', 900, 120, 1, { pan: p, wet: 0.45 });
+    for (let i = 0; i < 16; i++) noise(t + 0.75 + Math.random() * 0.9, 0.02, 0.06, 'highpass', 6000, 6000, 1, { pan: p + rpan(0.4), wet: 0.4 });
+  },
+  // 黃金雨：Gemini 的華麗那段＋金幣一枚一枚掉下來（投幣聲調高、錯開）
+  goldRain() {
+    if (!ready()) return;
+    playSample('fx_gold', { gain: 0.75 });
+    for (let i = 0; i < 14; i++) playSample('sfx_coin', { gain: 0.22 + Math.random() * 0.2, at: 0.15 + Math.random() * 2.2, rate: 1.25 + Math.random() * 0.6, pan: rpan(0.7), wet: 0.2 });
+    const t = now();
+    [0, 4, 7, 12].forEach((s, i) => bell(semi(1046.5, s), t + 0.05 + i * 0.05, 1.6, 0.05, { pan: -0.3 + i * 0.2, wet: 0.45 }));
+  },
+  // おみくじ打開：大吉＝雅樂風的祝賀、凶・大凶＝陰森的太鼓；其他照稀有度的開獎音
+  omiReveal(fortune, rarity) {
+    if (!ready()) return;
+    const name = fortune === 'daikichi' ? 'omi_daikichi' : fortune === 'kyo' || fortune === 'daikyo' ? 'omi_kyo' : null;
+    if (name && playSample(name, { gain: 1 })) {
+      duckFn(rarity >= 2 ? 4 : 2.4);
+      return;
+    }
+    this.reveal(rarity);
+  },
   reveal(rarity) {
     if (!ready()) return;
+    if (playSample('reveal_' + rarity)) {
+      duckFn([1.2, 1.6, 2.6, 4.2][rarity]);
+      return;
+    }
     const t = now() + 0.05;
     const C5 = 523.25;
     const semis = [[0, 4, 7], [0, 4, 7, 12], [0, 4, 7, 12, 16, 19], [-5, 0, 4, 7, 12, 16, 19, 24]][rarity];
@@ -432,6 +509,59 @@ export const sfx = {
   peelTick() {
     if (!ready()) return;
     noise(now(), 0.035, 0.07, 'bandpass', vary(1800, 0.3), 1200, 4, { wet: 0.04 });
+  },
+  // 特殊演出：雷鳴（劈啪一聲＋低沉的轟隆）
+  thunder() {
+    if (!ready()) return;
+    if (playSample('fx_thunder', { gain: 1.1 })) return;
+    const t = now();
+    noise(t, 0.12, 0.6, 'highpass', 2500, 1200, 0.8, { wet: 0.2 });
+    noise(t + 0.05, 2.2, 0.5, 'lowpass', 600, 60, 1, { wet: 0.5 });
+    tone('sine', 70, 34, t + 0.05, 1.6, 0.35, { wet: 0.4 });
+  },
+  // 特殊演出：櫻吹雪（輕輕的鈴聲往上走）
+  sakura() {
+    if (!ready()) return;
+    if (playSample('fx_sakura')) return;
+    const t = now();
+    [1318, 1568, 1760, 2093, 2349].forEach((f, i) => bell(f, t + i * 0.11, 1.2, 0.05, { wet: 0.5 }));
+    noise(t, 1.6, 0.04, 'bandpass', 4000, 2000, 0.7, { wet: 0.4 });
+  },
+  // 特殊演出：流星一顆劃過
+  // 使用者 2026-11-21：「這些有些太相近」「做出區別感」——櫻吹雪＝琴的滑音（Gemini）、流星＝電子感的咻＋鈴（這裡）、
+  //   花火大會＝口哨上升＋砰＋劈哩啪啦（hanabi）、黃金雨＝金幣一直掉（goldRain）
+  twinkle() {
+    if (!ready()) return;
+    const t = now();
+    const p = rpan(0.7);
+    noise(t, 0.55, 0.09, 'bandpass', vary(9000, 0.1), 1800, 2.2, { pan: p, wet: 0.35 }); // 咻——（高到低）
+    tone('sine', vary(3200, 0.05), vary(1600, 0.05), t, 0.5, 0.025, { pan: p, wet: 0.4 });
+    bell(vary(3136, 0.04), t + 0.42, 0.9, 0.06, { pan: -p, wet: 0.55 });
+    bell(vary(4186, 0.04), t + 0.47, 0.7, 0.03, { pan: -p, wet: 0.55 });
+    return;
+    bell(vary(2637, 0.08), t, 0.6, 0.04, { pan: rpan(0.6), wet: 0.5 });
+    noise(t, 0.35, 0.05, 'highpass', 7000, 3000, 1, { pan: rpan(0.6), wet: 0.3 });
+  },
+  // おみくじ：手在箱子裡攪籤（紙片互相摩擦的沙沙聲）
+  rustle() {
+    if (!ready()) return;
+    if (Math.random() < 0.5 && playSample('omi_suzu', { gain: 0.55, pan: (Math.random() * 2 - 1) * 0.3, rate: 0.95 + Math.random() * 0.1 })) return; // 攪籤時偶爾響一下鈴
+    const t = now();
+    for (let i = 0; i < 5; i++) noise(t + Math.random() * 0.3, 0.06 + Math.random() * 0.08, 0.05 + Math.random() * 0.05, 'bandpass', vary(3800, 0.3), 2600, 1.6, { pan: rpan(0.5), wet: 0.06 });
+  },
+  // おみくじ：從洞口拉出來（紙擦過木頭）
+  slipOut() {
+    if (!ready()) return;
+    const t = now();
+    noise(t, 0.3, 0.22, 'bandpass', 1800, 4200, 1.1, { wet: 0.1 });
+    noise(t + 0.05, 0.22, 0.06, 'highpass', 6500, 6500, 1, { wet: 0.06 });
+  },
+  // おみくじ：一段一段攤開（紙的「啪沙」）
+  unfold(i = 0) {
+    if (!ready()) return;
+    const t = now();
+    noise(t, 0.09, 0.3, 'bandpass', vary(2400 + i * 300, 0.1), 5200, 1.3, { pan: rpan(0.2), wet: 0.12 });
+    noise(t, 0.03, 0.18, 'highpass', 5000, 5000, 1);
   },
   // 對話框打開：軟軟的「啵」
   open() {

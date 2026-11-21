@@ -501,3 +501,20 @@ Gemini（gemini.google.com 圖片模式）生成兩張，原圖在 `D:\ai\gemini
 
 - artifact 不提供 `.glb` 檔案類型 → 模型以 base64 文字（`gacha.b64.txt`）發佈，網頁解碼後 `GLTFLoader.parseAsync`
 - 重新產生模型：`blender -b D:/ai/clatter.blend --python blender/build_glb.py -- D:/ai/gacha-web`，再把 `web/assets/ao_*.png` 轉成 jpg（見 git 外的指令紀錄：PIL 轉灰階 q85）
+
+## おみくじ機台（2026-11-21）
+
+使用者：「追加 おみくじ」「可以自己做籤」「可以做大吉小吉 凶 等等」，之後陸續加了：「圖可以自己改」「也可以加語音或音樂」「再大一些 可以讓用戶選要不要用圓的轉蛋」（參考 Adobe Stock 那種和柄籤紙）「這裡也可以加圖」「讓玩家可以自由設計自己的籤箱」「背景也可以追加新的符合參拜的場景」「增加一些抽到稀有度高的卡或籤的特殊演出效果 可以給用戶設定」。
+
+- **模型**：使用者自己做的 `D:/_bg/omikuji.blend`（Maya → FBX → Blender 4.5）。`blender/measure_omikuji.py` 量尺寸，`blender/build_omikuji_glb.py` 改名、分材質、烘 AO、加第二組 UV（木紋順著每個面比較長的那一邊）→ `web/assets/omikuji.b64.txt`、`ao_omi_*.jpg`。模型本身不改。
+  - 重建：`blender -b D:/_bg/omikuji.blend --python blender/build_omikuji_glb.py -- D:/ai/gacha-web`，再把 `ao_omi_*.png` 轉灰階 JPG q88。
+- **木紋**：Poly Haven `ash_veneer`（CC0，1K diffuse，原檔在 `textures/`，不進 repo）→ 亮度正規化成 `web/assets/tex/wood_ash.webp`，主題色乘在上面（白木、朱塗り、飴色…，`OMI_WOOD`），店家也能自己調色。
+- **3D（machine.js）**：`SPECS.omikuji`（投幣＝格柵正中間的縫，從上面投；「把手」＝圓洞上看不見的圓柱，在洞上畫圈＝攪籤）、籤堆 InstancedMesh（折好的紙或轉蛋 `setOmiWrap`）、`_dispenseSlip`（從籤堆浮起來穿過圓洞）、`_makeSlip`（4 段手風琴折，第 0 段的正面在最外面＝紙包印刷，打開時字才淡入）、`_unfoldSlip`、10 連 `_slipToGrid` / `_slipPopInGrid`。
+- **籤（omikuji.js）**：`FORTUNES`（吉凶 → 稀有度：大吉 SSR、中吉・大凶 SR、小吉・吉 R、末吉・凶 N）、`drawSlip`（600×1400，中日文直書、英文橫書；和柄框時內容畫在透明層再縮進白色紙面）、`drawSlipTag`（縮圖）、`drawSign` / `drawPanelLabel`（看板、木板的字，看 `cfg.omiBox`）、寫籤編輯器的字串。
+- **連結（codec.js）**：`k:'o'`、`o`（每張籤 [等級, 番號, 籤詩, 各項, 幸運物, 照片位置]）、`ow`（轉蛋）、`op`（籤紙，自己的圖接在後面）、`ob`（籤箱設計，看板圖接在最後）、`fx`（特殊演出）。
+- **和柄籤紙**：Gemini 一張 16:9 五種空白框 `D:/ai/gemini/gacha/omi_frames.png` → `py tools/cut_omi_frames.py D:/ai/gemini/gacha/omi_frames.png` → `assets/tex/omi_frame_<id>.webp`＋白色紙面位置（`OMI_FRAMES`）。
+- **神社背景**：Gemini 同一個對話三張（`D:/ai/gemini/gacha/bg_shrine|bg_torii|bg_matsuri.png`）→ 1280×714 webp。
+- **特殊演出（fx.js `extra`）**：櫻吹雪（花瓣 InstancedMesh）、流星（拉長的光＋星）、雷鳴（畫布畫的閃電，一般混色才在白閃光上看得到；換貼圖要 `needsUpdate`）、花火大會、黃金雨；開店頁選了就 `machine.previewFx(r)` 放一次。
+- **測試**：背景分頁 rAF 停住 → `setAnimationLoop(null)`、`clock.getDelta = () => 1/60`、手動 `_frame()`；用 `/__snap` 存畫面。使用者自己在玩的分頁不要接管。
+- **季節活動（2026-11-21）**：`supabase/11_events.sql`（已在正式資料庫跑過）：`soc_event_list()` 一年 10 個活動（月日，玩家時區）、`event_claims` 表、`events` / `event_claim` RPC（五個任務＋全部完成 +50）；social.js `eventCard` 畫在「任務」最上面，逛機台主題橫幅下一行 `ev-strip`。
+- **效果音（2026-11-21）**：Gemini「音楽を作成」4 首（`D:/ai/gemini/gacha/sfx/`）→ `py -I tools/make_sfx.py scan|cut` 切成 `web/assets/sfx/*.mp3`；機台動作的聲音（投幣、把手、掉落、開蛋、出卡）再低通＋降音量（使用者：「這個聲音太尖銳了」）。sfx.js `loadSamples` / `playSample`，沒有檔案就退回合成音。四種特殊演出要聽得出不同（使用者：「這些有些太相近」）：櫻吹雪＝Gemini 琴滑音、流星＝合成的咻＋鈴、花火＝合成口哨＋砰、黃金雨＝Gemini＋金幣聲。本機試聽頁 `web/_sfx.html`（`_*.html` 不會進 docs/）。

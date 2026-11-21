@@ -219,12 +219,21 @@ export class Social {
       this.notices = nt;
       this.missions = ms;
       this.unread = nt?.unread | 0;
-      this.claimable = (ms?.list || []).filter((x) => x.done && !x.claimed).length;
+      this.events = await this.call('events', { p_off: -new Date().getTimezoneOffset() }).catch(() => this.events || null); // 季節活動（11_events.sql）
+      if (this.events?.length && !this._evDrawn && $('soc-theme')?.childElementCount) {
+        this._evDrawn = true;
+        this.drawTheme(); // 逛機台的主題橫幅下面補上活動
+      }
+      this.claimable = this.countClaimable();
       this.paintMe();
       if (!$('sheet-me').hidden) this.drawMe();
     } catch (e) {
       /* 還沒裝伺服器（10_social.sql）或離線：先不顯示 */
     }
+  }
+  countClaimable() {
+    const n = (this.missions?.list || []).filter((x) => x.done && !x.claimed).length;
+    return n + (Array.isArray(this.events) ? this.events : []).reduce((a, ev) => a + ev.list.filter((x) => x.done && !x.claimed).length, 0);
   }
   bump() {
     clearTimeout(this.bumpT);
@@ -355,6 +364,7 @@ export class Social {
   drawMissions(box) {
     const ms = this.missions;
     if (!ms) return box.append(el('p', 'soc-empty', t('soc.loading')));
+    for (const ev of Array.isArray(this.events) ? this.events : []) box.append(this.eventCard(ev));
     // 連續登入：7 格
     const st = el('div', 'streak card-box');
     const days = el('div', 'streak-days');
@@ -387,12 +397,65 @@ export class Social {
     box.append(ul);
     box.append(el('p', 'mb-hint', t('soc.missionHint')));
   }
+  // 季節活動（使用者 2026-11-21：「再加入 時期的活動」「比如說過年等等」）：活動名稱、到哪天、五個任務＋全部做完的加碼
+  eventCard(ev) {
+    const card = el('div', 'ev-card card-box ev-' + ev.id);
+    const head = el('div', 'ev-head');
+    const left = Math.max(0, Math.round((new Date(ev.to + 'T23:59:59') - new Date()) / 86400000));
+    head.append(el('span', 'ev-emo', EV_EMO[ev.id] || '🎉'));
+    const tx = el('div', 'ev-tx');
+    tx.append(el('small', '', t('ev.limited', { d: left, to: ev.to.slice(5).replace('-', '/') })), el('b', '', t('ev.' + ev.id)), el('span', 'ev-sub', t('ev.' + ev.id + '.d')));
+    head.append(tx);
+    card.append(head);
+    const ul = el('ul', 'ms-list ev-list');
+    for (const x of ev.list) {
+      const li = el('li', 'ms' + (x.claimed ? ' claimed' : x.done ? ' ready' : '') + (x.k === 'all' ? ' ev-all' : ''));
+      li.append(el('span', 'ms-ico', { pull: '🎰', like: '💖', talk: '💬', post: '📮', make: '🛠', all: '🏆' }[x.k] || '⭐'));
+      const txt = el('div', 'ms-txt');
+      txt.append(el('b', '', t('ev.m.' + x.k, { n: x.need })), el('small', '', `${x.have} / ${x.need}`));
+      const bar = el('span', 'ev-bar');
+      bar.style.setProperty('--p', String(x.need ? x.have / x.need : 0));
+      txt.append(bar);
+      li.append(txt, el('span', 'ms-coin', '+' + x.c));
+      li.append(
+        x.claimed
+          ? el('span', 'ms-done', t('soc.claimed'))
+          : x.done
+            ? btn('btn primary ms-btn', t('soc.claim'), (e) => this.claimEv(ev.id, x.k, e.currentTarget))
+            : x.k === 'all'
+              ? el('span', 'ms-done', '')
+              : btn('btn ghost ms-btn', t('soc.go'), () => this.goMission(x.k)),
+      );
+      ul.append(li);
+    }
+    card.append(ul);
+    return card;
+  }
+  async claimEv(id, k, b) {
+    b.disabled = true;
+    try {
+      const r = await this.call('event_claim', { p_off: -new Date().getTimezoneOffset(), p_ev: id, p_k: k });
+      this.events = r.state;
+      this.claimable = this.countClaimable();
+      if (r.got) {
+        this.c.sfx.coin();
+        this.c.toast(t('soc.got', { n: r.got }));
+        this.c.setBalance(r.balance);
+        this.coinBurst(b);
+      }
+      this.paintMe();
+      this.drawMe();
+    } catch (e) {
+      b.disabled = false;
+      this.err(e);
+    }
+  }
   async claim(k, b) {
     b.disabled = true;
     try {
       const r = await this.call('mission_claim', { p_off: -new Date().getTimezoneOffset(), p_k: k });
       this.missions = r.state;
-      this.claimable = (r.state?.list || []).filter((x) => x.done && !x.claimed).length;
+      this.claimable = this.countClaimable();
       if (r.got) {
         this.c.sfx.coin();
         this.c.toast(t('soc.got', { n: r.got }));
@@ -783,6 +846,13 @@ export class Social {
       btn('btn primary', t('soc.thJoin'), () => this.c.shopTheme()),
     );
     box.append(left, acts);
+    const ev = Array.isArray(this.events) ? this.events[0] : null;
+    if (ev) {
+      const eb = btn('ev-strip', '');
+      eb.append(el('span', '', EV_EMO[ev.id] || '🎉'), document.createTextNode(` ${t('ev.' + ev.id)} · ${t('ev.now', { to: ev.to.slice(5).replace('-', '/') })}`));
+      eb.onclick = () => this.openMe('missions');
+      box.append(eb);
+    }
     const last = el('div', 'th-last');
     box.append(last);
     // 上週的前 3 名（照讚數）
@@ -1485,6 +1555,7 @@ export class Social {
 }
 
 // ---------- 字 ----------
+const EV_EMO = { newyear: '🎍', setsubun: '👹', valentine: '🍫', hanami: '🌸', tanabata: '🎋', natsu: '🎆', halloween: '🎃', momiji: '🍁', xmas: '🎄', toshi: '🔔' };
 addStrings({
   zh: {
     'soc.me': '我的', 'soc.now': '剛剛', 'soc.player': '玩家 {c}', 'soc.loading': '讀取中…', 'soc.noName': '還沒取名字',
@@ -1501,6 +1572,18 @@ addStrings({
     'soc.m.talk': '留言或丟スタンプ', 'soc.m.talk.d': '在機台旁邊的 💬',
     'soc.m.post': '發一則到廣場', 'soc.m.post.d': '抽到的卡、做好的卡都可以',
     'soc.m.make': '更新或公開自己的機台', 'soc.m.make.d': '改一下機台、按做連結',
+    'ev.limited': '期間限定 · 到 {to}（還有 {d} 天）', 'ev.now': '活動中，到 {to}',
+    'ev.m.pull': '轉 {n} 次（哪一台都可以）', 'ev.m.like': '按讚 {n} 次', 'ev.m.talk': '留言或丟スタンプ', 'ev.m.post': '發到廣場', 'ev.m.make': '更新或公開自己的機台', 'ev.m.all': '五個都完成',
+    'ev.newyear': '初詣・新年快樂', 'ev.newyear.d': '新年第一抽！到おみくじ機台求個好運',
+    'ev.setsubun': '節分', 'ev.setsubun.d': '鬼は外、福は内——把福氣轉進來',
+    'ev.valentine': '情人節', 'ev.valentine.d': '送一張卡給喜歡的人吧',
+    'ev.hanami': '賞櫻季', 'ev.hanami.d': '櫻花開了，換上櫻花背景轉一轉',
+    'ev.tanabata': '七夕', 'ev.tanabata.d': '寫下願望，抽一張籤看看會不會實現',
+    'ev.natsu': '夏祭り', 'ev.natsu.d': '提燈、花火、屋台——夏天的機台集合',
+    'ev.halloween': '萬聖節', 'ev.halloween.d': '不給糖就搗蛋！抽到大凶也別怕',
+    'ev.momiji': '紅葉祭', 'ev.momiji.d': '秋天的機台與籤，邊賞楓邊轉',
+    'ev.xmas': '聖誕節', 'ev.xmas.d': '把禮物裝進轉蛋裡送出去',
+    'ev.toshi': '年末・跨年', 'ev.toshi.d': '今年最後一抽，迎接新的一年',
     'soc.missionHint': '每天 0 點（你的時區）重置。領到的幣直接進錢包。',
     'soc.got': '領到 {n} 枚！', 'soc.noFollowing': '還沒追蹤任何人。在別人的頁面按「追蹤」，逛機台就多一個「追蹤中」。',
     'soc.needName': '先取一個名字', 'soc.saved': '個人頁存好了', 'soc.pickAv': '選一張當頭像', 'soc.pickShow': '選一張放進展示櫃',
@@ -1556,6 +1639,18 @@ addStrings({
     'soc.m.talk': 'コメントかスタンプ', 'soc.m.talk.d': 'マシンの横の 💬 から',
     'soc.m.post': '広場に 1 回投稿', 'soc.m.post.d': '当てたカードも作ったカードも OK',
     'soc.m.make': '自分のマシンを更新・公開', 'soc.m.make.d': 'マシンを少し変えてリンクを作る',
+    'ev.limited': '期間限定 · {to} まで（あと {d} 日）', 'ev.now': '開催中・{to} まで',
+    'ev.m.pull': '{n} 回まわす（どのマシンでも）', 'ev.m.like': 'いいねを {n} 回', 'ev.m.talk': 'コメントかスタンプ', 'ev.m.post': '広場に投稿', 'ev.m.make': '自分のマシンを更新・公開', 'ev.m.all': '5 つぜんぶ達成',
+    'ev.newyear': '初詣・あけおめ', 'ev.newyear.d': '新年の初ガチャ！おみくじマシンで運だめし',
+    'ev.setsubun': '節分', 'ev.setsubun.d': '鬼は外、福は内——福をまわして呼びこもう',
+    'ev.valentine': 'バレンタイン', 'ev.valentine.d': '好きな人にカードを贈ろう',
+    'ev.hanami': 'お花見', 'ev.hanami.d': '桜の背景でまわそう',
+    'ev.tanabata': '七夕', 'ev.tanabata.d': '願いごとを書いて、おみくじで占おう',
+    'ev.natsu': '夏祭り', 'ev.natsu.d': '提灯、花火、屋台——夏のマシン大集合',
+    'ev.halloween': 'ハロウィン', 'ev.halloween.d': 'トリック・オア・トリート！大凶もこわくない',
+    'ev.momiji': '紅葉まつり', 'ev.momiji.d': '紅葉を見ながら、秋のマシンとおみくじを',
+    'ev.xmas': 'クリスマス', 'ev.xmas.d': 'プレゼントをカプセルに入れて贈ろう',
+    'ev.toshi': '年末・年越し', 'ev.toshi.d': '今年最後のひと回し、新しい年へ',
     'soc.missionHint': '毎日 0 時（あなたのタイムゾーン）にリセット。コインはそのままお財布へ。',
     'soc.got': '{n} 枚ゲット！', 'soc.noFollowing': 'まだだれもフォローしていません。ほかの人のページで「フォロー」すると、マシンをさがすに「フォロー中」が出ます。',
     'soc.needName': '先に名前をつけてください', 'soc.saved': 'プロフィールを保存しました', 'soc.pickAv': 'アイコンにする 1 枚を選ぶ', 'soc.pickShow': 'ショーケースに飾る 1 枚を選ぶ',
@@ -1611,6 +1706,18 @@ addStrings({
     'soc.m.talk': 'Comment or send a stamp', 'soc.m.talk.d': 'Tap 💬 beside a machine',
     'soc.m.post': 'Post to the Square', 'soc.m.post.d': 'A card you pulled or made',
     'soc.m.make': 'Update or list your machine', 'soc.m.make.d': 'Tweak it and make the link',
+    'ev.limited': 'Limited time · until {to} ({d} days left)', 'ev.now': 'On now, until {to}',
+    'ev.m.pull': 'Pull {n} times (any machine)', 'ev.m.like': 'Like {n} times', 'ev.m.talk': 'Comment or send a stamp', 'ev.m.post': 'Post to the Square', 'ev.m.make': 'Update or list your machine', 'ev.m.all': 'Finish all five',
+    'ev.newyear': 'New Year shrine visit', 'ev.newyear.d': 'First pull of the year! Try your luck at an omikuji machine',
+    'ev.setsubun': 'Setsubun', 'ev.setsubun.d': 'Demons out, luck in — spin some luck your way',
+    'ev.valentine': "Valentine's Day", 'ev.valentine.d': 'Send a card to someone you like',
+    'ev.hanami': 'Cherry blossom season', 'ev.hanami.d': 'Spin under the sakura background',
+    'ev.tanabata': 'Tanabata', 'ev.tanabata.d': 'Make a wish and draw a fortune',
+    'ev.natsu': 'Summer festival', 'ev.natsu.d': 'Lanterns, fireworks and stalls — summer machines',
+    'ev.halloween': 'Halloween', 'ev.halloween.d': 'Trick or treat! Even a Great Curse is no scare',
+    'ev.momiji': 'Autumn leaves festival', 'ev.momiji.d': 'Autumn machines and fortunes under red leaves',
+    'ev.xmas': 'Christmas', 'ev.xmas.d': 'Put a present in a capsule and send it',
+    'ev.toshi': 'Year end', 'ev.toshi.d': 'The last spin of the year, on to the next one',
     'soc.missionHint': 'Resets at midnight in your time zone. Coins go straight to your wallet.',
     'soc.got': '+{n} coins!', 'soc.noFollowing': "You aren't following anyone yet. Tap Follow on someone's page and Browse gets a Following tab.",
     'soc.needName': 'Pick a name first', 'soc.saved': 'Profile saved', 'soc.pickAv': 'Pick one as your avatar', 'soc.pickShow': 'Pick one for your showcase',

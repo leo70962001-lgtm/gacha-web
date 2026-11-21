@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&display=swap">
 <style>
 /* 版面：左邊是轉蛋機舞台（three.js），右邊是開店表單；玩家模式舞台全滿，UI 浮在上面。
    風格＝卡通描線（toon）：深藍粗線、硬邊陰影，跟 Gemini 貼紙同一套線條 */
@@ -981,7 +982,7 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .field label, .field > span { font-size: 13px; font-weight: 700; color: var(--muted); }
 .field input { border: 2px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
-.kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .kind-btn { display: flex; align-items: center; gap: 8px; justify-content: center; border: 2px solid var(--stroke); border-radius: 14px; padding: 8px 10px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; box-shadow: 3px 3px 0 var(--stroke); }
 .kind-btn svg { width: 28px; height: 28px; color: #1c2340; flex: none; }
 .kind-btn[aria-checked="true"] { background: var(--sun); color: #1c2340; }
@@ -1119,6 +1120,7 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 .bgm-night { --g: linear-gradient(135deg, #24305e, #5a6fd6); }
 .bgm-festival { --g: linear-gradient(135deg, #e8423b, #ffb03b); }
 .bgm-dream { --g: linear-gradient(135deg, #a98bff, #7fd8ff); }
+.bgm-shrine { --g: linear-gradient(135deg, #c8202a, #f3d6a0); }
 .bgm-none, .bgm-up { color: var(--ink); }
 .bgm-up span { color: var(--ink); text-shadow: none; }
 .bgm-none span { text-shadow: none; }
@@ -1366,6 +1368,80 @@ html:has(.sheet:not([hidden])), html:has(.sheet:not([hidden])) body { overflow: 
 @keyframes sparkOut { 0% { opacity: 1; transform: translate(0, 0) scale(.3) rotate(0deg); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1) rotate(180deg); } }
 @media (prefers-reduced-motion: reduce) { .prize-stage.go .tilt-wrap, .result .rays, .result .ring { animation: none !important; } }
 .result h2 { font-size: 26px; overflow-wrap: anywhere; text-wrap: balance; }
+/* おみくじ：結果卡、收藏冊放整張籤（細長的紙，從上面一段一段攤開） */
+.omi-res { display: grid; place-items: center; }
+.omi-res img { display: block; height: min(58dvh, 560px); aspect-ratio: 600 / 1400; width: auto; max-width: 100%; object-fit: contain; border-radius: 4px; box-shadow: 0 2px 0 rgba(28, 35, 64, 0.25), 0 10px 26px rgba(28, 35, 64, 0.22); background: #fbf6ea; }
+.result.omi.fresh .omi-res img { animation: omi-open 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.1) both; transform-origin: 50% 0; }
+@keyframes omi-open { from { clip-path: inset(0 0 88% 0); transform: translateY(10px) scale(0.96); } to { clip-path: inset(0 0 0 0); transform: none; } }
+.result.omi .ribbon { font-family: "Yuji Syuku", "Noto Serif TC", serif; font-size: 22px; letter-spacing: 0.1em; }
+.result.omi.kyo { --rc: #4b4f6b !important; }
+.result.omi .prize-stage { display: none; }
+/* 寫籤 */
+.omi-card { width: min(100%, 760px); }
+.oe-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; }
+.oe-prev { position: sticky; top: 0; }
+.oe-prev canvas { display: block; width: 100%; height: auto; border-radius: 4px; box-shadow: 0 2px 0 rgba(28, 35, 64, 0.25), 0 8px 20px rgba(28, 35, 64, 0.18); }
+.oe-form { display: grid; gap: 12px; min-width: 0; }
+.oe-field { display: grid; gap: 6px; font-weight: 700; font-size: 14px; min-width: 0; }
+.oe-field input, .oe-field textarea { font: inherit; font-weight: 400; border: 2px solid var(--stroke); border-radius: 10px; padding: 8px 10px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; box-sizing: border-box; }
+.oe-field textarea { resize: vertical; font-family: "Noto Serif TC", serif; }
+.oe-fortunes { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.oe-f { font: 22px/1 "Yuji Syuku", "Noto Serif TC", serif; padding: 9px 0; border: 2px solid #c8202a; color: #c8202a; background: #fffaf0; border-radius: 10px; cursor: pointer; writing-mode: vertical-rl; text-orientation: upright; min-height: 64px; display: grid; place-items: center; }
+.oe-f.bad { border-color: #3a3d55; color: #3a3d55; }
+.oe-f[aria-checked="true"] { background: #c8202a; color: #fff; box-shadow: 2px 2px 0 var(--stroke); }
+.oe-f.bad[aria-checked="true"] { background: #3a3d55; }
+.oe-lines { display: grid; gap: 6px; }
+.oe-line { display: grid; grid-template-columns: 86px minmax(0, 1fr) 34px; gap: 6px; align-items: center; }
+.oe-line .oe-lab { font-weight: 700; color: #c8202a; }
+.oe-del { width: 34px; height: 34px; }
+.oe-add { justify-self: start; }
+.items.slips .thumb img { object-fit: cover; }
+.ob-opts input:not([type=color]), .ob-opts textarea { font: inherit; border: 2px solid var(--stroke); border-radius: 10px; padding: 7px 10px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; box-sizing: border-box; }
+.ob-opts textarea { resize: vertical; font-family: "Noto Serif TC", serif; }
+.ob-opts input[type=color] { width: 48px; height: 34px; border: 2px solid var(--stroke); border-radius: 8px; padding: 2px; background: var(--surface); }
+.fx-opts .fx-try { justify-self: start; padding: 4px 12px; font-size: 13px; }
+/* 季節活動（social.js eventCard） */
+.ev-card { padding: 12px; display: grid; gap: 8px; margin-bottom: 12px; background: linear-gradient(135deg, #fff4e6, #ffe3ec); }
+.ev-momiji { background: linear-gradient(135deg, #fff1e0, #ffd9c2); }
+.ev-xmas { background: linear-gradient(135deg, #eaf7ee, #ffe3e3); }
+.ev-newyear { background: linear-gradient(135deg, #fff6dc, #ffe1e1); }
+.ev-halloween { background: linear-gradient(135deg, #fff0db, #eadcff); }
+.ev-hanami { background: linear-gradient(135deg, #fff0f5, #ffe1ec); }
+.ev-natsu, .ev-tanabata { background: linear-gradient(135deg, #e6f0ff, #fff1dc); }
+.ev-head { display: flex; align-items: center; gap: 10px; color: #1c2340; }
+.ev-emo { font-size: 34px; line-height: 1; }
+.ev-tx { display: grid; gap: 1px; min-width: 0; }
+.ev-tx small { font-size: 12px; font-weight: 700; color: #b5402a; }
+.ev-tx b { font-size: 18px; }
+.ev-sub { font-size: 12px; color: #4a5068; }
+.ev-list { margin: 0; }
+.ev-list .ms { background: rgba(255, 255, 255, 0.72); }
+.ev-bar { display: block; height: 5px; border-radius: 3px; background: rgba(28, 35, 64, 0.12); overflow: hidden; margin-top: 3px; position: relative; }
+.ev-bar::after { content: ''; position: absolute; inset: 0; width: calc(var(--p) * 100%); background: #f2a900; border-radius: 3px; }
+.ev-all { border: 2px dashed #f2a900; }
+.ev-strip { margin-top: 8px; width: 100%; text-align: left; font: inherit; font-weight: 700; font-size: 13px; border: 2px solid var(--stroke); border-radius: 12px; padding: 6px 10px; background: #fff4e6; color: #1c2340; cursor: pointer; }
+.omi-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; font-weight: 700; font-size: 14px; }
+.omi-wrap button { font: inherit; font-weight: 700; border: 2px solid var(--stroke); border-radius: 999px; padding: 6px 14px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.omi-wrap button[aria-checked="true"] { background: var(--sun); color: #1c2340; box-shadow: 2px 2px 0 var(--stroke); }
+.oe-papers { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.oe-paper { aspect-ratio: 3 / 7; border: 2px solid var(--stroke); border-radius: 8px; background: #fbf6ea center / cover; cursor: pointer; font-size: 18px; display: grid; place-items: center; padding: 0; }
+.oe-paper.washi { background-image: linear-gradient(#fbf6ea, #f3ead6); box-shadow: inset 0 0 0 4px #fbf6ea, inset 0 0 0 6px #c8202a; }
+.oe-paper[aria-checked="true"] { outline: 3px solid var(--sun); outline-offset: 2px; }
+.oe-sub { font-size: 13px; color: var(--muted); }
+.oe-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+.oe-color { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--stroke); background: var(--c); cursor: pointer; padding: 0; }
+.oe-color[aria-checked="true"] { outline: 3px solid var(--sun); outline-offset: 2px; }
+.oe-sound-now { margin: 0; font-weight: 400; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+#oe-rec.rec { background: #d8262c; color: #fff; border-color: #d8262c; animation: oe-blink 1s steps(2) infinite; }
+@keyframes oe-blink { 50% { opacity: 0.7; } }
+.result.omi.has-media .omi-res img { height: min(40dvh, 400px); }
+@media (max-width: 640px) {
+  .oe-body { grid-template-columns: minmax(0, 1fr); }
+  .oe-prev { position: static; width: 150px; justify-self: center; }
+  .oe-fortunes { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .oe-f { writing-mode: horizontal-tb; min-height: 0; font-size: 20px; padding: 8px 0; }
+}
+@media (max-width: 430px) { .kinds.big .kind-btn small { display: none; } }
 .result .sub { margin: -8px 0 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
 .result .new { font-family: var(--font-display); color: var(--accent); font-size: 16px; }
 .flash { position: absolute; inset: 0; background: #fff; z-index: 5; pointer-events: none; animation: flash .55s ease-out forwards; }
@@ -1980,6 +2056,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
             <div class="kinds big" id="kinds" role="radiogroup" data-i18n-aria="kind.label" aria-label="機台種類">
               <button type="button" class="kind-btn" data-kind="capsule" role="radio"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12" fill="#fff" stroke="currentColor" stroke-width="2.5"/><path d="M4 16a12 12 0 0 0 24 0z" fill="#e8423b" stroke="currentColor" stroke-width="2.5"/></svg><span class="k-txt"><b data-i18n="kind.capsule">轉蛋機</b><small data-i18n="kind.capsuleSub"></small></span></button>
               <button type="button" class="kind-btn" data-kind="card" role="radio"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="9" y="4" width="15" height="22" rx="2.5" fill="#5aa0ff" stroke="currentColor" stroke-width="2.5" transform="rotate(12 16 15)"/><rect x="7" y="6" width="15" height="22" rx="2.5" fill="#ffd23f" stroke="currentColor" stroke-width="2.5"/><path d="M14.5 12l1.4 2.9 3.1.4-2.3 2.1.6 3.1-2.8-1.6-2.8 1.6.6-3.1-2.3-2.1 3.1-.4z" fill="#fff" stroke="currentColor" stroke-width="1.2"/></svg><span class="k-txt"><b data-i18n="kind.card">轉卡機</b><small data-i18n="kind.cardSub"></small></span></button>
+              <button type="button" class="kind-btn" data-kind="omikuji" role="radio"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="12" width="22" height="15" rx="1.5" fill="#f0d9ae" stroke="currentColor" stroke-width="2.5"/><rect x="8" y="3" width="16" height="10" rx="1" fill="#fff" stroke="currentColor" stroke-width="2.2"/><ellipse cx="12" cy="12.5" rx="3.6" ry="1.4" fill="currentColor"/><path d="M20 16v8" stroke="#c8202a" stroke-width="2.6" stroke-linecap="round"/></svg><span class="k-txt"><b data-i18n="kind.omikuji">おみくじ</b><small data-i18n="kind.omikujiSub"></small></span></button>
             </div>
             <div class="name-row">
               <div class="field"><label for="m-name" data-i18n="machineName">機台名稱</label><input id="m-name" maxlength="24"></div>
@@ -1989,7 +2066,8 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
           <li class="step">
             <header><span class="num">2</span><h2 id="items-title" data-i18n="step1">放進獎品</h2><span class="aside" id="items-sum"></span></header>
             <ul class="items" id="items"></ul>
-            <div class="row add-row"><button class="btn ghost" id="add-item" data-i18n="addItem">＋ 新增獎品</button><button class="btn ghost" id="open-studio" data-i18n="cs.open">🃏 カード工房で作る</button><button class="btn ghost" id="pick-work" data-i18n="cs.pickWork">🗂 作品冊から選ぶ</button><button class="btn ghost" id="pick-stk" data-i18n="stk.pickPrize">🏷 シール帳から選ぶ</button></div>
+            <div class="row add-row"><button class="btn ghost" id="add-item" data-i18n="addItem">＋ 新增獎品</button><button class="btn ghost" id="open-studio" data-i18n="cs.open">🃏 カード工房で作る</button><button class="btn ghost" id="pick-work" data-i18n="cs.pickWork">🗂 作品冊から選ぶ</button><button class="btn ghost" id="pick-stk" data-i18n="stk.pickPrize">🏷 シール帳から選ぶ</button><button class="btn ghost" id="omi-sample" data-i18n="omi.sample" hidden>放入七種範例籤</button></div>
+            <div class="omi-wrap" id="omi-wrap" role="radiogroup" aria-labelledby="omi-wrap-label" hidden><span id="omi-wrap-label" data-i18n="omi.wrap">籤裝在</span><button type="button" role="radio" data-w="fold" data-i18n="omi.wrap.fold">📜 折好的紙</button><button type="button" role="radio" data-w="capsule" data-i18n="omi.wrap.capsule">🟡 圓的轉蛋</button></div>
             <p class="hint-text" id="items-hint" data-i18n="itemsHint"></p>
             <!-- 台紙（窗裡的獎品看板）：放哪些、怎麼排、標題、顯示什麼、底（使用者 2026-10-30：「增加可以編輯景品的功能」）；平常收起來 -->
             <details class="fold" id="board-field">
@@ -2036,6 +2114,27 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
             <details class="fold">
               <summary><span id="bgm-label" data-i18n="bgm.label">背景音樂</span><small class="fold-sum" data-sum="bgm-tiles"></small></summary>
               <div class="bgm-tiles" id="bgm-tiles" role="radiogroup" aria-labelledby="bgm-label"></div><p class="hint-text" data-i18n="bgm.hint"></p>
+            </details>
+            <details class="fold" id="omibox-field" hidden>
+              <summary><span data-i18n="ob.label">籤箱設計</span><small class="fold-sum" id="ob-sum"></small></summary>
+              <div class="back-opts ob-opts">
+                <label class="back-row"><span data-i18n="ob.title">看板的大字</span><input id="ob-title" maxlength="10"></label>
+                <label class="back-row"><span data-i18n="ob.text">看板的說明</span><textarea id="ob-text" rows="3" maxlength="60"></textarea></label>
+                <div class="back-row"><span data-i18n="ob.sign">看板</span><div class="row"><button type="button" class="btn ghost" id="ob-sign-own" data-i18n="ob.signOwn">📷 用自己的圖當看板</button><button type="button" class="btn ghost" id="ob-sign-auto" data-i18n="ob.signAuto" hidden>改回自動排版</button></div></div>
+                <label class="back-row"><span data-i18n="ob.panel">木板上的字</span><input id="ob-label" maxlength="6"></label>
+                <div class="back-row"><span id="ob-label-c-label" data-i18n="ob.panelC">字的顏色</span><div class="oe-colors" id="ob-label-c" role="radiogroup" aria-labelledby="ob-label-c-label"></div></div>
+                <div class="back-row"><span data-i18n="ob.wood">箱子的顏色</span><div class="row"><input type="color" id="ob-wood" aria-label="color"><button type="button" class="btn ghost" id="ob-wood-reset" data-i18n="ob.woodReset" hidden>用上面的色票</button></div></div>
+              </div>
+              <p class="hint-text" data-i18n="ob.hint"></p>
+              <input type="file" id="file-obsign" accept="image/*" hidden>
+            </details>
+            <details class="fold" id="fx-field">
+              <summary><span data-i18n="fx.label">稀有的特殊演出</span><small class="fold-sum" data-sum="fx-sr fx-ssr" data-pre="SR ,SSR "></small></summary>
+              <div class="back-opts fx-opts">
+                <div class="back-row"><span id="fx-sr-label">SR</span><div class="chips fin-chips" id="fx-sr" role="radiogroup" aria-labelledby="fx-sr-label"></div><button type="button" class="btn ghost fx-try" data-r="2" data-i18n="fx.try">▶ 預覽</button></div>
+                <div class="back-row"><span id="fx-ssr-label">SSR</span><div class="chips fin-chips" id="fx-ssr" role="radiogroup" aria-labelledby="fx-ssr-label"></div><button type="button" class="btn ghost fx-try" data-r="3" data-i18n="fx.try">▶ 預覽</button></div>
+              </div>
+              <p class="hint-text" data-i18n="fx.hint"></p>
             </details>
             <details class="fold" id="mstk-field">
               <summary><span data-i18n="stk.machine">轉蛋機上的貼紙</span><small class="fold-sum" id="mstk-sum"></small></summary>
@@ -2223,6 +2322,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   <div class="sheet-card result" id="result-card" role="dialog" aria-modal="true" aria-labelledby="r-name">
     <span class="ribbon" id="r-rank"></span>
     <div class="prize-stage" id="r-prize"><div class="rays"></div><div class="ring"></div><div class="tilt-wrap"><div id="r-tilt"></div></div><div class="sparks" id="r-sparks" aria-hidden="true"></div></div>
+    <div class="omi-res" id="r-omi" hidden><img id="r-omi-img" alt=""></div>
     <div class="media-box" id="r-media"></div>
     <span class="new" id="r-new" hidden data-i18n="newGet">新收藏！</span>
     <h2 id="r-name"></h2>
@@ -2341,12 +2441,34 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   </div>
 </div>
 
+<!-- おみくじ：寫籤（使用者 2026-11-21：「可以自己做籤」「可以做大吉小吉 凶 等等」）-->
+<div class="sheet" id="sheet-omi" hidden>
+  <div class="sheet-card omi-card" role="dialog" aria-modal="true" aria-labelledby="oe-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <h2 id="oe-title" data-i18n="omi.editTitle">寫籤</h2>
+    <div class="oe-body">
+      <div class="oe-prev"><canvas id="oe-canvas" width="300" height="700" data-i18n-aria="omi.preview" role="img" aria-label="預覽"></canvas></div>
+      <div class="oe-form">
+        <div class="oe-field"><span id="oe-f-label" data-i18n="omi.fortune">籤的等級</span><div class="oe-fortunes" id="oe-fortunes" role="radiogroup" aria-labelledby="oe-f-label"></div></div>
+        <label class="oe-field"><span data-i18n="omi.no">籤號</span><input id="oe-no" maxlength="12"></label>
+        <label class="oe-field"><span data-i18n="omi.msg">籤詩</span><textarea id="oe-msg" rows="3" maxlength="120"></textarea></label>
+        <div class="oe-field"><span data-i18n="omi.lines">各項運勢</span><div class="oe-lines" id="oe-lines"></div><button type="button" class="btn ghost oe-add" id="oe-add-line" data-i18n="omi.addLine">＋加一項</button></div>
+        <label class="oe-field"><span data-i18n="omi.lucky">幸運物</span><input id="oe-lucky" maxlength="20"></label>
+        <div class="oe-field"><span data-i18n="omi.photo">照片</span><div class="row oe-photo-row"><button type="button" class="btn ghost" id="oe-photo" data-i18n="omi.photoAdd">📷 放照片</button><button type="button" class="btn ghost" id="oe-photo-del" data-i18n="omi.photoDel" hidden>拿掉照片</button></div><div class="omi-wrap oe-pp" id="oe-pp" role="radiogroup" aria-labelledby="oe-pp-label" hidden><span id="oe-pp-label" data-i18n="omi.pp">照片放在</span><button type="button" role="radio" data-pp="box" data-i18n="omi.pp.box">吉凶的框裡</button><button type="button" role="radio" data-pp="side" data-i18n="omi.pp.side">旁邊（圓形）</button></div></div>
+        <div class="oe-field"><span data-i18n="omi.sound">聲音</span><p class="oe-sound-now" id="oe-sound-now"></p><div class="row oe-photo-row"><button type="button" class="btn ghost" id="oe-rec" data-i18n="omi.rec">🎙 錄語音</button><button type="button" class="btn ghost" id="oe-music" data-i18n="omi.music">🎵 音樂・影片</button><button type="button" class="btn ghost" id="oe-sound-del" data-i18n="omi.soundDel" hidden>拿掉</button></div></div>
+        <div class="oe-field oe-paper-field"><span id="oe-paper-label" data-i18n="omi.paper">籤紙（全部的籤一起）</span><div class="oe-papers" id="oe-papers" role="radiogroup" aria-labelledby="oe-paper-label"></div><span class="oe-sub" id="oe-color-label" data-i18n="omi.frameColor">框的顏色</span><div class="oe-colors" id="oe-colors" role="radiogroup" aria-labelledby="oe-color-label"></div><input type="file" id="file-omipaper" accept="image/*" hidden></div>
+      </div>
+    </div>
+    <div class="row" style="justify-content:center"><button class="btn primary big" id="oe-done" data-i18n="omi.done">寫好了</button></div>
+  </div>
+</div>
 <div class="sheet" id="sheet-card" hidden>
   <div class="sheet-card view-card" role="dialog" aria-modal="true" aria-labelledby="v-name">
     <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
     <div class="tilt-wrap">
       <div id="v-tilt"></div>
     </div>
+    <div class="omi-res" id="v-omi" hidden><img id="v-omi-img" alt=""></div>
     <div class="media-box" id="v-media"></div>
     <h2 id="v-name"></h2>
     <p class="meta-line" id="v-meta"></p>

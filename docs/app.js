@@ -1,8 +1,8 @@
 // Clatter 轉蛋鋪：開店設定 → 產生連結 → 玩家投幣、轉把手、開扭蛋
-import { Machine, THEMES } from './machine.js';
-import { unlock, setMuted, setSfxVolume, sfx } from './sfx.js';
+import { Machine, THEMES, OMI_WOOD } from './machine.js';
+import { unlock, setMuted, setSfxVolume, sfx, loadSamples } from './sfx.js';
 import { bgm } from './bgm.js';
-import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES, FRONT_FINISHES, BGM_PRESETS, BGM_DEFAULT, finOf, itemFin } from './codec.js';
+import { encodeConfig, decodeConfig, shortId, CURRENCIES, THEME_KEYS, LIMITS, BG_PRESETS, BACK_PRESETS, FINISHES, FRONT_FINISHES, BGM_PRESETS, BGM_DEFAULT, FX_STYLES, finOf, itemFin } from './codec.js';
 import { RARITY, placeholderThumb, priceText, fontsReady, drawPrizeCard, drawCardLayers, drawCardBack, boardOpts } from './decor.js';
 import { t, lang, setLang, applyDom, LANGS } from './i18n.js';
 import { parseMediaUrl, mediaFromLink, mediaToLink, mediaLabel, mediaKind, saveLocal, removeLocal, localUrl, videoFrame, ytThumb, MAX_FILE } from './media.js';
@@ -36,6 +36,7 @@ function nowPlaying(box, m, o) {
 }
 import { CLOUD, machineStats, tradeMe, setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales, srpc } from './cloud.js';
 import { Social, avatarEl, themeKey, themeName, themeOf } from './social.js';
+import { FORTUNES, fortuneOf, cleanOmi, sampleSlips, blankSlip, drawSlip, drawSlipTag, fortuneForRarity, omiFontsReady, defaultLabels, OMI_LIMITS, PAPER_COLORS, cleanPaper, FRAME_IDS, frameArt, cleanBox, BOX_LIMITS } from './omikuji.js';
 
 // 公開網址（GitHub Pages）：在 claude.ai artifact（iframe）裡看不到外層網址，
 // 而且 artifact 要登入才能看 → 分享連結一律指向這裡，任何人都打得開
@@ -160,6 +161,16 @@ function bmpOf(o) {
 const maskOf = (cfg, i) => bmpOf(cfg.items[i].mask);
 function thumbOf(cfg, i) {
   const it = cfg.items[i];
+  if (cfg.kind === 'omikuji' && it.omi) {
+    const key = `o|${i}|${it.omi.f}`;
+    let th = placeholderCache.get(key);
+    if (!th) {
+      const c = drawSlipTag(it, i);
+      th = { url: c.toDataURL(), bmp: c };
+      placeholderCache.set(key, th);
+    }
+    return th;
+  }
   if (it.img) {
     let th = thumbCache.get(it.img);
     if (!th) {
@@ -227,6 +238,25 @@ function ensureUids(d) {
 const itemKey = (it) => it.uid || ('n:' + it.name).slice(0, 40);
 const stockOf = (cfg) => Object.fromEntries(cfg.items.map((it) => [itemKey(it), it.qty]));
 
+// 機台種類（2026-11-21 加 おみくじ）：其他都當轉蛋機
+function kindOf(k) {
+  return k === 'card' || k === 'omikuji' ? k : 'capsule';
+}
+// 照片獎品 → 籤（換成おみくじ機台時）：照稀有度給吉凶，照片留在籤上
+function slipFromPrize(it) {
+  const f = fortuneForRarity(it.rarity);
+  const F = fortuneOf(f);
+  return { ...it, framed: false, design: null, fin: null, rarity: F.r, omi: cleanOmi({ f, ls: defaultLabels().map((l) => [l, '']) }) };
+}
+// 新的籤的名字：等級的字，同名的加號碼（收藏冊用名字分）
+function slipName(f, skip = null) {
+  const w = fortuneOf(f).w;
+  const used = new Set(draft.items.filter((x) => x !== skip).map((x) => x.name));
+  if (!used.has(w)) return w;
+  for (let n = 2; n < 99; n++) if (!used.has(`${w} ${n}`)) return `${w} ${n}`;
+  return w;
+}
+
 // ---------- 草稿（開店表單）存在本機 ----------
 function loadDraft(uid = shop.cur) {
   const d = store.get(draftKey(uid));
@@ -245,15 +275,25 @@ function loadDraft(uid = shop.cur) {
     framed: it.framed && it.img ? (['monster', 'full', 'star'].includes(it.framed) ? it.framed : 'duel') : false, // 舊草稿 true＝遊戲王風
     fin: FRONT_FINISHES.includes(it.fin) ? it.fin : null, // 這張卡自己的表面加工（カード工房，2026-11-01）
     design: it.framed && it.design && typeof it.design === 'object' ? it.design : null,
+    omi: it.omi ? cleanOmi(it.omi) : null, // おみくじ的籤（2026-11-21）
   }));
   ensureUids(d);
   if (!THEME_KEYS.includes(d.theme)) d.theme = 'red';
-  d.kind = d.kind === 'card' ? 'card' : 'capsule';
+  d.kind = kindOf(d.kind);
+  if (d.kind === 'omikuji')
+    d.items = d.items.map((it) => {
+      if (!it.omi) it = slipFromPrize(it);
+      it.rarity = fortuneOf(it.omi.f).r;
+      return it;
+    });
   d.bg = draftBg(d.bg);
   d.back = draftBack(d.back);
   d.board = draftBoard(d.board);
   d.bgm = draftBgm(d.bgm);
   d.stickers = draftStickers(d.stickers);
+  d.fx = d.fx && (FX_STYLES.includes(d.fx.sr) || FX_STYLES.includes(d.fx.ssr)) ? { sr: FX_STYLES.includes(d.fx.sr) ? d.fx.sr : 'std', ssr: FX_STYLES.includes(d.fx.ssr) ? d.fx.ssr : 'std' } : null;
+  d.omiBox = d.omiBox ? cleanBox({ ...d.omiBox, sign: d.omiBox.sign?.b64 ? { bytes: Uint8Array.from(atob(d.omiBox.sign.b64), (ch) => ch.charCodeAt(0)), mime: d.omiBox.sign.mime } : null }) : null;
+  d.omiPaper = d.omiPaper ? cleanPaper({ ...d.omiPaper, img: d.omiPaper.img?.b64 ? { bytes: Uint8Array.from(atob(d.omiPaper.img.b64), (ch) => ch.charCodeAt(0)), mime: d.omiPaper.img.mime } : null }, BACK_PRESETS) : null;
   d.fin = d.fin && (FRONT_FINISHES.includes(d.fin.sr) || FRONT_FINISHES.includes(d.fin.ssr)) ? { sr: FRONT_FINISHES.includes(d.fin.sr) ? d.fin.sr : 'texture', ssr: FRONT_FINISHES.includes(d.fin.ssr) ? d.fin.ssr : 'gold' } : null;
   if (!d.price || !CURRENCIES.includes(d.price.cur)) d.price = { coins: 5, unit: 10, cur: 'NT$' };
   // 雲端短連結的 id＋修改鑰匙：有的話之後改設定會自動更新到同一條連結
@@ -290,7 +330,7 @@ function draftStickers(list) {
   return list
     .filter((x) => x?.img?.b64 && Array.isArray(x.p) && Array.isArray(x.n))
     .slice(0, 8)
-    .map((x) => ({ id: String(x.id || 'm' + newUid()), img: { bytes: Uint8Array.from(atob(x.img.b64), (ch) => ch.charCodeAt(0)), mime: x.img.mime }, fin: STICKER_FINS.includes(x.fin) ? x.fin : 'flat', k: x.k === 'card' ? 'card' : 'capsule', m: x.m | 0, p: x.p.map(Number), n: x.n.map(Number), s: +x.s || 0.14, r: +x.r || 0 }));
+    .map((x) => ({ id: String(x.id || 'm' + newUid()), img: { bytes: Uint8Array.from(atob(x.img.b64), (ch) => ch.charCodeAt(0)), mime: x.img.mime }, fin: STICKER_FINS.includes(x.fin) ? x.fin : 'flat', k: kindOf(x.k), m: x.m | 0, p: x.p.map(Number), n: x.n.map(Number), s: +x.s || 0.14, r: +x.r || 0 }));
 }
 
 // 背景音樂：{ k: 'preset', id }、{ k: 'none' }、{ k: 'media', media }（上傳的本機檔案或 mp3 網址）；null＝預設曲
@@ -323,6 +363,8 @@ function saveDraft() {
     bg,
     back,
     board: draft.board ? { ...draft.board, img: draft.board.img ? b64(draft.board.img) : null } : null,
+    omiPaper: draft.omiPaper ? { ...draft.omiPaper, img: draft.omiPaper.img ? b64(draft.omiPaper.img) : null } : null,
+    omiBox: draft.omiBox ? { ...draft.omiBox, sign: draft.omiBox.sign ? b64(draft.omiBox.sign) : null } : null,
     stickers: (draft.stickers || []).map((x) => ({ id: x.id, img: b64(x.img), fin: x.fin, k: x.k, m: x.m, p: x.p, n: x.n, s: x.s, r: x.r })),
     items: draft.items.map((it) => ({
       ...it,
@@ -341,9 +383,11 @@ function renderItems() {
   // 轉卡機只放卡片（使用者 2026-11-01：「把卡片機的景品的部分只能加入卡片跟卡片製作做整合」）：
   //   標題、說明換成卡片的；卡的名字、稀有度、圖都在カード工房改（點縮圖或「改卡片」），這裡只改張數、音樂
   const cardKind = draft.kind === 'card';
+  const omiKind = draft.kind === 'omikuji';
   ul.classList.toggle('cards', cardKind);
+  ul.classList.toggle('slips', omiKind);
   for (const [id, key] of [['items-title', 'step1'], ['items-hint', 'itemsHint']]) {
-    $(id).dataset.i18n = cardKind ? key + '.card' : key;
+    $(id).dataset.i18n = draft.kind !== 'capsule' ? key + '.' + draft.kind : key;
     $(id).textContent = t($(id).dataset.i18n);
   }
   draft.items.forEach((it, i) => {
@@ -361,6 +405,7 @@ function renderItems() {
     if (it.framed) th.classList.add('framed');
     if (it.design) th.dataset.tip = t('cs.editShort');
     else if (cardKind) th.dataset.tip = t('kind.toCardShort');
+    else if (omiKind) th.dataset.tip = t('omi.edit');
     const name = document.createElement('input');
     name.className = 'name';
     name.value = it.name;
@@ -380,6 +425,14 @@ function renderItems() {
     sel.setAttribute('aria-label', t('rarity'));
     RARITY.forEach((r, k) => sel.append(new Option(`${r.key} ${r.label}`, k, false, k === it.rarity)));
     sel.disabled = !!it.design; // 稀有度也印在卡上
+    if (omiKind) {
+      // おみくじ：稀有度換成吉凶（演出照吉凶對應的稀有度）
+      sel.className = 'fortune';
+      sel.textContent = '';
+      sel.setAttribute('aria-label', t('omi.fortune'));
+      for (const f of FORTUNES) sel.append(new Option(lang === 'en' ? `${f.w} · ${f.en}` : f.w, f.k, false, f.k === it.omi?.f));
+      sel.disabled = false;
+    }
     const qw = document.createElement('label');
     qw.className = 'qty-wrap';
     const qty = document.createElement('input');
@@ -423,7 +476,7 @@ function renderItems() {
     ss.append(new Option(t('stk.notSticker'), ''));
     for (const f of STICKER_FINS) ss.append(new Option(t('stk.asSticker', { f: t('stk.f.' + f) }), f));
     ss.value = it.sticker?.fin || '';
-    ss.hidden = draft.kind === 'card' && !it.sticker; // 轉卡機不放貼紙（已經設了的留著，讓人改回「不變貼紙」）
+    ss.hidden = (draft.kind === 'card' || omiKind) && !it.sticker; // 轉卡機、おみくじ不放貼紙（已經設了的留著，讓人改回「不變貼紙」）
     mrow.append(ss);
     if (it.framed && it.design) {
       const eb = document.createElement('button');
@@ -439,18 +492,25 @@ function renderItems() {
       cb.textContent = t('kind.toCard');
       mrow.append(cb);
     }
+    if (omiKind) {
+      const eb = document.createElement('button');
+      eb.type = 'button';
+      eb.className = 'media-btn omi-edit';
+      eb.textContent = t('omi.edit');
+      mrow.prepend(eb);
+    }
     li.append(th, name, del, meta, mrow);
     // 以前放進來、跟這台種類不合的獎品：標出來＋怎麼改
     if (!fitsKind(it, draft.kind)) {
       li.classList.add('misfit');
       const note = document.createElement('p');
       note.className = 'misfit-note';
-      note.textContent = t(cardKind ? 'kind.misfit.card' : 'kind.misfit.capsule');
+      note.textContent = t(cardKind ? 'kind.misfit.card' : omiKind ? 'omi.misfit' : 'kind.misfit.capsule');
       li.append(note);
     }
     ul.append(li);
   });
-  $('items-sum').textContent = t(draft.kind === 'card' ? 'itemsSum.card' : 'itemsSum', { n: draft.items.length, q: total });
+  $('items-sum').textContent = t(draft.kind !== 'capsule' ? 'itemsSum.' + draft.kind : 'itemsSum', { n: draft.items.length, q: total });
   $('add-item').disabled = draft.items.length >= LIMITS.items;
   kindButtons();
 }
@@ -516,7 +576,9 @@ function renderForm() {
   renderPrice();
   $('m-name').value = draft.name;
   $('m-shop').value = draft.shop || '';
-  for (const b of $('swatches').children) b.setAttribute('aria-checked', String(b.dataset.k === draft.theme));
+  renderSwatches();
+  renderFx();
+  renderOmiBox();
   for (const b of $('kinds').children) b.setAttribute('aria-checked', String(b.dataset.kind === (draft.kind || 'capsule')));
   renderBgs();
   renderBgm();
@@ -526,6 +588,47 @@ function renderForm() {
   renderFront();
   renderSwitch();
   foldSums();
+}
+
+// 稀有的特殊演出（使用者 2026-11-21：「增加一些抽到稀有度高的卡或籤的特殊演出效果 可以給用戶設定」）
+//   SR、SSR 各選一種（おみくじ：中吉・大凶、大吉），「▶ 預覽」在機台前面放一次
+function renderFx() {
+  const omi = draft.kind === 'omikuji';
+  for (const [row, key, r] of [['fx-sr', 'sr', 2], ['fx-ssr', 'ssr', 3]]) {
+    $(row + '-label').textContent = t(omi ? 'fx.row' + r + '.omikuji' : 'fx.row' + r);
+    const box = $(row);
+    box.textContent = '';
+    for (const id of FX_STYLES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String((draft.fx?.[key] || 'std') === id));
+      b.textContent = t('fx.' + id);
+      b.onclick = () => {
+        draft.fx = { sr: draft.fx?.sr || 'std', ssr: draft.fx?.ssr || 'std', [key]: id };
+        if (draft.fx.sr === 'std' && draft.fx.ssr === 'std') draft.fx = null;
+        renderFx();
+        foldSums();
+        draftChanged();
+        machine?.show.setStyles({ 2: draft.fx?.sr || 'std', 3: draft.fx?.ssr || 'std' });
+        if (id !== 'std') machine?.previewFx(r); // 選了就放一次給你看
+      };
+      box.append(b);
+    }
+  }
+}
+
+// 主題色的色票：おみくじ箱是木頭（白木、朱塗り、飴色…），其他是塑膠機身的顏色
+function renderSwatches() {
+  const omi = draft.kind === 'omikuji';
+  for (const b of $('swatches').children) {
+    b.setAttribute('aria-checked', String(b.dataset.k === draft.theme));
+    b.style.setProperty('--c', omi ? (OMI_WOOD[b.dataset.k] || OMI_WOOD.white).body : THEMES[b.dataset.k].body);
+    const key = omi && hasKey('th.omi.' + b.dataset.k) ? 'th.omi.' + b.dataset.k : 'th.' + b.dataset.k;
+    b.dataset.i18nAria = key;
+    b.setAttribute('aria-label', t(key));
+  }
 }
 
 // ---------- 背景音樂（使用者 2026-10-26：「可以設定背景音樂」） ----------
@@ -771,7 +874,7 @@ function renderFront() {
       h.start(() => (h.running = h.el.isConnected && app.dataset.mode === 'create'));
     }
   }
-  field.hidden = false;
+  field.hidden = draft.kind === 'omikuji'; // おみくじ的籤不是閃卡，沒有表面加工
 }
 
 // ---------- 背景（壁紙） ----------
@@ -1283,7 +1386,7 @@ function draftChanged(redrawItems = false) {
   if (redrawItems) renderItems();
   else {
     const total = draft.items.reduce((a, b) => a + b.qty, 0);
-    $('items-sum').textContent = t(draft.kind === 'card' ? 'itemsSum.card' : 'itemsSum', { n: draft.items.length, q: total });
+    $('items-sum').textContent = t(draft.kind !== 'capsule' ? 'itemsSum.' + draft.kind : 'itemsSum', { n: draft.items.length, q: total });
     document.querySelectorAll('.item').forEach((li) => {
       const it = draft.items[li.dataset.i];
       li.querySelector('.odds').textContent = t('odds', { p: pct(it.qty / total) });
@@ -1301,10 +1404,309 @@ function draftChanged(redrawItems = false) {
   if (app.dataset.mode === 'create') showMachine(draft, draft.items.reduce((a, b) => a + b.qty, 0));
 }
 
+// ---------- おみくじ：寫籤（使用者 2026-11-21：「可以自己做籤」「可以做大吉小吉 凶 等等」）----------
+//   等級（大吉〜大凶）、籤號、籤詩、各項（願望、待人…可以自己改項目）、幸運物、照片；右邊即時預覽整張籤
+let omiFor = -1;
+let omiPaint = 0;
+function openOmiEditor(i) {
+  const it = draft.items[i];
+  if (!it) return;
+  omiFor = i;
+  it.omi = cleanOmi(it.omi);
+  renderOmiEditor();
+  openSheet('sheet-omi', $('oe-done'));
+}
+function renderOmiEditor() {
+  const it = draft.items[omiFor];
+  if (!it) return;
+  const o = it.omi;
+  const fx = $('oe-fortunes');
+  fx.textContent = '';
+  for (const f of FORTUNES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'oe-f' + (f.col !== '#c8202a' ? ' bad' : '');
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(f.k === o.f));
+    b.textContent = f.w;
+    if (lang === 'en') b.title = f.en;
+    b.onclick = () => {
+      const oldW = fortuneOf(it.omi.f).w;
+      it.omi.f = f.k;
+      it.rarity = f.r;
+      if (!it.name || it.name === oldW || it.name.startsWith(oldW + ' ')) it.name = slipName(f.k, it);
+      for (const x of fx.children) x.setAttribute('aria-checked', String(x === b));
+      omiChanged(true);
+    };
+    fx.append(b);
+  }
+  $('oe-no').value = o.no;
+  $('oe-no').placeholder = t('omi.noPh');
+  $('oe-msg').value = o.msg;
+  $('oe-msg').placeholder = t('omi.msgPh');
+  $('oe-lucky').value = o.lk;
+  $('oe-lucky').placeholder = t('omi.luckyPh');
+  const box = $('oe-lines');
+  box.textContent = '';
+  o.ls.forEach(([a, b], k) => {
+    const row = document.createElement('div');
+    row.className = 'oe-line';
+    const la = document.createElement('input');
+    la.className = 'oe-lab';
+    la.maxLength = OMI_LIMITS.label;
+    la.value = a;
+    la.placeholder = t('omi.labelPh');
+    la.setAttribute('aria-label', t('omi.labelPh'));
+    const tx = document.createElement('input');
+    tx.className = 'oe-txt';
+    tx.maxLength = OMI_LIMITS.text;
+    tx.value = b;
+    tx.placeholder = t('omi.textPh');
+    tx.setAttribute('aria-label', a || t('omi.textPh'));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'icon-btn oe-del';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', t('deleteItem', { name: a }));
+    la.oninput = () => {
+      o.ls[k][0] = la.value;
+      omiChanged();
+    };
+    tx.oninput = () => {
+      o.ls[k][1] = tx.value;
+      omiChanged();
+    };
+    del.onclick = () => {
+      o.ls.splice(k, 1);
+      renderOmiEditor();
+      omiChanged();
+    };
+    row.append(la, tx, del);
+    box.append(row);
+  });
+  $('oe-add-line').disabled = o.ls.length >= OMI_LIMITS.lines;
+  $('oe-photo-del').hidden = !it.img;
+  $('oe-photo').textContent = t(it.img ? 'omi.photoChange' : 'omi.photoAdd');
+  $('oe-pp').hidden = !it.img;
+  for (const b of $('oe-pp').querySelectorAll('button')) {
+    b.setAttribute('aria-checked', String(b.dataset.pp === (o.pp === 'side' ? 'side' : 'box')));
+    b.onclick = () => {
+      o.pp = b.dataset.pp;
+      for (const x of $('oe-pp').querySelectorAll('button')) x.setAttribute('aria-checked', String(x === b));
+      omiChanged();
+    };
+  }
+  renderOmiPaper();
+  renderOmiSound();
+  paintOmiPrev();
+}
+// 籤紙的樣式（全部的籤一起）：和紙、手繪插畫、自己的圖；框的顏色
+function renderOmiPaper() {
+  const p = draft.omiPaper || { k: 'washi', c: '' };
+  const box = $('oe-papers');
+  box.textContent = '';
+  const tile = (on, label, bg, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'oe-paper';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(on));
+    b.setAttribute('aria-label', label);
+    b.title = label;
+    if (bg) b.style.backgroundImage = bg;
+    b.onclick = fn;
+    box.append(b);
+    return b;
+  };
+  tile(p.k === 'washi', t('omi.paper.washi'), '', () => setOmiPaper({ k: 'washi' })).classList.add('washi');
+  for (const id of FRAME_IDS) tile(p.k === 'frame' && p.id === id, t('omi.frame.' + id), `url("${asset('tex/omi_frame_' + id + '.webp')}")`, () => setOmiPaper({ k: 'frame', id, c: '' }));
+  for (const id of BACK_PRESETS) tile(p.k === 'preset' && p.id === id, t('back.p.' + id), `url("${asset('tex/back_' + id + '.webp')}")`, () => setOmiPaper({ k: 'preset', id }));
+  const own = tile(p.k === 'img', t('omi.paperOwn'), p.k === 'img' && ownPaperUrl ? `url("${ownPaperUrl}")` : '', () => $('file-omipaper').click());
+  own.classList.add('own');
+  own.textContent = p.k === 'img' ? '' : '📷';
+  const cs = $('oe-colors');
+  cs.textContent = '';
+  for (const c of PAPER_COLORS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'oe-color';
+    b.style.setProperty('--c', c);
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String((p.c || (p.k === 'frame' ? '' : PAPER_COLORS[0])) === c));
+    b.setAttribute('aria-label', c);
+    b.onclick = () => setOmiPaper({ c: c === PAPER_COLORS[0] ? '' : c });
+    cs.append(b);
+  }
+}
+let ownPaperUrl = null;
+function setOmiPaper(patch) {
+  const old = draft.omiPaper || { k: 'washi', c: '' };
+  const next = { ...old, ...patch };
+  if (patch.k && patch.k !== 'img') next.img = null;
+  draft.omiPaper = cleanPaper(next, BACK_PRESETS);
+  if (draft.omiPaper.k === 'img' && draft.omiPaper.img) {
+    if (ownPaperUrl) URL.revokeObjectURL(ownPaperUrl);
+    ownPaperUrl = URL.createObjectURL(new Blob([draft.omiPaper.img.bytes], { type: draft.omiPaper.img.mime }));
+  }
+  renderOmiPaper();
+  omiChanged();
+}
+// 聲音（使用者 2026-11-21：「也可以加語音或音樂」）：直接錄一段語音，或放音樂／影片（跟一般獎品一樣）
+let omiRec = null;
+function renderOmiSound() {
+  const it = draft.items[omiFor];
+  if (!it) return;
+  $('oe-sound-now').textContent = it.media ? mediaLabel(it.media) : t('omi.soundNone');
+  $('oe-sound-del').hidden = !it.media;
+  $('oe-rec').textContent = omiRec ? t('omi.recStop', { s: omiRec.sec }) : t('omi.rec');
+  $('oe-rec').classList.toggle('rec', !!omiRec);
+}
+async function toggleOmiRec() {
+  if (omiRec) return omiRec.mr.stop();
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return toast(t('omi.micFail'));
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    return toast(t('omi.micFail'));
+  }
+  const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg'].find((m) => MediaRecorder.isTypeSupported?.(m)) || '';
+  const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  const chunks = [];
+  const i = omiFor;
+  const t0 = Date.now();
+  omiRec = { mr, sec: 0 };
+  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const timer = setInterval(() => {
+    if (!omiRec) return;
+    omiRec.sec = Math.floor((Date.now() - t0) / 1000);
+    if (omiRec.sec >= 30) mr.stop(); // 最多 30 秒
+    renderOmiSound();
+  }, 250);
+  mr.onstop = async () => {
+    clearInterval(timer);
+    stream.getTracks().forEach((tr) => tr.stop());
+    omiRec = null;
+    renderOmiSound();
+    const type = (mr.mimeType || 'audio/webm').split(';')[0];
+    if (!chunks.length || Date.now() - t0 < 600) return; // 只按一下就停 → 不算
+    const f = new File([new Blob(chunks, { type })], `${t('omi.voiceName')}.${type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm'}`, { type });
+    await attachFile(i, f);
+    if (!$('sheet-omi').hidden && omiFor === i) renderOmiEditor();
+  };
+  mr.start(250);
+  renderOmiSound();
+  sfx.tap?.();
+}
+async function paintOmiPrev() {
+  const it = draft.items[omiFor];
+  if (!it) return;
+  const job = ++omiPaint;
+  await omiFontsReady();
+  const ph = it.img ? bmpOf(it.img) : null;
+  if (ph && !ph.bmp) await ph.ready;
+  const art = await paperArt(draft.omiPaper);
+  if (job !== omiPaint) return;
+  const c = drawSlip(it, omiFor, draft, ph?.bmp || null, art);
+  const out = $('oe-canvas');
+  out.getContext('2d').drawImage(c, 0, 0, out.width, out.height);
+}
+let omiSave = 0;
+function omiChanged(redraw = false) {
+  paintOmiPrev();
+  clearTimeout(omiSave);
+  // 打字時不要每個字都重排整個清單（會搶走焦點）：存檔、更新機台交給 draftChanged，清單只換縮圖
+  omiSave = setTimeout(() => {
+    draftChanged(redraw);
+    const li = document.querySelector(`.item[data-i="${omiFor}"]`);
+    if (li && !redraw) {
+      li.querySelector('.thumb img').src = thumbOf(draft, omiFor).url;
+      li.querySelector('.name').value = draft.items[omiFor]?.name || '';
+      const sel = li.querySelector('.fortune');
+      if (sel) sel.value = draft.items[omiFor]?.omi?.f;
+    }
+  }, redraw ? 0 : 400);
+}
+function bindOmiEditor(pickPhoto) {
+  const it = () => draft.items[omiFor];
+  $('oe-no').oninput = () => {
+    it().omi.no = $('oe-no').value.slice(0, OMI_LIMITS.no);
+    omiChanged();
+  };
+  $('oe-msg').oninput = () => {
+    it().omi.msg = $('oe-msg').value.slice(0, OMI_LIMITS.msg);
+    omiChanged();
+  };
+  $('oe-lucky').oninput = () => {
+    it().omi.lk = $('oe-lucky').value.slice(0, OMI_LIMITS.lucky);
+    omiChanged();
+  };
+  $('oe-add-line').onclick = () => {
+    const o = it().omi;
+    if (o.ls.length >= OMI_LIMITS.lines) return;
+    o.ls.push(['', '']);
+    renderOmiEditor();
+    $('oe-lines').lastElementChild?.querySelector('.oe-lab')?.focus();
+  };
+  $('oe-photo').onclick = () => pickPhoto(omiFor);
+  $('oe-rec').onclick = () => toggleOmiRec();
+  $('oe-music').onclick = () => {
+    const i = omiFor;
+    closeSheet('sheet-omi');
+    openMediaSheet(i);
+  };
+  $('oe-sound-del').onclick = async () => {
+    const x = it();
+    await removeLocal(x.media);
+    x.media = null;
+    renderOmiSound();
+    omiChanged(true);
+  };
+  $('file-omipaper').addEventListener('change', async () => {
+    const f = $('file-omipaper').files[0];
+    $('file-omipaper').value = '';
+    if (!f) return;
+    let bmp;
+    try {
+      bmp = await createImageBitmap(f);
+    } catch (e) {
+      return toast(t('t.badImage'));
+    }
+    const c = await openCrop({ bmp, out: [300, 700], title: t('omi.paperCrop') });
+    if (!c) return;
+    setOmiPaper({ k: 'img', img: await encodeImg(c) });
+  });
+  $('oe-photo-del').onclick = () => {
+    const x = it();
+    x.img = x.mask = x.ui = null;
+    renderOmiEditor();
+    omiChanged(true);
+  };
+  $('oe-done').onclick = () => {
+    closeSheet('sheet-omi');
+    clearTimeout(omiSave);
+    draftChanged(true);
+  };
+  for (const b of $('omi-wrap').querySelectorAll('button'))
+    b.onclick = () => {
+      draft.omiWrap = b.dataset.w === 'capsule' ? 'capsule' : 'fold';
+      draftChanged();
+    };
+  for (const b of document.querySelectorAll('.fx-try')) b.onclick = () => machine?.previewFx(+b.dataset.r);
+  bindOmiBox();
+  $('omi-sample').onclick = () => {
+    if (!confirm(t('omi.sampleAsk'))) return;
+    draft.items = sampleSlips();
+    ensureUids(draft);
+    draftChanged(true);
+  };
+}
+
 // 機台種類跟獎品（使用者 2026-10-30：「卡片機只能放卡片 轉蛋機不能放卡片」）
 //   轉卡機：卡片工房的卡、作品冊的卡、一般照片獎品（照舊自動做成全圖卡）都可以；貼紙（シール帳的、「轉到變成貼紙」）不行
 //   轉蛋機：卡片工房做的卡（整張卡面）不行
 function fitsKind(it, kind) {
+  if (kind === 'omikuji') return !!it.omi; // おみくじ＝只放籤
   return kind === 'card' ? !!it.framed : !it.framed; // 轉卡機＝只放卡片（カード工房的卡）；轉蛋機＝不放卡片
 }
 // 這台能用的「放獎品」按鈕：轉卡機＝卡片工房、作品冊；轉蛋機＝シール帳
@@ -1312,8 +1714,14 @@ function kindButtons() {
   const card = draft.kind === 'card';
   $('pick-work').hidden = !card;
   $('open-studio').hidden = !card;
-  $('pick-stk').hidden = card;
+  const omi = draft.kind === 'omikuji';
+  $('pick-stk').hidden = card || omi;
   $('add-item').hidden = card; // 轉卡機：新的卡從工房、作品冊來
+  $('add-item').textContent = t(omi ? 'omi.add' : 'addItem');
+  $('omi-sample').hidden = !omi;
+  $('omi-wrap').hidden = !omi;
+  for (const b of $('omi-wrap').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.w === (draft.omiWrap === 'capsule' ? 'capsule' : 'fold')));
+  $('board-field').hidden = omi; // おみくじ沒有台紙（看板自動畫）
 }
 // 換種類時放不進去的獎品：列出來問一下，確定才拿掉並切換
 let kindAsk = null;
@@ -1322,7 +1730,7 @@ function askKindSwitch(kind, bad) {
     kindAsk = done;
     $('kc-title').textContent = t('kc.title.' + kind);
     $('kc-text').textContent = t('kc.text.' + kind, { n: bad.length });
-    $('kc-ok').textContent = t(kind === 'card' ? 'kc.ok.card' : 'kc.ok');
+    $('kc-ok').textContent = t(kind === 'card' ? 'kc.ok.card' : kind === 'omikuji' ? 'kc.ok.omikuji' : 'kc.ok');
     const ul = $('kc-list');
     ul.textContent = '';
     for (const it of bad) {
@@ -1346,10 +1754,24 @@ function bindForm() {
     b.onclick = async () => {
       const kind = b.dataset.kind;
       if (draft.kind === kind) return;
-      const bad = draft.items.filter((it) => !fitsKind(it, kind));
+      let bad = draft.items.filter((it) => !fitsKind(it, kind));
+      // 還是範例機台 → 直接換成七種範例籤（不用問）
+      if (kind === 'omikuji' && draft.sample) {
+        draft.items = sampleSlips();
+        ensureUids(draft);
+        if (draft.theme === 'red') draft.theme = 'white'; // 白木
+        if (draft.bg?.k === 'preset' && ['plain', 'shop'].includes(draft.bg.id)) draft.bg = { k: 'preset', id: 'shrine' }; // 神社境內
+        if (!draft.bgm) draft.bgm = { k: 'preset', id: 'shrine' }; // 神社的背景音樂
+        bad = [];
+      }
       if (bad.length) {
         if (!(await askKindSwitch(kind, bad))) return;
-        if (kind === 'card') {
+        if (kind === 'omikuji') {
+          for (const it of bad) {
+            const i = draft.items.indexOf(it);
+            if (i >= 0) draft.items[i] = slipFromPrize(it);
+          }
+        } else if (kind === 'card') {
           // 轉卡機：照片獎品自動做成卡（照片當卡圖），之後可以在工房改
           toast(t('kc.making', { n: bad.length }));
           for (const it of bad) {
@@ -1367,7 +1789,10 @@ function bindForm() {
       renderFront(); // 預覽換成卡片／方形
       renderMachineStickers(); // 貼在另一種機台上的貼紙變淡
       draftChanged(true); // 獎品清單：能放的按鈕、「轉到變成貼紙」跟著種類變
-      if (bad.length) toast(t(kind === 'card' ? 'kc.done.card' : 'kc.done', { n: bad.length }));
+      if (bad.length) toast(t(kind === 'card' ? 'kc.done.card' : kind === 'omikuji' ? 'kc.done.omikuji' : 'kc.done', { n: bad.length }));
+      renderSwatches();
+      renderOmiBox();
+      renderBgs();
     };
   }
   const sw = $('swatches');
@@ -1397,6 +1822,18 @@ function bindForm() {
     if (e.target.classList.contains('name')) it.name = e.target.value.slice(0, LIMITS.name) || t('defaultPrize');
     if (e.target.classList.contains('qty')) it.qty = Math.min(LIMITS.qty, Math.max(1, parseInt(e.target.value, 10) || 1));
     if (e.target.classList.contains('rarity')) it.rarity = +e.target.value;
+    if (e.target.classList.contains('fortune')) {
+      const F = fortuneOf(e.target.value);
+      const oldW = fortuneOf(it.omi?.f).w;
+      it.omi = { ...cleanOmi(it.omi), f: F.k };
+      it.rarity = F.r;
+      if (!it.name || it.name === oldW || it.name.startsWith(oldW + ' ')) {
+        it.name = slipName(F.k, it);
+        li.querySelector('.name').value = it.name;
+      }
+      li.querySelector('.thumb img').src = thumbOf(draft, +li.dataset.i).url;
+      scheduleDecor(); // 看板上的吉凶一覽
+    }
     if (e.target.classList.contains('stk-sel')) {
       it.sticker = e.target.value ? { fin: e.target.value, baked: !!it.sticker?.baked } : null;
       e.target.classList.toggle('on', !!it.sticker);
@@ -1418,6 +1855,8 @@ function bindForm() {
     if (e.target.closest('.del')) {
       draft.items.splice(+li.dataset.i, 1);
       draftChanged(true);
+    } else if (e.target.closest('.omi-edit') || (e.target.closest('.thumb') && draft.kind === 'omikuji')) {
+      openOmiEditor(+li.dataset.i); // おみくじ：寫籤（照片也在裡面放）
     } else if (e.target.closest('.studio-edit') || (e.target.closest('.thumb') && (draft.items[+li.dataset.i].design || draft.kind === 'card'))) {
       openStudio(+li.dataset.i); // 轉卡機的照片獎品 → 工房做成卡
     } else if (e.target.closest('.thumb')) {
@@ -1446,14 +1885,30 @@ function bindForm() {
       it.mask = it.ui = null;
       it.noMask = false;
       draftChanged(true);
+      if (draft.kind === 'omikuji' && !$('sheet-omi').hidden) renderOmiEditor();
       makeMask(it); // 主體去背（背景跑，好了再更新）
     } catch (e) {
       toast(t('t.badImage'));
     }
   });
   bindMediaSheet();
+  bindOmiEditor((i) => {
+    fileFor = i;
+    $('file').value = '';
+    $('file').click();
+  });
   $('add-item').onclick = () => {
     if (draft.items.length >= LIMITS.items) return;
+    if (draft.kind === 'omikuji') {
+      // 新的一張籤：等級照順序輪（大吉、中吉…），寫好再改
+      const f = FORTUNES[draft.items.length % FORTUNES.length].k;
+      const sl = blankSlip(f);
+      sl.name = slipName(f);
+      sl.uid = newUid();
+      draft.items.push(sl);
+      draftChanged(true);
+      return openOmiEditor(draft.items.length - 1);
+    }
     draft.items.push({ name: t('newPrize', { n: draft.items.length + 1 }), rarity: 0, qty: 5, img: null, uid: newUid() });
     draftChanged(true);
     const last = items.lastElementChild?.querySelector('.name');
@@ -1773,7 +2228,7 @@ let shown = null;
 async function showMachine(cfg, capsules, total = capsules) {
   shown = cfg;
   if (!machine?.loaded) return;
-  curKind = cfg.kind === 'card' ? 'card' : 'capsule';
+  curKind = kindOf(cfg.kind);
   if (machine.kind !== curKind) {
     try {
       await machine.setKind(curKind);
@@ -1788,6 +2243,9 @@ async function showMachine(cfg, capsules, total = capsules) {
   applyBg(cfg.bg);
   if (curKind === 'card') backArt(cfg.back).then((art) => shown === cfg && machine.setCardBack(art));
   machine.setFrontFinish(cfg.fin);
+  machine.show.setStyles({ 2: cfg.fx?.sr || 'std', 3: cfg.fx?.ssr || 'std' }); // 店家選的特殊演出
+  if (curKind === 'omikuji') machine.setOmiWood(cfg.omiBox?.woodC);
+  if (curKind === 'omikuji') machine.setOmiWrap(cfg.omiWrap);
   machine.setPile(capsules, total);
   applyStickers(cfg);
   playBgm(cfg.bgm);
@@ -1796,11 +2254,12 @@ async function showMachine(cfg, capsules, total = capsules) {
 
 // 機台種類不同，提示文字也不同（扭蛋 → 卡片）：有「key.card」就用它
 let curKind = 'capsule';
-const tk = (key, vars) => (curKind === 'card' && hasKey(key + '.card') ? t(key + '.card', vars) : t(key, vars));
+const tk = (key, vars) => (curKind !== 'capsule' && hasKey(key + '.' + curKind) ? t(key + '.' + curKind, vars) : t(key, vars));
 const hasKey = (k) => t(k) !== k;
 
 // 轉卡機：這次抽到的獎品畫成卡片正面（照片第一次用時還在解碼 → 等它好）
 async function cardFront(idx) {
+  if (curKind === 'omikuji') return slipFront(play.cfg, idx);
   if (curKind !== 'card') return null;
   const it = play.cfg.items[idx];
   const th = thumbOf(play.cfg, idx);
@@ -1813,6 +2272,120 @@ async function cardFront(idx) {
   L.fin = it.fin || null; // カード工房的卡自己選的表面加工（machine._makeCard 優先用）
   return L;
 }
+// おみくじ：這次抽到的籤畫成整張籤紙（3D 攤開、結果卡都用這張）
+//   試玩時 play.cfg 就是草稿本身（會改）→ 快取的 key 帶籤的內容、籤紙樣式
+const slipCache = new WeakMap();
+const paperKey = (cfg) => { const p = cfg.omiPaper; return p ? `${p.k}|${p.id}|${p.c}|${p.img?.bytes.length || 0}` : ''; };
+async function slipFront(cfg, idx) {
+  const it = cfg.items[idx];
+  let per = slipCache.get(cfg);
+  if (!per) slipCache.set(cfg, (per = new Map()));
+  const key = [idx, lang, JSON.stringify(it.omi), it.name, it.img?.bytes.length || 0, paperKey(cfg), cfg.shop, cfg.name].join('|');
+  if (per.has(key)) return per.get(key);
+  await omiFontsReady();
+  const ph = it.img ? bmpOf(it.img) : null;
+  if (ph && !ph.bmp) await ph.ready;
+  const art = await paperArt(cfg.omiPaper);
+  const c = drawSlip(it, idx, cfg, ph?.bmp || null, art);
+  per.set(key, c);
+  return c;
+}
+// おみくじ箱的看板：店家自己的圖（解碼好的，快取）
+const signCache = new Map();
+function signImg(box) {
+  const s = box?.sign;
+  if (!s) return Promise.resolve(null);
+  if (!signCache.has(s)) signCache.set(s, createImageBitmap(new Blob([s.bytes], { type: s.mime })).catch(() => null));
+  return signCache.get(s);
+}
+// 籤箱設計（使用者 2026-11-21：「讓玩家可以自由設計自己的籤箱」）：看板的字或自己的圖、木板上的字和顏色、木頭顏色
+function renderOmiBox() {
+  const omi = draft.kind === 'omikuji';
+  $('omibox-field').hidden = !omi;
+  if (!omi) return;
+  const b = draft.omiBox || {};
+  if (document.activeElement !== $('ob-title')) $('ob-title').value = b.title || '';
+  $('ob-title').placeholder = t('omi.title');
+  if (document.activeElement !== $('ob-text')) $('ob-text').value = b.text || '';
+  $('ob-text').placeholder = t('omi.signText');
+  if (document.activeElement !== $('ob-label')) $('ob-label').value = b.label || '';
+  $('ob-label').placeholder = t('omi.title');
+  $('ob-sign-auto').hidden = !b.sign;
+  $('ob-title').disabled = $('ob-text').disabled = !!b.sign; // 自己的看板圖：上面的字不用了
+  const cs = $('ob-label-c');
+  cs.textContent = '';
+  for (const c of PAPER_COLORS) {
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'oe-color';
+    x.style.setProperty('--c', c);
+    x.setAttribute('role', 'radio');
+    x.setAttribute('aria-label', c);
+    x.setAttribute('aria-checked', String((b.labelC || PAPER_COLORS[0]) === c));
+    x.onclick = () => setOmiBox({ labelC: c === PAPER_COLORS[0] ? '' : c });
+    cs.append(x);
+  }
+  $('ob-wood').value = b.woodC || (OMI_WOOD[draft.theme] || OMI_WOOD.white).body;
+  $('ob-wood-reset').hidden = !b.woodC;
+  $('ob-sum').textContent = t(draft.omiBox ? 'ob.sumOwn' : 'ob.sumAuto');
+}
+function setOmiBox(patch, typing = false) {
+  draft.omiBox = cleanBox({ ...(draft.omiBox || {}), ...patch });
+  if (!typing) renderOmiBox();
+  else $('ob-sum').textContent = t(draft.omiBox ? 'ob.sumOwn' : 'ob.sumAuto');
+  draftChanged();
+}
+function bindOmiBox() {
+  $('ob-title').oninput = () => setOmiBox({ title: $('ob-title').value.slice(0, BOX_LIMITS.title) }, true);
+  $('ob-text').oninput = () => setOmiBox({ text: $('ob-text').value.slice(0, BOX_LIMITS.text) }, true);
+  $('ob-label').oninput = () => setOmiBox({ label: $('ob-label').value.slice(0, BOX_LIMITS.label) }, true);
+  $('ob-wood').oninput = () => setOmiBox({ woodC: $('ob-wood').value }, true);
+  $('ob-wood').onchange = () => renderOmiBox();
+  $('ob-wood-reset').onclick = () => setOmiBox({ woodC: '' });
+  $('ob-sign-own').onclick = () => $('file-obsign').click();
+  $('ob-sign-auto').onclick = () => setOmiBox({ sign: null });
+  $('file-obsign').addEventListener('change', async () => {
+    const f = $('file-obsign').files[0];
+    $('file-obsign').value = '';
+    if (!f) return;
+    let bmp;
+    try {
+      bmp = await createImageBitmap(f);
+    } catch (e) {
+      return toast(t('t.badImage'));
+    }
+    const c = await openCrop({ bmp, out: [640, 450], title: t('ob.signCrop') });
+    if (!c) return;
+    setOmiBox({ sign: await encodeImg(c) });
+  });
+}
+
+// 籤紙的插畫：預設樣式（卡背那組手繪圖）或店家自己的圖
+const paperArtCache = new Map();
+function paperArt(p) {
+  if (!p || p.k === 'washi') return Promise.resolve(null);
+  const key = p.k === 'img' ? p.img : p.k + ':' + p.id;
+  if (!paperArtCache.has(key)) {
+    const pr =
+      p.k === 'frame'
+        ? new Promise((res) => {
+            const im = new Image();
+            im.onload = () => res(frameArt(p.id, im));
+            im.onerror = () => res(null);
+            im.src = asset('tex/omi_frame_' + p.id + '.webp');
+          })
+        : p.k === 'img'
+        ? createImageBitmap(new Blob([p.img.bytes], { type: p.img.mime })).catch(() => null)
+        : new Promise((res) => {
+            const im = new Image();
+            im.onload = () => res(im);
+            im.onerror = () => res(null);
+            im.src = asset('tex/back_' + p.id + '.webp');
+          });
+    paperArtCache.set(key, pr);
+  }
+  return paperArtCache.get(key);
+}
 function scheduleDecor() {
   clearTimeout(decorTimer);
   decorTimer = setTimeout(async () => {
@@ -1822,7 +2395,7 @@ function scheduleDecor() {
       const th = thumbOf(cfg, i);
       return th.bmp;
     });
-    const bimg = await boardImg(cfg.board); // 台紙用的自己的圖
+    const bimg = cfg.kind === 'omikuji' ? await signImg(cfg.omiBox) : await boardImg(cfg.board); // 台紙（おみくじ：看板）用的自己的圖
     if (shown !== cfg || !machine.loaded) return;
     machine.updateDecor(cfg, thumbs, bimg);
     if (cfg === draft) paintBoardPrev();
@@ -2189,8 +2762,8 @@ async function openIt() {
   play.phase = 'opening';
   const idx = play.pending;
   const it = play.cfg.items[idx];
-  await machine.openCapsule(curKind === 'card' ? null : drawPrizeCard(it, thumbOf(play.cfg, idx).bmp || placeholderThumb(it.name, idx), !play.got[idx]));
-  sfx.reveal(it.rarity);
+  await machine.openCapsule(curKind !== 'capsule' ? null : drawPrizeCard(it, thumbOf(play.cfg, idx).bmp || placeholderThumb(it.name, idx), !play.got[idx]));
+  revealSfx(idx);
   const first = !play.got[idx];
   gotOne(idx);
   play.pending = null;
@@ -2222,11 +2795,25 @@ function showResult(idx, first, view = false) {
   $('r-close').hidden = !view;
   $('r-close').textContent = view !== 'step' ? t('close') : play.multi.opened.includes(false) ? t('ten.next') : t('ten.toResults');
   const card = $('result-card');
-  card.className = `sheet-card result r${it.rarity}${fresh ? ' fresh' : ''}`;
+  const isOmi = play.cfg.kind === 'omikuji' && it.omi;
+  card.className = `sheet-card result r${it.rarity}${fresh ? ' fresh' : ''}${isOmi ? ' omi' : ''}`;
   card.style.setProperty('--rc', `var(--r-${r.key.toLowerCase()})`);
   $('r-rank').textContent = `${r.key} ${r.label}`;
+  $('r-omi').hidden = !isOmi;
+  if (isOmi) {
+    const F = fortuneOf(it.omi.f);
+    $('r-rank').textContent = lang === 'en' ? `${F.w} · ${F.en}` : F.w;
+    card.classList.toggle('kyo', F.col !== '#c8202a');
+    card.classList.toggle('has-media', hasMedia);
+    $('r-prize').hidden = true;
+    const im = $('r-omi-img');
+    im.removeAttribute('src');
+    slipFront(play.cfg, idx).then((c) => {
+      if (resultIdx === idx) im.src = c.toDataURL('image/webp', 0.9);
+    });
+  }
   resHolo.set(hd);
-  if (it.mask)
+  if (it.mask && !isOmi)
     cutLayers(idx, 300, isCard ? 437 : 300).then((L) => {
       if (resultIdx !== idx || !L.s) return;
       resHolo.set({ ...hd, s: L.s, b: L.b, st: L.st, ui: L.u });
@@ -2239,6 +2826,7 @@ function showResult(idx, first, view = false) {
   stage.classList.toggle('go', fresh);
   prizeSparks(fresh ? it.rarity : -1);
   $('r-name').textContent = it.name;
+  if (isOmi) $('r-name').hidden = true; // 籤上就有大字
   $('r-new').hidden = !fresh || !first;
   const total = play.cfg.items.reduce((a, b) => a + b.qty, 0);
   $('r-sub').textContent = t('resultSub', { n: play.pulls, p: pct(it.qty / total), c: owned(idx) });
@@ -2517,6 +3105,12 @@ async function tenPull() {
 }
 
 const multiRar = (i) => play.cfg.items[play.multi.picks[i]].rarity;
+// 開獎音：おみくじ照吉凶（大吉、凶有 Gemini 做的專用音），其他照稀有度
+function revealSfx(idx) {
+  const it = play.cfg.items[idx];
+  if (play.cfg.kind === 'omikuji' && it?.omi) sfx.omiReveal(it.omi.f, it.rarity);
+  else sfx.reveal(it?.rarity | 0);
+}
 
 // 第 i 顆開了 → 記進收藏（同一個獎品抽到兩次，先開的那顆才算 NEW）
 function creditMulti(i) {
@@ -2532,6 +3126,7 @@ function creditMulti(i) {
 function prizeCard(i) {
   const idx = play.multi.picks[i];
   const it = play.cfg.items[idx];
+  if (play.cfg.kind === 'omikuji' && it.omi) return drawSlipTag(it, idx, 256);
   return drawPrizeCard(it, thumbOf(play.cfg, idx).bmp || placeholderThumb(it.name, idx), play.multi.isNew[i]);
 }
 
@@ -2545,14 +3140,14 @@ async function openOne(i) {
   savePlay();
   if (r < 2) {
     machine.popInGrid(i, prizeCard(i));
-    machine.after(0.15).then(() => sfx.reveal(r));
+    machine.after(0.15).then(() => revealSfx(m.picks[i]));
     if (m.opened.includes(false)) setPhase('multiOpen'); // 更新「還有幾顆」
     else finishMulti();
     return;
   }
   setPhase('multiBusy');
   await machine.openFromGrid(i, prizeCard(i));
-  sfx.reveal(r);
+  revealSfx(m.picks[i]);
   showResult(m.picks[i], m.isNew[i], 'step');
 }
 
@@ -2590,7 +3185,7 @@ async function openAll() {
   savePlay();
   await wait(0.35);
   await machine.openFromGrid(best, prizeCard(best));
-  sfx.reveal(multiRar(best));
+  revealSfx(m.picks[best]);
   showMulti(m.picks, m.isNew, topOfMulti());
   setPhase('result');
 }
@@ -2631,7 +3226,7 @@ function showMulti(picks, isNew, best) {
     nm.textContent = it.name + (it.media ? (mediaKind(it.media) === 'video' ? ' ▶' : ' ♪') : '');
     const rk = document.createElement('span');
     rk.className = 'rk';
-    rk.textContent = R.key;
+    rk.textContent = play.cfg.kind === 'omikuji' && it.omi ? fortuneOf(it.omi.f).w : R.key;
     card.append(img, nm, rk);
     if (isNew[i]) {
       const nw = document.createElement('span');
@@ -2648,7 +3243,8 @@ function showMulti(picks, isNew, best) {
   const n = picks.length;
   const bestR = RARITY[play.cfg.items[picks[best]].rarity];
   $('x-title').textContent = t('ten.title', { n });
-  $('x-meta').textContent = t('ten.meta', { k: isNew.filter(Boolean).length, r: `${bestR.key} ${bestR.label}` });
+  const bestIt = play.cfg.items[picks[best]];
+  $('x-meta').textContent = t('ten.meta', { k: isNew.filter(Boolean).length, r: play.cfg.kind === 'omikuji' && bestIt.omi ? fortuneOf(bestIt.omi.f).w : `${bestR.key} ${bestR.label}` });
   const next = Math.min(10, left());
   $('x-again').hidden = next < 2;
   $('x-again').textContent = t('ten.again', { n: next });
@@ -3065,7 +3661,7 @@ async function remixFrom(src) {
   saveDraft();
   const d = SAMPLE();
   d.sample = false;
-  d.kind = cfg.kind === 'card' ? 'card' : 'capsule';
+  d.kind = kindOf(cfg.kind);
   d.theme = cfg.theme;
   d.name = '';
   d.shop = '';
@@ -3079,6 +3675,13 @@ async function remixFrom(src) {
   ensureUids(d);
   // 轉卡機只放卡片工房的卡：範例獎品先畫成卡（跟轉蛋機換成轉卡機時一樣）
   if (d.kind === 'card') d.items = await Promise.all(d.items.map((it, i) => cardFromPrize(it, i)));
+  if (d.kind === 'omikuji') {
+    d.items = sampleSlips();
+    ensureUids(d);
+    if (cfg.omiPaper && cfg.omiPaper.k !== 'img') d.omiPaper = { ...cfg.omiPaper, img: null };
+    if (cfg.omiBox) d.omiBox = cleanBox({ ...cfg.omiBox, sign: null });
+    d.omiWrap = cfg.omiWrap;
+  }
   const uid = 'm' + newUid();
   shop.list.push(uid);
   shop.cur = uid;
@@ -3090,8 +3693,11 @@ async function remixFrom(src) {
   toast(t('soc.remixed', { n: cfg.name || t('defaultMachine') }));
 }
 
+// Gemini「音楽を作成」做的效果音（tools/make_sfx.py → assets/sfx/）
+const SFX_SAMPLES = ['sfx_coin', 'sfx_coin_wood', 'sfx_tick', 'sfx_thud', 'sfx_pop', 'sfx_card', 'fx_sakura', 'fx_stars', 'fx_thunder', 'fx_hanabi', 'fx_gold', 'omi_daikichi', 'omi_kyo', 'omi_suzu'];
+
 // 開店頁最上面的機台切換：每台一個選項（名稱＋種類）
-const switchLabel = (i, d) => `${i + 1}. ${d?.name || t('defaultMachine')} · ${t('kind.' + (d?.kind === 'card' ? 'card' : 'capsule'))}`;
+const switchLabel = (i, d) => `${i + 1}. ${d?.name || t('defaultMachine')} · ${t('kind.' + (kindOf(d?.kind)))}`;
 function renderSwitch() {
   const sel = $('mach-sel');
   sel.textContent = '';
@@ -3131,6 +3737,7 @@ async function removeMachine(uid) {
 const KIND_ICON = {
   capsule: '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12" fill="#fff" stroke="#1c2340" stroke-width="2.5"/><path d="M4 16a12 12 0 0 0 24 0z" fill="#e8423b" stroke="#1c2340" stroke-width="2.5"/></svg>',
   card: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="9" y="4" width="15" height="22" rx="2.5" fill="#5aa0ff" stroke="#1c2340" stroke-width="2.5" transform="rotate(12 16 15)"/><rect x="7" y="6" width="15" height="22" rx="2.5" fill="#ffd23f" stroke="#1c2340" stroke-width="2.5"/></svg>',
+  omikuji: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="12" width="22" height="15" rx="1.5" fill="#f0d9ae" stroke="#1c2340" stroke-width="2.5"/><rect x="8" y="3" width="16" height="10" rx="1" fill="#fff" stroke="#1c2340" stroke-width="2.2"/><ellipse cx="12" cy="12.5" rx="3.6" ry="1.4" fill="#1c2340"/><path d="M20 16v8" stroke="#c8202a" stroke-width="2.6" stroke-linecap="round"/></svg>',
 };
 
 let noSalesRpc = false; // wallet_sales 還沒裝（404）→ 這次開頁面就不再問
@@ -3175,7 +3782,7 @@ async function renderShop() {
   for (const uid of shop.list) {
     const d = uid === shop.cur ? draft : store.get(draftKey(uid));
     if (!d || !Array.isArray(d.items)) continue;
-    const kind = d.kind === 'card' ? 'card' : 'capsule';
+    const kind = kindOf(d.kind);
     const total = d.items.reduce((a, b) => a + (b.qty | 0), 0);
     const box = document.createElement('article');
     box.className = 'mach card-box' + (uid === shop.cur ? ' cur' : '');
@@ -3384,7 +3991,7 @@ function gotOne(idx) {
   const a = store.get('clatter.album') || {};
   const key = albumKey();
   const nm = play.cfg.items[idx].name;
-  const e = a[key] || { name: play.cfg.name, kind: play.cfg.kind === 'card' ? 'card' : 'capsule', link: play.link, items: {}, got: {}, order: [] };
+  const e = a[key] || { name: play.cfg.name, kind: kindOf(play.cfg.kind), link: play.link, items: {}, got: {}, order: [] };
   ensureBase(e, nm);
   e.base[nm] += 1;
   recount(e, nm);
@@ -3436,7 +4043,11 @@ async function albumSync() {
   }
   const e = a[key] || { items: {}, got: {}, order: [] };
   e.name = play.cfg.name;
-  e.kind = play.cfg.kind === 'card' ? 'card' : 'capsule';
+  e.kind = kindOf(play.cfg.kind);
+  e.shop = play.cfg.shop || '';
+  // 籤紙樣式：預設插畫、框色記下來（自己的圖太大，收藏冊用和紙）
+  if (play.cfg.kind === 'omikuji') e.op = play.cfg.omiPaper && play.cfg.omiPaper.k !== 'img' ? { k: play.cfg.omiPaper.k, id: play.cfg.omiPaper.id, c: play.cfg.omiPaper.c } : play.cfg.omiPaper?.c ? { k: 'washi', id: '', c: play.cfg.omiPaper.c } : null;
+  if (e.op) e.op = cleanPaper(e.op, BACK_PRESETS);
   e.fin = play.cfg.fin || null; // 表面加工（卡冊、大卡的閃法）
   e.link = play.link;
   const names = play.cfg.items.map((it) => it.name);
@@ -3449,7 +4060,7 @@ async function albumSync() {
     const it = play.cfg.items[i];
     const nm = it.name;
     const th = thumbs[i];
-    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(it.framed ? { y: it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : it.framed === 'star' ? 's' : 1 } : {}), ...(it.fin ? { f: it.fin } : {}), ...(th.u ? { u: th.u } : {}) };
+    e.items[nm] = { r: it.rarity, t: th.t, s: th.s || null, b: th.b || null, st: th.st ?? null, md: mediaToLink(it.media) || null, ...(play.cfg.kind === 'omikuji' && it.omi ? { o: { ...cleanOmi(it.omi), i } } : {}), ...(it.framed ? { y: it.framed === 'monster' ? 'm' : it.framed === 'full' ? 'f' : it.framed === 'star' ? 's' : 1 } : {}), ...(it.fin ? { f: it.fin } : {}), ...(th.u ? { u: th.u } : {}) };
     const n = play.got[i] || 0;
     const base = Math.max(n, e.base[nm] ?? Math.max(0, (e.got[nm] || 0) - (e.tr[nm] || 0) + (e.cut[nm] || 0))); // 舊資料沒有 base：用 got 推回去
     if (base) e.base[nm] = base;
@@ -4032,7 +4643,7 @@ function renderMachineStickers() {
   box.textContent = '';
   const arr = draft.stickers || [];
   if (mstkSel >= arr.length) mstkSel = arr.length - 1;
-  const kind = draft.kind === 'card' ? 'card' : 'capsule';
+  const kind = kindOf(draft.kind);
   arr.forEach((x, i) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -4474,8 +5085,32 @@ function openCardView(e, name) {
   const it = e.items[name];
   const R = RARITY[it.r] || RARITY[0];
   $('v-name').textContent = name;
-  $('v-meta').textContent = `${R.key} ${R.label} · ×${e.got[name]} · ${e.name}`;
+  $('v-meta').textContent = `${it.o ? fortuneOf(it.o.f).w : `${R.key} ${R.label}`} · ×${e.got[name]} · ${e.name}`;
   openSheet('sheet-card', $('sheet-card').querySelector('[data-close]'));
+  // おみくじ：整張籤（收藏冊裡存了籤的內容，重畫一張）
+  $('v-omi').hidden = !it.o;
+  if (it.o) {
+    $('v-tilt').parentElement.hidden = true;
+    $('v-media').textContent = '';
+    cardPlayer?.stop();
+    cardPlayer = null;
+    const im = $('v-omi-img');
+    im.removeAttribute('src');
+    const pcfg = { name: e.name, shop: e.shop || '', omiPaper: e.op || null };
+    Promise.all([omiFontsReady(), paperArt(e.op)]).then(([, art]) => (im.src = drawSlip({ name, omi: it.o }, it.o.i | 0, pcfg, null, art).toDataURL('image/webp', 0.9)));
+    const omd = it.md && mediaFromLink(it.md);
+    if (omd) cardPlayer = nowPlaying($('v-media'), omd, { art: it.t, title: name, artist: titleOf(e), rarity: it.r });
+    $('v-acts').hidden = !(e.key && e.got[name] > 0);
+    $('v-trade').hidden = $('v-gift').hidden = !cloudReady();
+    for (const [id, mode] of [['v-trade', 'swap'], ['v-gift', 'gift']])
+      $(id).onclick = () => {
+        closeSheet('sheet-card');
+        trade.sendFlow({ item: { key: e.key, n: name }, mode });
+      };
+    $('v-stick').hidden = true;
+    return;
+  }
+  $('v-stick').hidden = false;
   // 有音樂／影片 → 「正在播放」卡；沒有 → 3D 閃卡
   cardPlayer?.stop();
   const md = it.md && mediaFromLink(it.md);
@@ -4560,7 +5195,7 @@ async function listingMeta() {
     g.drawImage(src, (64 - src.width * s) / 2, (64 - src.height * s) / 2, src.width * s, src.height * s);
     th.push(c.toDataURL('image/webp', 0.7));
   }
-  const meta = { n: draft.name || '', s: draft.shop || '', k: draft.kind === 'card' ? 'card' : 'capsule', th: draft.theme, p: [draft.price.coins, draft.price.unit, draft.price.cur], i: draft.items.length, t: th };
+  const meta = { n: draft.name || '', s: draft.shop || '', k: kindOf(draft.kind), th: draft.theme, p: [draft.price.coins, draft.price.unit, draft.price.cur], i: draft.items.length, t: th };
   // 社群：每週主題（這週的才算）、用誰的外觀開的、可不可以被當外觀、每個獎品的稀有度（動態牆算「抽到 SSR」用）
   if (draft.wk && draft.wk === themeKey()) meta.w = draft.wk;
   if (/^[0-9A-Za-z]{10}$/.test(draft.rx?.id || '')) meta.rx = draft.rx.id;
@@ -4806,7 +5441,7 @@ function renderResume() {
   const ico = document.createElement('div');
   ico.className = 'mach-ico';
   ico.style.setProperty('--c', (THEMES[cfg.theme] || THEMES.red).body);
-  ico.innerHTML = KIND_ICON[cfg.kind === 'card' ? 'card' : 'capsule'];
+  ico.innerHTML = KIND_ICON[kindOf(cfg.kind)];
   const tx = document.createElement('div');
   tx.className = 'r-txt';
   const sm = document.createElement('small');
@@ -4871,7 +5506,7 @@ function browseCard(r) {
   if (!r || !/^[0-9A-Za-z]{10}$/.test(r.id) || !r.meta) return null;
   {
     const m = r.meta;
-    const kind = m.k === 'card' ? 'card' : 'capsule';
+    const kind = kindOf(m.k);
     const art = document.createElement('article');
     art.className = 'bcard card-box';
     const cover = document.createElement('div');
@@ -5347,6 +5982,8 @@ async function boot() {
 
   try {
     await Promise.all([machine.load(new URL('./assets/', import.meta.url).href), fontsReady()]);
+    omiFontsReady().then(() => placeholderCache.clear()); // 籤的縮圖用毛筆字：字型到了再重畫
+    loadSamples(asset('sfx/'), SFX_SAMPLES); // Gemini 做的效果音（點過畫面、聲音開起來之後才載）
   } catch (e) {
     $('loading-text').textContent = t('loadFail');
     console.error(e);

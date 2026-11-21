@@ -4,7 +4,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
 import { sfx } from './sfx.js';
-import { RARITY, drawLid, drawPrice, drawArrow, drawLabel, drawCard, drawSide, drawBoard, drawCardBack, CARD_PX, CARD_WIN } from './decor.js';
+import { RARITY, drawLid, drawPrice, drawArrow, drawLabel, drawCard, drawSide, drawBoard, drawCardBack, CARD_PX, CARD_WIN, priceText } from './decor.js';
+import { drawSign, drawPanelLabel, drawFolded, drawSlipBack, omiFontsReady } from './omikuji.js';
 import { makeCard, cardTex, stepCards, CARD_H, CARD_W } from './cardkit.js';
 import { brightSpots } from './holo.js';
 import { t } from './i18n.js';
@@ -60,7 +61,39 @@ const SPECS = {
     // 出卡口：細縫 x −0.107..0.102、y 0.389..0.397；卡片躺著（卡面朝下）從機身裡滑出來，露出前框約 11 cm
     exit: { x: -0.0025, y: 0.393, zIn: 0.3, zOut: 0.5 },
   },
+  // おみくじ箱（使用者 2026-11-21 自己做的 omikuji.blend；blender/build_omikuji_glb.py、measure_omikuji.py；three 的 z＝−Blender y）
+  //   左邊玻璃箱（上面玻璃有圓洞，手伸進去抽）、右邊香油錢的木格柵（硬幣從上面投進縫裡）、後面立一塊看板
+  omikuji: {
+    slot: new THREE.Vector3(0.409, 0.75, -0.0065), // 格柵正中間那條縫（縫的中心 Blender y 0.0065）
+    slotTop: true, // 從上面投
+    slotRect: { w: 0.312, h: 0.625, t: 0.014 }, // 提示框圍住整片格柵（躺平）
+    slotHitBox: { w: 0.32, h: 0.06, d: 0.64 },
+    handleC: new THREE.Vector3(-0.194, 0.743, 0), // 「把手」＝上面玻璃的圓洞（在洞上畫圈＝攪籤）
+    handleAxis: 'y',
+    restYaw: -0.3,
+    camDir: new THREE.Vector3(0, 0.62, 1), // 鏡頭高一點，看得到洞口跟玻璃裡的籤
+    box: { x: [-0.621, 0.621], y: [0, 1.487], z: [-0.408, 0.408] },
+    lidLight: new THREE.Vector3(-0.19, 0.42, 0.1),
+    exitLight: new THREE.Vector3(-0.194, 0.98, 0.06),
+    spark: { x: [-0.5, 0.1], y: [0.12, 0.5], z: [-0.3, 0.3] },
+    hole: { x: -0.194, y: 0.743, z: 0, r: 0.176 },
+    inner: { x: [-0.578, 0.18], z: [-0.355, 0.355], floor: 0.0506, top: 0.716 }, // 玻璃箱裡面（籤堆的範圍）
+  },
 };
+// おみくじ箱的木頭顏色（主題色 → 白木、朱塗り…；木紋貼圖＝Poly Haven ash_veneer，web/assets/tex/wood_ash.webp）
+export const OMI_WOOD = {
+  red: { body: '#d0533a', sign: '#c34a33' }, // 朱塗り
+  white: { body: '#f7d9a0', sign: '#f2d299' }, // 白木（三峰神社那台）
+  yellow: { body: '#eaa951', sign: '#e09d45' }, // 飴色（ニス塗り）
+  blue: { body: '#6f8fb8', sign: '#6584ad' },
+  mint: { body: '#8fc4a9', sign: '#84b99d' },
+  pink: { body: '#eeb3bf', sign: '#e7a7b4' },
+  black: { body: '#43372f', sign: '#3b3029' }, // 黒漆
+};
+// 折好的籤（窗裡那堆、拿出來的那張）：橫的小紙包，打開後是 SLIP3.w × SLIP3.h 的長條
+const SLIP3 = { w: 0.15, h: 0.35, n: 4, t: 0.012, pile: 0.6 }; // n 折；pile＝窗裡的籤是拿出來那張的幾倍大
+const MAX_SLIPS = 220;
+const OMI_CAP = 0.8; // 籤裝在轉蛋裡（使用者 2026-11-21：「可以讓用戶選要不要用圓的轉蛋」）：轉蛋是扭蛋機那顆的 0.8 倍
 
 // 扭蛋大小：顆數少就用原尺寸，多了就縮小，讓它們大約裝到窗的六成高
 function capRadius(n) {
@@ -466,7 +499,8 @@ export class Machine {
 
   // 投幣口：點擊判定用的隱形球＋提示光圈（放進正在蓋的那台機台的群組）
   _addSlot(sp) {
-    this.slotHit = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 8), new THREE.MeshBasicMaterial({ visible: false }));
+    const hb = sp.slotHitBox;
+    this.slotHit = new THREE.Mesh(hb ? new THREE.BoxGeometry(hb.w, hb.h, hb.d) : new THREE.SphereGeometry(0.075, 12, 8), new THREE.MeshBasicMaterial({ visible: false }));
     this.slotHit.position.copy(sp.slot);
     this._dg.add(this.slotHit);
     this.slotRing = new THREE.Mesh(
@@ -474,7 +508,10 @@ export class Machine {
       new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0, depthWrite: false }),
     );
     this.slotRing.userData.pulse = sp.slotRect ? 0.12 : 0.25;
-    this.slotRing.position.set(sp.slot.x, sp.slot.y, sp.slotFront + 0.004);
+    if (sp.slotTop) {
+      this.slotRing.position.set(sp.slot.x, 0.766, sp.slot.z); // 躺在格柵上面（框頂 0.763）
+      this.slotRing.rotation.x = -Math.PI / 2;
+    } else this.slotRing.position.set(sp.slot.x, sp.slot.y, sp.slotFront + 0.004);
     this._dg.add(this.slotRing);
   }
 
@@ -617,13 +654,17 @@ export class Machine {
     this.turnFx = fx;
   }
 
-  // 換機台種類：第一次換到轉卡機會先載入模型
+  // 換機台種類：第一次換到轉卡機／おみくじ會先載入模型
   async setKind(kind) {
-    kind = kind === 'card' ? 'card' : 'capsule';
+    kind = kind === 'card' || kind === 'omikuji' ? kind : 'capsule';
     if (!this.loaded) return;
     if (kind === 'card' && !this.kinds.card) {
       this._cardP = this._cardP || this._loadCard();
       await this._cardP;
+    }
+    if (kind === 'omikuji' && !this.kinds.omikuji) {
+      this._omiP = this._omiP || this._loadOmikuji();
+      await this._omiP;
     }
     if (this.kind === kind) return;
     this.clearCapsules();
@@ -631,6 +672,8 @@ export class Machine {
     this.spec = SPECS[kind];
     const k = this.kinds[kind];
     for (const [n, o] of Object.entries(this.kinds)) o.group.visible = n === kind;
+    // 窗裡的扭蛋掛在 root 下（不在扭蛋機的群組裡）→ 別的機台要藏起來
+    for (const m of [this.pileBot, this.pileTop, this.pileLine]) if (m) m.visible = kind === 'capsule';
     this.handle = k.handle;
     this.handleBase = k.handleBase;
     this.slotHit = k.slotHit;
@@ -642,6 +685,602 @@ export class Machine {
     this.exitLight.position.copy(this.spec.exitLight);
     this.refreshLabels();
     this._frameCamera();
+  }
+
+  // ---------- おみくじ箱 ----------
+  // 第一次切到おみくじ才載入（omikuji.b64.txt＋AO＋木紋）
+  async _loadOmikuji() {
+    const base = this.base;
+    const glb = fetch(base + 'omikuji.b64.txt')
+      .then((r) => {
+        if (!r.ok) throw new Error('omikuji model ' + r.status);
+        return r.text();
+      })
+      .then((t) => Uint8Array.from(atob(t.trim()), (c) => c.charCodeAt(0)).buffer);
+    const [gltf, aoBody, aoSign, aoFloor, wood] = await Promise.all([
+      glb.then((buf) => new GLTFLoader().parseAsync(buf, base)),
+      this._tex(base + 'ao_omi_body.jpg'),
+      this._tex(base + 'ao_omi_sign.jpg'),
+      this._tex(base + 'ao_omi_floor.jpg'),
+      new THREE.TextureLoader().loadAsync(base + 'tex/wood_ash.webp'),
+      omiFontsReady(),
+    ]);
+    // 木紋：第二組 UV（WoodUV，1 UV＝1 公尺，紋路順著每個面比較長的那一邊）
+    wood.wrapS = wood.wrapT = THREE.RepeatWrapping;
+    wood.colorSpace = THREE.SRGBColorSpace;
+    wood.channel = 1;
+    wood.anisotropy = 4;
+    wood.flipY = false;
+    const toon = (o) => new THREE.MeshToonMaterial({ gradientMap: this.ramp, aoMapIntensity: 0.4, ...o });
+    const om = {
+      body: toon({ aoMap: aoBody, map: wood }),
+      sign: toon({ aoMap: aoSign, map: wood }),
+      floor: toon({ aoMap: aoFloor, map: wood }),
+      dark: toon({ color: 0x1d1713, aoMap: aoBody }),
+      paper: new THREE.MeshBasicMaterial({ color: 0xf7f2e6 }),
+    };
+    this.omats = om;
+    const omiG = (this._dg = new THREE.Group());
+    omiG.visible = false;
+    this.root.add(omiG);
+    const part = (o) => {
+      for (let p = o; p; p = p.parent) {
+        const m = /^(OmiBody|OmiFloor|OmiGlass|OmiSign|OmiPaper)/.exec(p.name);
+        if (m) return m[1];
+      }
+      return '';
+    };
+    const meshes = [];
+    gltf.scene.traverse((o) => o.isMesh && meshes.push(o));
+    for (const o of meshes) {
+      const pn = part(o);
+      const mn = o.material.name;
+      if (pn === 'OmiGlass') {
+        o.material = this.mats.glass;
+        o.renderOrder = 10;
+        continue;
+      }
+      o.material = pn === 'OmiPaper' ? om.paper : pn === 'OmiSign' ? om.sign : pn === 'OmiFloor' ? om.floor : mn === 'M_ExitDark' ? om.dark : om.body;
+      o.castShadow = pn !== 'OmiPaper';
+      o.receiveShadow = true;
+      if (pn === 'OmiBody' || pn === 'OmiSign') addOutline(o, 0.0045, this.hullCache);
+    }
+    omiG.add(gltf.scene);
+    const keep = { handle: this.handle, handleBase: this.handleBase, slotHit: this.slotHit, slotRing: this.slotRing, decals: this.decals };
+    const sp = SPECS.omikuji;
+    // 「把手」＝圓洞：看不見的圓柱（點、拖的判定），真正會轉的是洞旁邊的弧形箭頭
+    const hit = new THREE.Mesh(new THREE.CylinderGeometry(sp.hole.r + 0.03, sp.hole.r + 0.03, 0.12, 24), new THREE.MeshBasicMaterial({ visible: false }));
+    hit.position.set(sp.hole.x, sp.hole.y + 0.02, sp.hole.z);
+    omiG.add(hit);
+    this.handle = hit;
+    this.handleBase = 0;
+    this._addSlot(sp);
+    this._buildOmiDecals();
+    om.handle = this.decals.arrow.material; // 可以攪的時候箭頭發光（_frame 的 handle.emissive）
+    this._buildSlipPile(omiG);
+    this.slipBackTex = canvasTex(drawSlipBack());
+    this.stickTargets.omikuji = stickables(gltf.scene, this.decals);
+    this.kinds.omikuji = { group: omiG, handle: hit, handleBase: 0, slotHit: this.slotHit, slotRing: this.slotRing, decals: this.decals, mats: om };
+    Object.assign(this, keep);
+    this._dg = null;
+    if (this.themeKey) this.setTheme(this.themeKey);
+  }
+
+  _buildOmiDecals() {
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    const sp = SPECS.omikuji;
+    const F = 0.3955; // 右邊木板的正面（Blender y −0.394）
+    this.decals = {
+      board: this._decal(0.928, 0.652, V(0.0003, 1.125, -0.3515)), // 看板的紙（polySurface36）
+      label: this._decal(0.2, 0.52, V(0.411, 0.33, F)), // 紅字「おみくじ」
+      price: this._decal(0.13, 0.13, V(0.411, 0.64, F)),
+      arrow: this._decal(0.5, 0.5, V(sp.hole.x, sp.hole.y + 0.0015, sp.hole.z)), // 圓洞周圍的弧形箭頭（躺在玻璃上）
+    };
+    this.decals.arrow.rotation.set(-Math.PI / 2, 0, 0);
+    // 圓洞的邊：玻璃是透明的，洞要畫一圈線才看得出來（跟描邊同色）
+    const rim = new THREE.Mesh(new THREE.RingGeometry(sp.hole.r - 0.004, sp.hole.r + 0.004, 72), new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.85, depthWrite: false }));
+    rim.rotation.x = -Math.PI / 2;
+    rim.position.set(sp.hole.x, sp.hole.y + 0.001, sp.hole.z);
+    rim.renderOrder = 11;
+    this._dg.add(rim);
+    this.decals.arrow.material.depthWrite = false;
+    this.decals.arrow.renderOrder = 11;
+    // 看板的紙不受光（不然落在看板框的影子裡）
+    this.decals.board.material = new THREE.MeshBasicMaterial({ transparent: true });
+    this.decals.board.receiveShadow = false;
+    // 正面玻璃的斜反光
+    const shine = document.createElement('canvas');
+    shine.width = 512;
+    shine.height = 420;
+    const sg = shine.getContext('2d');
+    sg.fillStyle = 'rgba(255,255,255,0.45)';
+    sg.beginPath();
+    sg.moveTo(330, 0);
+    sg.lineTo(390, 0);
+    sg.lineTo(290, 420);
+    sg.lineTo(230, 420);
+    sg.fill();
+    sg.fillStyle = 'rgba(255,255,255,0.3)';
+    sg.beginPath();
+    sg.moveTo(420, 0);
+    sg.lineTo(440, 0);
+    sg.lineTo(340, 420);
+    sg.lineTo(320, 420);
+    sg.fill();
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(0.765, 0.648), new THREE.MeshBasicMaterial({ map: canvasTex(shine), transparent: true, depthWrite: false }));
+    sh.position.set(-0.1886, 0.3932, 0.3875);
+    sh.renderOrder = 12;
+    this._dg.add(sh);
+  }
+
+  // 玻璃箱裡的籤：一張一張折好的小紙包，InstancedMesh 兩層（紙、描邊）
+  //   位置用固定亂數排一堆（中間高、四周低），多的時候堆得高；抽走一張＝拿掉洞口下面最上面那張
+  _buildSlipPile(group) {
+    const w = SLIP3.w * SLIP3.pile;
+    const h = (SLIP3.h / SLIP3.n) * SLIP3.pile;
+    const geo = new THREE.BoxGeometry(w, h, SLIP3.t);
+    const tex = (this.foldTex = canvasTex(drawFolded()));
+    const mat = new THREE.MeshToonMaterial({ gradientMap: this.ramp, map: tex });
+    this.slipBody = new THREE.InstancedMesh(geo, mat, MAX_SLIPS);
+    this.slipLine = new THREE.InstancedMesh(hullGeometry(geo), outlineMat(0.0016), MAX_SLIPS);
+    for (const m of [this.slipBody, this.slipLine]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      group.add(m);
+    }
+    this.slipBody.castShadow = true;
+    this.slipBody.receiveShadow = true;
+    this.slipBody.setColorAt(0, _c.set('#ffffff'));
+    this.omiCapBot = new THREE.InstancedMesh(this.capBotGeo, new THREE.MeshToonMaterial({ gradientMap: this.ramp }), MAX_SLIPS);
+    this.omiCapTop = new THREE.InstancedMesh(this.capTopGeo, this.mats.capClear, MAX_SLIPS);
+    this.omiCapTop.renderOrder = 2;
+    this.omiCapLine = new THREE.InstancedMesh(hullGeometry(this.capBotGeo), outlineMat(0.0028), MAX_SLIPS);
+    for (const m of [this.omiCapBot, this.omiCapTop, this.omiCapLine]) {
+      m.count = 0;
+      m.frustumCulled = false;
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      group.add(m);
+    }
+    this.omiCapBot.castShadow = true;
+    this.omiCapBot.setColorAt(0, _c.set(CAP_COLORS[0]));
+    this.omiWrap = 'fold';
+    this.slips = [];
+    this.slipTotal = 0;
+    this.omiStir = 0;
+  }
+
+  // 籤堆：count＝剩幾張、total＝原本幾張（決定堆多高；抽的過程中不重排）
+  _setSlipPile(count, total) {
+    const n = Math.min(count, MAX_SLIPS);
+    const T = Math.min(Math.max(total, count), MAX_SLIPS);
+    this._pileArgs = [count, total];
+    if (T !== this.slipTotal || n > this.slips.length) {
+      this.slipTotal = T;
+      this.slips = (this.omiWrap === 'capsule' ? this._heapCaps(T) : this._heapSlips(T)).slice(0, n);
+    } else if (n < this.slips.length) this.slips.length = n; // 拿掉最上面的
+    this._syncSlips(true);
+  }
+
+  // 籤的樣子：fold＝折好的紙（預設）、capsule＝裝在圓的轉蛋裡 → 換了就整堆重排
+  setOmiWrap(w) {
+    w = w === 'capsule' ? 'capsule' : 'fold';
+    if (w === this.omiWrap) return;
+    this.omiWrap = w;
+    this.slipTotal = -1;
+    if (this._pileArgs && this.kind === 'omikuji') this._setSlipPile(...this._pileArgs);
+  }
+
+  // 轉蛋一層一層排（每層錯開半顆），沒排滿的那層從中間往外放（看起來像堆起來的）
+  _heapCaps(N) {
+    const I = SPECS.omikuji.inner;
+    const R = CAP_R * OMI_CAP;
+    let seed = 777;
+    const rr = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const cx = (I.x[0] + I.x[1]) / 2;
+    const out = [];
+    for (let layer = 0; out.length < N && layer < 12; layer++) {
+      const y = I.floor + R + layer * R * 1.72;
+      if (y > I.top - R) break;
+      const off = layer % 2 ? R : 0;
+      const cells = [];
+      for (let x = I.x[0] + R + 0.004 + off; x <= I.x[1] - R; x += R * 2.06) for (let z = I.z[0] + R + 0.004 + off; z <= I.z[1] - R; z += R * 2.06) cells.push([x, z]);
+      cells.sort((a, b) => Math.hypot(a[0] - cx, a[1]) - Math.hypot(b[0] - cx, b[1]) + (rr() - 0.5) * 0.05);
+      for (const [x, z] of cells) {
+        if (out.length >= N) break;
+        out.push({ p: new THREE.Vector3(x + (rr() - 0.5) * 0.012, y, z + (rr() - 0.5) * 0.012), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(rr() * 6.28, rr() * 6.28, rr() * 6.28)), ph: rr() * 6.28, tint: rr(), col: Math.floor(rr() * CAP_COLORS.length) });
+      }
+    }
+    return out;
+  }
+
+  _heapSlips(N) {
+    const I = SPECS.omikuji.inner;
+    let seed = 12345;
+    const R = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const cx = (I.x[0] + I.x[1]) / 2;
+    const hx = (I.x[1] - I.x[0]) / 2 - 0.05;
+    const hz = (I.z[1] - I.z[0]) / 2 - 0.05;
+    const H = 0.05 + 0.3 * Math.sqrt(N / MAX_SLIPS); // 最多堆到玻璃箱一半高
+    const out = [];
+    for (let i = 0; i < N; i++) {
+      const x = cx + (R() * 2 - 1) * hx;
+      const z = (R() * 2 - 1) * hz;
+      const d2 = ((x - cx) / hx) ** 2 * 0.6 + (z / hz) ** 2 * 0.4;
+      const top = H * (1 - 0.45 * d2); // 中間高、四周低
+      const y = I.floor + SLIP3.t + Math.pow(R(), 0.75) * top;
+      // 大多躺著（稍微斜），三成斜靠／立著（照片裡的籤是一張一張立在箱裡）
+      const stand = R() < 0.32;
+      const tilt = stand ? 0.7 + R() * 0.75 : R() * 0.45;
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2 + tilt * (R() < 0.5 ? 1 : -1), R() * Math.PI * 2, (R() - 0.5) * 0.4, 'YXZ'));
+      out.push({ p: new THREE.Vector3(x, y, z), q, ph: R() * 6.28, tint: R() });
+    }
+    out.sort((a, b) => a.p.y - b.p.y);
+    return out;
+  }
+
+  _syncSlips(colors = false) {
+    if (!this.slipBody) return;
+    const P = this.slips;
+    const n = P.length;
+    const caps = this.omiWrap === 'capsule';
+    const k = caps ? OMI_CAP : 1;
+    const s = this.omiStir;
+    const hole = SPECS.omikuji.hole;
+    for (let i = 0; i < n; i++) {
+      const c = P[i];
+      if (s > 0.002) {
+        // 手在洞下面攪：靠近洞口、上層的籤晃得比較大
+        const near = Math.max(0, 1 - Math.hypot(c.p.x - hole.x, c.p.z - hole.z) / 0.36) * Math.min(1, (c.p.y - 0.05) / 0.12 + 0.3);
+        const a = s * near;
+        _v1.set(Math.sin(this.time * 9 + c.ph) * 0.02 * a, Math.abs(Math.sin(this.time * 7 + c.ph)) * 0.025 * a, Math.cos(this.time * 8 + c.ph * 1.3) * 0.02 * a).add(c.p);
+        _q.setFromEuler(_e.set(Math.sin(this.time * 6 + c.ph) * 0.4 * a, Math.sin(this.time * 5 + c.ph) * 0.8 * a, 0)).premultiply(c.q);
+        _m.compose(_v1, _q, _s.set(k, k, k));
+      } else _m.compose(c.p, c.q, _s.set(k, k, k));
+      if (caps) {
+        this.omiCapBot.setMatrixAt(i, _m);
+        this.omiCapTop.setMatrixAt(i, _m);
+        this.omiCapLine.setMatrixAt(i, _m);
+        if (colors) this.omiCapBot.setColorAt(i, _c.set(CAP_COLORS[c.col ?? 0]));
+      } else {
+        this.slipBody.setMatrixAt(i, _m);
+        this.slipLine.setMatrixAt(i, _m);
+        if (colors) this.slipBody.setColorAt(i, _c.set(c.tint < 0.12 ? '#fde6e6' : c.tint < 0.2 ? '#fff3d6' : c.tint < 0.85 ? '#ffffff' : '#f4f1ea'));
+      }
+    }
+    for (const m of [this.slipBody, this.slipLine]) {
+      m.count = caps ? 0 : n;
+      m.instanceMatrix.needsUpdate = true;
+    }
+    for (const m of [this.omiCapBot, this.omiCapTop, this.omiCapLine]) {
+      m.count = caps ? n : 0;
+      m.instanceMatrix.needsUpdate = true;
+    }
+    if (colors && this.slipBody.instanceColor) this.slipBody.instanceColor.needsUpdate = true;
+    if (colors && this.omiCapBot.instanceColor) this.omiCapBot.instanceColor.needsUpdate = true;
+  }
+
+  // 從籤堆裡拿一張：洞口正下方、比較上面的那張 → 回傳它的位置、角度
+  _takeSlip() {
+    const P = this.slips;
+    const hole = SPECS.omikuji.hole;
+    let best = -1;
+    let score = Infinity;
+    P.forEach((c, i) => {
+      const s = Math.hypot(c.p.x - hole.x, c.p.z - hole.z) - c.p.y * 1.5;
+      if (s < score) (score = s), (best = i);
+    });
+    if (best < 0) return { p: new THREE.Vector3(hole.x, 0.12, hole.z), q: new THREE.Quaternion() };
+    const [c] = P.splice(best, 1);
+    this._syncSlips(true);
+    return c;
+  }
+
+  // 一張籤：n 段直的紙（每段上緣是摺線），正面＝籤紙（app 畫好的 canvas），背面＝和紙的反面
+  //   折起來＝每一段相對上一段轉 ±(π−ε)（像手風琴）；正面的字在打開的時候才淡入（折著看不到內容）
+  _makeSlip(front, rarity) {
+    const { w: W, h: Ht, n: N } = SLIP3;
+    const ph = Ht / N;
+    const tex = front ? canvasTex(front) : null;
+    if (tex) tex.anisotropy = 8;
+    const root = new THREE.Group();
+    const inner = new THREE.Group();
+    root.add(inner);
+    const mats = [];
+    const pivots = [];
+    let parent = inner;
+    for (let i = 0; i < N; i++) {
+      const pv = new THREE.Group();
+      pv.position.set(0, i === 0 ? ph / 2 : -ph, 0);
+      parent.add(pv);
+      const v0 = 1 - (i + 1) / N;
+      const v1 = 1 - i / N;
+      const geo = new THREE.PlaneGeometry(W, ph);
+      geo.translate(0, -ph / 2, 0);
+      const uv = geo.getAttribute('uv');
+      for (let k = 0; k < uv.count; k++) uv.setY(k, v0 + uv.getY(k) * (v1 - v0));
+      const fm = new THREE.ShaderMaterial({
+        uniforms: { map: { value: tex }, foldMap: { value: this.foldTex }, uV: { value: new THREE.Vector2(v0, v1) }, uShow: { value: 0 }, uOpacity: { value: 1 }, uWhite: { value: 0 }, uHas: { value: tex ? 1 : 0 } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `uniform sampler2D map, foldMap; uniform vec2 uV; uniform float uShow, uOpacity, uWhite, uHas; varying vec2 vUv;
+          void main(){ vec3 t = uHas > 0.5 ? texture2D(map, vUv).rgb : vec3(0.985, 0.965, 0.92);
+            // 折著的時候：外面那一面是紙包的印刷（紅框＋御神籤）
+            vec3 closed = texture2D(foldMap, vec2(vUv.x, (vUv.y - uV.x) / (uV.y - uV.x))).rgb;
+            vec3 col = mix(closed, t, uShow);
+            col = mix(col, vec3(1.0), uWhite);
+            gl_FragColor = vec4(col, uOpacity);
+            #include <colorspace_fragment>
+          }`,
+        transparent: true,
+        side: THREE.FrontSide,
+      });
+      const faceM = new THREE.Mesh(geo, fm);
+      faceM.renderOrder = 6;
+      const bm = new THREE.MeshToonMaterial({ gradientMap: this.ramp, map: this.slipBackTex, transparent: true });
+      const backM = new THREE.Mesh(geo, bm);
+      backM.rotation.y = Math.PI;
+      backM.renderOrder = 6;
+      backM.castShadow = true;
+      pv.add(faceM, backM);
+      mats.push(fm, bm);
+      pivots.push(pv);
+      parent = pv;
+    }
+    const U = (root.userData = {
+      slip: true,
+      card: true, // fx.charge：光在後面、左右晃（不整個轉，免得先看到內容）
+      pivots,
+      inner,
+      mats,
+      fold: 1,
+      setFold(f) {
+        // f＝1 全折、0 全開；從上往下一段一段打開
+        U.fold = f;
+        const e = 0.035;
+        for (let i = 1; i < N; i++) {
+          const k = THREE.MathUtils.clamp(f * (N - 1) - (N - 1 - i), 0, 1);
+          // 第 1 段折到第 0 段後面、第 2 段再往後…：最外面朝鏡頭的是第 0 段的正面（紙包的印刷）
+          pivots[i].rotation.x = (i % 2 ? 1 : -1) * (Math.PI - e) * k;
+          pivots[i].position.z = (i % 2 ? -1 : 1) * 0.0012 * k;
+        }
+        // 打開時整張往上移，讓它一直在畫面中間
+        inner.position.y = (ph * (N - 1) * (1 - f)) / 2;
+      },
+      setShow(v) {
+        for (let i = 0; i < N; i++) mats[i * 2].uniforms.uShow.value = THREE.MathUtils.clamp(v * (N + 1) - i, 0, 1);
+      },
+      setOpacity(o) {
+        for (const m of mats) {
+          if (m.uniforms) m.uniforms.uOpacity.value = o;
+          else m.opacity = o;
+        }
+        if (U.cap && o < 1) U.cap.visible = o > 0.5; // 轉蛋（10 連格子裡淡出時）
+      },
+      setWhite(v) {
+        for (const m of mats) if (m.uniforms) m.uniforms.uWhite.value = v;
+      },
+      setSil() {},
+      dispose() {
+        tex?.dispose();
+        for (const m of mats) m.dispose();
+        for (const pv of pivots) for (const ch of pv.children) ch.geometry?.dispose?.();
+      },
+    });
+    U.setFold(1);
+    if (this.omiWrap === 'capsule') {
+      const cap = this._makeCapsule(this.capMats[Math.floor(Math.random() * this.capMats.length)]);
+      cap.scale.setScalar(1.05);
+      root.add(cap);
+      U.cap = cap;
+      inner.scale.setScalar(0.62); // 紙包縮小放進轉蛋裡
+    }
+    if (rarity >= 2) this.show?.addGlints(root, rarity === 3 ? 5 : 3, true);
+    return root;
+  }
+
+  // 打開轉蛋：上下兩半往外飛、淡掉，裡面的紙包長回原本大小
+  _popSlipCap(g, dur = 0.55) {
+    const U = g.userData;
+    const cap = U.cap;
+    if (!cap) return Promise.resolve();
+    U.cap = null;
+    const { top, bot } = cap.userData;
+    const ft = this._fadeable(top);
+    const fb = this._fadeable(bot);
+    const t0 = top.position.clone();
+    const b0 = bot.position.clone();
+    sfx.pop();
+    return this.tween(dur, (k) => {
+      const e = ease.out(k);
+      top.position.copy(t0).add(_v2.set(0, 0.12 * e, 0.03 * e));
+      top.rotation.set(-1.3 * e, 0, -0.6 * e);
+      bot.position.copy(b0).add(_v2.set(0, -0.12 * e * e, 0.02 * e));
+      bot.rotation.set(0.9 * e, 0, 0.5 * e);
+      ft(k);
+      fb(k);
+      U.inner.scale.setScalar(0.62 + 0.38 * e);
+    }).then(() => cap.removeFromParent());
+  }
+
+  // 出籤：手伸進去 → 一張籤從籤堆浮起來、穿過圓洞、停在洞口上方（輕輕飄）
+  async _dispenseSlip(rarity, front) {
+    const sp = SPECS.omikuji;
+    const from = this._takeSlip();
+    const g = this._makeSlip(front, rarity);
+    g.scale.setScalar(SLIP3.pile);
+    g.position.copy(from.p);
+    g.quaternion.copy(from.q);
+    this.root.add(g);
+    const c = (this.exitCap = { g, rarity, fake: false, shown: rarity, slip: true });
+    const q0 = g.quaternion.clone();
+    const qUp = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.42, 0.3, 0.06)); // 稍微朝上、朝鏡頭
+    const p0 = from.p.clone();
+    const p1 = new THREE.Vector3(sp.hole.x, sp.hole.y - 0.06, sp.hole.z);
+    const p2 = new THREE.Vector3(sp.hole.x + 0.04, sp.hole.y + 0.3, sp.hole.z + 0.26); // 洞口上方、往前一點（看得清楚）
+    sfx.slipOut();
+    this.shakePile(0.6);
+    await this.tween(1.05, (k) => {
+      const e = ease.inOut(k);
+      // 先往洞口下面靠，再一口氣拉上來
+      if (e < 0.5) g.position.lerpVectors(p0, p1, e * 2);
+      else g.position.lerpVectors(p1, p2, ease.out((e - 0.5) * 2));
+      g.quaternion.slerpQuaternions(q0, qUp, Math.min(1, e * 1.4));
+      g.scale.setScalar(SLIP3.pile + (2.1 - SLIP3.pile) * e);
+    });
+    this.wobble = 0.5;
+    c.float = g.position.clone();
+    c.fq = g.quaternion.clone();
+    if (rarity >= 2) {
+      this.exitLight.color.set(rarity === 3 ? '#fff0c0' : '#d9b8ff');
+      this.exitGlow = rarity;
+    }
+  }
+
+  // 10 連：一張一張從洞口拉出來 → 飛到格子（折著）
+  _slipToGrid(i, n, rarity, front) {
+    const sp = SPECS.omikuji;
+    const from = this._takeSlip();
+    const g = this._makeSlip(front, rarity);
+    g.scale.setScalar(SLIP3.pile);
+    g.position.copy(from.p);
+    g.quaternion.copy(from.q);
+    this.root.add(g);
+    const c = { g, rarity, fake: false, shown: rarity, i, slip: true };
+    g.userData.gridIdx = i;
+    this.gridN = n;
+    this.grid = this.grid || [];
+    this.grid[i] = c;
+    this.gridSlots = this.gridSlots || [];
+    const p0 = from.p.clone();
+    const p1 = new THREE.Vector3(sp.hole.x, sp.hole.y + 0.12, sp.hole.z);
+    const q0 = g.quaternion.clone();
+    sfx.slipOut();
+    return this.tween(0.36, (k) => {
+      g.position.lerpVectors(p0, p1, ease.out(k));
+      g.quaternion.slerpQuaternions(q0, new THREE.Quaternion(), k);
+    }).then(() => {
+      if (this.grid[i] !== c) return this._dropObj(g);
+      const fromW = g.getWorldPosition(new THREE.Vector3());
+      const qW = g.getWorldQuaternion(new THREE.Quaternion());
+      const s0 = g.getWorldScale(new THREE.Vector3()).x;
+      this.root.remove(g);
+      this.fx.add(g);
+      g.position.copy(fromW);
+      g.quaternion.copy(qW);
+      g.scale.setScalar(s0);
+      const slot = this._gridSlot(i, n);
+      this.gridSlots[i] = slot;
+      const mid = fromW.clone().lerp(slot.pos, 0.5).add(new THREE.Vector3(0, 0.22, 0));
+      const qTo = this.camera.quaternion.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.1, 0.2, 0.05)));
+      return this.tween(0.45, (k) => {
+        const e = ease.out(k);
+        const a = fromW.clone().lerp(mid, e);
+        const b = mid.clone().lerp(slot.pos, e);
+        g.position.copy(a.lerp(b, e));
+        g.quaternion.slerpQuaternions(qW, qTo, e);
+        g.scale.setScalar(s0 + (slot.scale - s0) * e);
+      }).then(() => {
+        const s = this.gridSlots[i];
+        if (!s || this.grid[i] !== c) return;
+        c.home = s.pos.clone();
+        c.q = g.quaternion.clone();
+        g.position.copy(s.pos);
+        g.scale.setScalar(s.scale);
+        g.userData.s0 = s.scale;
+        if (rarity >= 2) this.show.gridGlow(c, rarity);
+      });
+    });
+  }
+
+  // 打開籤：照吉凶跑演出（大吉＝SSR 的集氣、大凶＝SR 的紫光），最後一段一段攤開
+  async _unfoldSlip(c) {
+    const g = c.g;
+    const r = c.rarity;
+    const T = TIERS[r];
+    const home = c.home;
+    const U = g.userData;
+    if (c.glow) {
+      c.glow.removeFromParent();
+      c.glow = null;
+    }
+    if (T.dim) this.setDim(T.dim, r >= 2 ? 0.6 : 0.3);
+    if (T.charge) await this.show.charge(c, home, r);
+    else {
+      sfx.shake();
+      await this.tween(this.reduced ? 0.2 : T.shake, (k) => {
+        const a = Math.sin(k * 38) * (0.06 + r * 0.03) * k;
+        g.position.set(home.x + Math.sin(k * 45) * 0.006 * k, home.y, home.z);
+        g.quaternion.copy(c.q).multiply(_q.setFromAxisAngle(_z, a));
+      });
+    }
+    if (r >= 2 && !this.reduced) {
+      U.setWhite(1);
+      sfx.hitstop?.();
+      await this.after(r === 3 ? 0.28 : 0.14);
+      U.setWhite(0);
+    }
+    if (r >= 2) {
+      this.punch(r === 3 ? 7 : 4);
+      this.wobble = 2;
+    }
+    this.show.burst(r, home);
+    this.cb.onBurst?.(r);
+    if (U.cap) await this._popSlipCap(g); // 轉蛋：殼先開，紙包再攤開
+    // 攤開：正對鏡頭、放大到畫面高度的六成多，從上往下一段一段打開，字跟著淡入
+    const q0 = g.quaternion.clone();
+    const qTo = this.camera.quaternion.clone();
+    const s0 = g.scale.x;
+    const H = 2 * this.camera.position.distanceTo(home) * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const fit = Math.min((H * 0.66) / SLIP3.h, (H * this.camera.aspect * 0.8) / SLIP3.w);
+    const dur = this.reduced ? 0.3 : [0.9, 1.0, 1.2, 1.35][r];
+    let lastSeg = -1;
+    await this.tween(dur, (k) => {
+      const e = ease.inOut(k);
+      U.setFold(1 - e);
+      U.setShow(e);
+      const seg = Math.floor(e * (SLIP3.n - 1) + 0.15);
+      if (seg !== lastSeg && seg < SLIP3.n) {
+        lastSeg = seg;
+        sfx.unfold(seg);
+      }
+      g.quaternion.slerpQuaternions(q0, qTo, ease.out(Math.min(1, k * 1.6)));
+      g.position.copy(home);
+      g.scale.setScalar(s0 + (fit - s0) * e);
+    });
+    U.setShow(1);
+    c.q = g.quaternion.clone();
+    U.baseQ = c.q.clone();
+    this.revealed = c;
+    await this.after(this.reduced ? 0.3 : Math.max(0.3, T.reveal - dur));
+    this.show.persist(r, home);
+  }
+
+  // 開店頁「▶ 預覽」：在鏡頭前放一次這個稀有度的演出（含店家選的特殊演出）
+  previewFx(r) {
+    if (!this.loaded || this._previewing) return;
+    this._previewing = true;
+    const at = this._inFront(1.2, -0.02);
+    this.setDim(TIERS[r].dim, 0.4);
+    this.show.burst(r, at);
+    this.after(3.2, () => {
+      this.setDim(0, 0.8);
+      this.show.endPersist?.();
+      this._previewing = false;
+    });
+  }
+
+  // 10 連：N、R 的籤在格子裡啵一下 → 換成吉凶的小牌（revealInGrid）
+  _slipPopInGrid(c, i, card) {
+    const g = c.g;
+    sfx.unfold(1);
+    this.show.miniBurst(c.rarity, c.home);
+    this.grid[i] = null;
+    if (card) this.after(0.12).then(() => this.revealInGrid(i, card));
+    const s0 = g.scale.x;
+    return this.tween(0.35, (k) => {
+      g.scale.setScalar(s0 * (1 + 0.3 * k));
+      g.userData.setOpacity(1 - k);
+    }).then(() => this._dropObj(g));
   }
 
   // 卡片：正面＝這次抽到的獎品（app 畫好的 canvas），背面＝shown 等級的卡背（SSR 可能先裝成金卡）
@@ -735,6 +1374,23 @@ export class Machine {
       cm.lid.color.set(t.lid);
       cm.handle.color.set(t.handle);
     }
+    this._applyOmiWood();
+  }
+
+  // おみくじ箱：店家自己調的木頭顏色（沒有就照主題色）
+  setOmiWood(c) {
+    this.omiWoodC = /^#[0-9a-f]{6}$/i.test(c || '') ? c : '';
+    this._applyOmiWood();
+  }
+
+  _applyOmiWood() {
+    const om = this.omats;
+    if (!om) return;
+    const w = OMI_WOOD[this.themeKey] || OMI_WOOD.white;
+    const body = this.omiWoodC || w.body;
+    om.body.color.set(body);
+    om.floor.color.set(body);
+    om.sign.color.set(this.omiWoodC ? _c.set(body).multiplyScalar(0.94).getStyle() : w.sign);
   }
 
   // 介面主題（亮／暗）的舞台顏色；賣家選了背景就以背景為主
@@ -858,7 +1514,8 @@ export class Machine {
       if (old) old.dispose();
     };
     set('arrow', drawArrow());
-    set('exit', drawLabel(t(this.kind === 'card' ? 'd.exitCard' : 'd.exit'), 'left'));
+    if (this.decals.exit) set('exit', drawLabel(t(this.kind === 'card' ? 'd.exitCard' : 'd.exit'), 'left'));
+    if (this.decals.label) set('label', drawPanelLabel(this._omiCfg));
     if (this.decals.ret) set('ret', drawLabel(t('d.return'), 'down', '#2f6bdb'));
   }
 
@@ -873,6 +1530,16 @@ export class Machine {
       this.decals[d].material.needsUpdate = true;
       if (old) old.dispose();
     };
+    if (this.kind === 'omikuji') {
+      this._omiCfg = cfg;
+      set('board', drawSign(cfg, priceText(cfg.price), bimg)); // bimg＝店家自己的看板圖（解碼好的）
+      set('price', drawPrice(cfg, this.art.badge));
+      set('label', drawPanelLabel(cfg));
+      this._boardCanvas = null;
+      this._boardHit = null;
+      for (const d of Object.values(this.decals)) d.material.needsUpdate = true;
+      return;
+    }
     set('lid', drawLid(cfg, t, this.art.banner));
     set('price', drawPrice(cfg, this.art.badge));
     if (this.kind === 'card') {
@@ -967,6 +1634,7 @@ export class Machine {
   // count＝現在剩幾顆；total＝這台機器原本有幾顆（決定扭蛋大小，轉的過程中大小不變）
   setPile(count, total = count) {
     if (!this.loaded || this.kind === 'card') return;
+    if (this.kind === 'omikuji') return this._setSlipPile(count, total);
     const n = Math.min(count, MAX_PILE);
     const r = capRadius(Math.min(Math.max(total, count), MAX_PILE));
     if (Math.abs(r - this.capR) > 1e-4 || !this.pile.length) {
@@ -1023,6 +1691,10 @@ export class Machine {
   // 每轉 45°：轉盤的凹槽把底層扭蛋頂一下
   shakePile(k = 1) {
     if (this.kind === 'card') return;
+    if (this.kind === 'omikuji') {
+      this.omiShake = Math.min(1.5, (this.omiShake || 0) + k);
+      return;
+    }
     const R = this.capR;
     for (const c of this.pile) {
       if (c.falling) continue;
@@ -1212,18 +1884,19 @@ export class Machine {
     const start = this._fromScreen(sx, sy, camD * 0.72);
     const startL = this.root.worldToLocal(start.clone());
     this.root.add(coin);
-    const front = new THREE.Vector3(sp.slot.x, sp.slot.y, sp.slotFront + 0.06);
-    const inside = new THREE.Vector3(sp.slot.x, sp.slot.y, sp.slotFront - 0.05);
+    const front = sp.slotTop ? new THREE.Vector3(sp.slot.x, sp.slot.y + 0.08, sp.slot.z) : new THREE.Vector3(sp.slot.x, sp.slot.y, sp.slotFront + 0.06);
+    const inside = sp.slotTop ? new THREE.Vector3(sp.slot.x, sp.slot.y - 0.07, sp.slot.z) : new THREE.Vector3(sp.slot.x, sp.slot.y, sp.slotFront - 0.05);
     const spin0 = rnd(2, 4);
     return this.tween(0.42, (k) => {
       const e = ease.inOut(k);
       coin.position.lerpVectors(startL, front, e);
       coin.position.y += Math.sin(k * Math.PI) * 0.08;
       // 硬幣立起來對準直的投幣孔
-      coin.rotation.set(0, (1 - e) * spin0, (Math.PI / 2) * e + (1 - e) * 0.3);
+      if (sp.slotTop) coin.rotation.set((Math.PI / 2) * e + (1 - e) * 0.3, (1 - e) * spin0, 0); // 立起來對準橫的縫
+      else coin.rotation.set(0, (1 - e) * spin0, (Math.PI / 2) * e + (1 - e) * 0.3);
     })
       .then(() => {
-        sfx.coin();
+        sfx.coin(this.kind);
         return this.tween(0.16, (k) => coin.position.lerpVectors(front, inside, k));
       })
       .then(() => {
@@ -1240,7 +1913,12 @@ export class Machine {
   // 前兆：這次會出 SR／SSR 時，轉把手的同時窗裡的扭蛋發金光（SSR 彩虹），頂上的燈閃
   setForeshadow(level) {
     this.foreshadow = level;
-    if (!level) this.pileBot.material.emissive.setRGB(0, 0, 0);
+    if (!level) this._pileMat().emissive.setRGB(0, 0, 0);
+  }
+
+  _pileMat() {
+    if (this.kind === 'omikuji' && this.slipBody) return this.omiWrap === 'capsule' ? this.omiCapBot.material : this.slipBody.material;
+    return this.pileBot.material;
   }
 
   _foreshadowFrame() {
@@ -1251,12 +1929,12 @@ export class Machine {
     const f = this.fsK;
     if (f < 0.01) {
       this.lidLight.intensity = 0;
-      this.pileBot.material.emissive.setRGB(0, 0, 0);
+      this._pileMat().emissive.setRGB(0, 0, 0);
       return;
     }
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 14);
     const col = lv === 3 ? _c.setHSL((this.time * 0.6) % 1, 0.9, 0.6) : _c.set('#ffc93c');
-    this.pileBot.material.emissive.copy(col).multiplyScalar(f * (0.25 + 0.35 * pulse));
+    this._pileMat().emissive.copy(col).multiplyScalar(f * (0.25 + 0.35 * pulse));
     this.lidLight.color.copy(col);
     this.lidLight.intensity = f * (1.5 + 2.5 * pulse);
     const sb = this.spec.spark;
@@ -1271,16 +1949,17 @@ export class Machine {
       this.decals.arrow.rotation.z = -a;
       if (this.turnFx) this.turnFx.rotation.z = -a;
     }
+    if (this.kind === 'omikuji') this.decals.arrow.rotation.z = -a; // 圓洞旁的箭頭跟著攪的方向轉
   }
 
   _handleTick(prev, next) {
     const step = Math.PI / 4;
     if (Math.floor(next / step) > Math.floor(prev / step)) {
-      sfx.tick();
+      if (this.kind !== 'omikuji') sfx.tick();
       this.shakePile(0.35);
       this.wobble = 1; // 機台跟著抖一下
       this.cb.onTick?.(next / (Math.PI * 2));
-      if (Math.floor(next / step) % 2 === 0) sfx.rattle();
+      if (Math.floor(next / step) % 2 === 0) this.kind === 'omikuji' ? sfx.rustle() : sfx.rattle();
     }
   }
 
@@ -1315,6 +1994,7 @@ export class Machine {
   // rarity 決定扭蛋顏色：SR 銀色、SSR 金色（出口就先預告）
   dispense(rarity, front) {
     if (this.kind === 'card') return this._dispenseCard(rarity, front);
+    if (this.kind === 'omikuji') return this._dispenseSlip(rarity, front);
     // 窗裡最靠近出蛋孔的那顆掉下去 → 出口出現同一個顏色的扭蛋（SR、SSR 換成銀色、金色）
     const col = this._takeFromPile();
     // SSR 一半機率先裝成銀色（像 SR），開蛋集氣時才升格成金蛋
@@ -1409,6 +2089,7 @@ export class Machine {
     const qTo = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.25, -0.5, 0.12));
     // 讓開口（接縫）朝向鏡頭一點
     qTo.premultiply(new THREE.Quaternion().setFromUnitVectors(_y, this.camera.position.clone().sub(to).normalize().lerp(_y, 0.6).normalize()));
+    if (c.slip) qTo.copy(this.camera.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.12, 0.25, 0.06))); // 籤：折好的紙包正對鏡頭
     if (c.card) {
       // 卡片立起來、卡背朝鏡頭（稍微斜一點）
       qTo.copy(this.camera.quaternion).multiply(_q.setFromAxisAngle(_y, Math.PI)).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.1, 0.22, 0.05)));
@@ -1422,12 +2103,12 @@ export class Machine {
       const b = mid.clone().lerp(to, e);
       g.position.copy(a.lerp(b, e));
       g.quaternion.slerpQuaternions(q0, qTo, e);
-      const s1 = c.card ? 1 : 1.15;
+      const s1 = c.card || c.slip ? 1 : 1.15;
       g.scale.setScalar(s0 + (s1 - s0) * e); // 不管窗裡的扭蛋多小，拿到鏡頭前都一樣大
     }).then(() => {
       c.home = to.clone();
       c.q = g.quaternion.clone();
-      if (c.card && c.shown >= 1) this.show.gridGlow(c, c.shown);
+      if ((c.card || c.slip) && c.shown >= 1) this.show.gridGlow(c, c.shown);
     });
   }
 
@@ -1442,6 +2123,7 @@ export class Machine {
     const T = TIERS[r];
     const home = c.home;
     if (c.card) return this._flipCard(c);
+    if (c.slip) return this._unfoldSlip(c);
     if (T.dim) this.setDim(T.dim, r >= 2 ? 0.6 : 0.3);
     if (T.charge) {
       await this.show.charge(c, home, r);
@@ -1630,7 +2312,7 @@ export class Machine {
       pos: this.camera.position.clone().addScaledVector(fwd, dist)
         .addScaledVector(right, (c - (counts[r] - 1) / 2) * step)
         .addScaledVector(up, ((rows - 1) / 2 - r) * step + (yTop + yBot) / 2),
-      scale: this.kind === 'card' ? (step * 0.94) / CARD_H : (step / (2 * CAP_R)) * 0.86,
+      scale: this.kind === 'card' ? (step * 0.94) / CARD_H : this.kind === 'omikuji' ? (step * 0.9) / SLIP3.w : (step / (2 * CAP_R)) * 0.86,
       step,
     };
   }
@@ -1652,6 +2334,7 @@ export class Machine {
   // 出一顆、飛到第 i 格
   dispenseToGrid(i, n, rarity, front) {
     if (this.kind === 'card') return this._cardToGrid(i, n, rarity, front);
+    if (this.kind === 'omikuji') return this._slipToGrid(i, n, rarity, front);
     const col = this._takeFromPile();
     const fake = rarity === 3 && (this.forceFake ?? Math.random() < 0.5);
     const shown = fake ? 2 : rarity;
@@ -1781,6 +2464,7 @@ export class Machine {
     const c = this.grid?.[i];
     if (!c) return Promise.resolve();
     if (c.card) return this._flipInGrid(c, i);
+    if (c.slip) return this._slipPopInGrid(c, i, card);
     if (card) this.after(0.12).then(() => this.revealInGrid(i, card));
     const g = c.g;
     const { top, bot } = g.userData;
@@ -1810,7 +2494,7 @@ export class Machine {
     const to = this._inFront(c.card ? 1.25 : 1.2, -0.02);
     const from = g.position.clone();
     const s0 = g.scale.x;
-    const s1 = c.card ? 1 : 1.15;
+    const s1 = c.card || c.slip ? 1 : 1.15;
     if (c.glow) c.glow.removeFromParent();
     // 其他格子（扭蛋、已經開出來的卡）先縮起來，讓出舞台
     this._gridScale(i, false);
@@ -1871,6 +2555,7 @@ export class Machine {
 
   // 大開結束、關掉結果卡 → 其他格子長回來（轉卡機：剛翻開的那張回到自己的格子）
   restoreGrid() {
+    if (this.revealed?.slip) this.dismissShown(); // 攤開的籤收掉，格子裡換成吉凶小牌
     const p = this.gridReturn;
     this.gridReturn = null;
     if (p && this.gridSlots[p.i]) {
@@ -1905,7 +2590,11 @@ export class Machine {
   }
 
   clearGrid() {
-    for (const c of this.grid || []) if (c) c.card ? this._dropObj(c.g) : c.g.removeFromParent();
+    for (const c of this.grid || []) if (c) c.card || c.slip ? this._dropObj(c.g) : c.g.removeFromParent();
+    if (this.revealed?.slip) {
+      this._dropObj(this.revealed.g);
+      this.revealed = null;
+    }
     for (const m of this.gridCards || []) if (m) this._dropCard(m);
     this.grid = [];
     this.gridCards = [];
@@ -2177,7 +2866,7 @@ export class Machine {
     const B = this.spec.box;
     const corners = [];
     for (const x of B.x) for (const y of B.y) for (const z of B.z) corners.push(new THREE.Vector3(x, y, z).applyMatrix4(rot));
-    const dir = new THREE.Vector3(0.0, 0.3, 1).normalize();
+    const dir = (this.spec.camDir || new THREE.Vector3(0.0, 0.3, 1)).clone().normalize();
     const cx = new THREE.Vector3((B.x[0] + B.x[1]) / 2, 0, (B.z[0] + B.z[1]) / 2).applyMatrix4(rot);
     const target = new THREE.Vector3(cx.x, 0.66, cx.z);
     const cam = this.camera;
@@ -2469,6 +3158,13 @@ export class Machine {
         for (const arc of this.turnFx.children) arc.material.opacity = 0.85 * this.turnK;
       }
       this.stirW = Math.max(this.stirW * Math.exp(-2.5 * dt), hs * 0.4);
+      if (this.kind === 'omikuji') {
+        this.omiShake = (this.omiShake || 0) * Math.exp(-4 * dt);
+        const prev = this.omiStir;
+        this.omiStir = Math.max(prev * Math.exp(-3 * dt), Math.min(1, hs * 0.25 + this.omiShake * 0.6));
+        if (this.omiStir < 0.002) this.omiStir = 0;
+        if (this.omiStir > 0 || prev > 0) this._syncSlips();
+      }
       if (this.kind === 'capsule') {
         this.acc += dt;
         let n = 0;
@@ -2501,6 +3197,12 @@ export class Machine {
       (this.kinds[this.kind]?.mats || this.mats).handle.emissive.setRGB(1, 0.75, 0.1).multiplyScalar(this.handleEnabled && !this.turning ? 0.08 + 0.18 * pulse : 0);
       if (this.exitGlow) this.exitLight.intensity = (this.exitGlow === 3 ? 1.6 : 1.0) * (0.6 + 0.4 * pulse);
       if (this.exitCap && this.exitCap.mat?.emissive) this.exitCap.mat.emissiveIntensity = this.exitGlow ? 0.15 + 0.25 * pulse : 0;
+      if (this.exitCap?.float) {
+        // 洞口上的籤：輕輕上下飄、左右轉，等你點
+        const c = this.exitCap;
+        c.g.position.copy(c.float).add(_v2.set(0, Math.sin(this.time * 2.2) * 0.012, 0));
+        c.g.quaternion.copy(c.fq).multiply(_q.setFromAxisAngle(_y, Math.sin(this.time * 1.5) * 0.25));
+      }
       if (this.openCap) {
         // 鏡頭前的扭蛋輕輕晃，等你點
         const c = this.openCap;
@@ -2512,8 +3214,8 @@ export class Machine {
         }
       }
       // 翻開的卡片跟著游標（手機：陀螺儀）傾斜，閃卡的光、3D 照片的視差都跟著動；沒在動也會自己慢慢晃，看得出立體
-      if (this.kind === 'card') {
-        const sway = this.reduced ? 0 : 0.3;
+      if (this.kind === 'card' || this.kind === 'omikuji') {
+        const sway = this.reduced ? 0 : this.kind === 'omikuji' ? 0.15 : 0.3;
         const px = (this.ptr?.x || 0) * 0.85 + Math.sin(this.time * 0.9) * sway;
         const py = (this.ptr?.y || 0) * 0.85 + Math.sin(this.time * 0.7 + 1.3) * sway * 0.6;
         const tilt = (g, amt) => {
