@@ -1,14 +1,65 @@
-# Supabase 免費專案連續 7 天沒動靜會暫停（暫停時短連結打不開）→ 每 3 天讀一次資料表，讓它保持醒著
+# Supabase 免費專案一星期「資料庫活動太少」就會暫停（暫停時短連結、錢包、逛機台全部打不開，網址連 DNS 都查不到）
+# 2026-11：以前每 3 天讀一次資料表，還是在 11/8–11/10 被暫停了（一星期才 2 次，算太少）→ 加強（使用者 2026-11-21：「Yes, strengthen it」）
+#   - 每天 2 次（台灣／日本時間中午、半夜）
+#   - 每次跑幾個真的查詢：讀資料表、逛機台列表（browse2）、大家正在轉（activity）、排行（top_makers）
+#   - 連不上自動重試；還是失敗 → 貼到 Discord（secret DISCORD_ALERT_WEBHOOK；沒設就只有 GitHub 的失敗紀錄）
+#   - 手動 Run workflow 時可以勾 test_alert，送一則測試通知看 Discord 收不收得到
+#   - 改了這個檔案、推上去就會先跑一次
 name: Keep Supabase awake
 on:
   schedule:
-    - cron: '17 3 */3 * *'
+    - cron: '17 3 * * *'
+    - cron: '47 15 * * *'
+  push:
+    paths:
+      - '.github/workflows/keepalive.yml'
   workflow_dispatch:
+    inputs:
+      test_alert:
+        description: 'Send a test message to the Discord alert webhook'
+        type: boolean
+        default: false
+env:
+  SB_URL: https://mtiqeosgpmjlhznhixpr.supabase.co
+  SB_KEY: sb_publishable_IH8ygYOX8cIYjFa-ETiOyA_iFAqgQDH # 公開用的 key（網頁裡本來就有）
+  HOOK: ${{ secrets.DISCORD_ALERT_WEBHOOK }}
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Read one machine id
+      - name: Query the database
         run: |
-          curl -fsS "https://mtiqeosgpmjlhznhixpr.supabase.co/rest/v1/machines?select=id&limit=1" \
-            -H "apikey: sb_publishable_IH8ygYOX8cIYjFa-ETiOyA_iFAqgQDH" > /dev/null
+          set -u
+          bad=0
+          hit() { # 名稱、路徑、POST 的內容（沒有＝GET）；runner 的 bash 開著 -e → curl 失敗不能讓整段直接結束
+            : > /tmp/out
+            if [ -n "${3:-}" ]; then
+              code=$(curl -s -o /tmp/out -w '%{http_code}' --max-time 25 --retry 4 --retry-delay 15 --retry-all-errors \
+                -X POST "$SB_URL$2" -H "apikey: $SB_KEY" -H 'Content-Type: application/json' -d "$3" || true)
+            else
+              code=$(curl -s -o /tmp/out -w '%{http_code}' --max-time 25 --retry 4 --retry-delay 15 --retry-all-errors \
+                "$SB_URL$2" -H "apikey: $SB_KEY" || true)
+            fi
+            echo "$1: HTTP $code ($(wc -c < /tmp/out) bytes)"
+            [ "$code" = 200 ] || bad=1
+          }
+          hit machines '/rest/v1/machines?select=id,updated_at&order=updated_at.desc&limit=5'
+          hit browse2 '/rest/v1/rpc/browse2' '{"p_sort":"new","p_limit":1}'
+          hit activity '/rest/v1/rpc/activity' '{"p_limit":5}'
+          hit top_makers '/rest/v1/rpc/top_makers' '{"p_limit":3}'
+          if [ "$bad" = 1 ]; then
+            getent hosts "${SB_URL#https://}" > /dev/null || echo "DNS: the project host does not resolve (paused?)"
+            exit 1
+          fi
+
+      - name: Alert Discord (failed)
+        if: failure() && env.HOOK != ''
+        run: |
+          msg="⚠️ Clatter：Supabase 連不上（可能被暫停）。請到 https://supabase.com/dashboard/project/mtiqeosgpmjlhznhixpr 按「Resume project」。紀錄：$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl -s -H 'Content-Type: application/json' -d "$(jq -n --arg c "$msg" '{content: $c}')" "$HOOK"
+
+      - name: Alert Discord (test)
+        if: success() && github.event_name == 'workflow_dispatch' && inputs.test_alert && env.HOOK != ''
+        run: |
+          msg="✅ Clatter keepalive 測試通知：Supabase 正常。$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl -s -H 'Content-Type: application/json' -d "$(jq -n --arg c "$msg" '{content: $c}')" "$HOOK"

@@ -31,7 +31,8 @@
 - 照片不用再省連結長度 → 128 px（原本 96 px）
 - 雲端連不上（離線、claude.ai artifact 的 CSP）→ 自動給原本的長連結；舊的長連結照樣能開
 - 專案：Supabase 組織 Clatter／專案 `clatter-gacha`（東京，Free），帳號 GitHub leo70962001-lgtm。設定 SQL：`supabase/setup.sql`。公開 key（publishable）寫在 `cloud.js`
-- 免費專案 7 天沒動靜會暫停 → `.github/workflows/keepalive.yml` 每 3 天讀一次資料表
+- 免費專案一星期「資料庫活動太少」會暫停（暫停時 `<ref>.supabase.co` 連 DNS 都查不到，短連結、錢包、逛機台全掛）。2026-11-08～10 就算每 3 天讀一次還是被暫停了，11-21 按 Resume 恢復
+  → `.github/workflows/keepalive.yml` 加強：每天 2 次，每次 4 個真的查詢（machines、browse2、activity、top_makers），連不上自動重試；還是失敗 → 貼到 Discord（repo secret `DISCORD_ALERT_WEBHOOK`，沒設就只有 GitHub 的失敗紀錄）。手動 Run workflow 勾 `test_alert` 可以送測試通知；改這個檔案推上去會先跑一次
 
 ## 手機、App 內建瀏覽器（2026-10-30）
 
