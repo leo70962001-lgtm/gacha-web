@@ -5965,6 +5965,26 @@ async function boot() {
   $('mach-sel').onchange = () => switchMachine($('mach-sel').value);
   $('mach-new').onclick = newMachine;
   $('mach-dup').onclick = () => dupMachine(shop.cur);
+  // 刪除這台（使用者 2026-11-21：「追加可以刪除」）：按兩下才刪（跟我的商店的「拿掉」一樣，第一下變紅色「確定刪除？」）
+  let machDelArm = 0;
+  $('mach-del').onclick = async () => {
+    const b = $('mach-del');
+    const reset = () => {
+      clearTimeout(machDelArm);
+      machDelArm = 0;
+      b.textContent = t('sw.del');
+      b.classList.remove('armed');
+    };
+    if (!machDelArm) {
+      b.textContent = t('sw.delConfirm');
+      b.classList.add('armed');
+      machDelArm = setTimeout(reset, 3000);
+      return;
+    }
+    reset();
+    await removeMachine(shop.cur);
+    toast(t('sw.deleted'));
+  };
   bindCover();
   bindMaker();
   bindMachineStickers();

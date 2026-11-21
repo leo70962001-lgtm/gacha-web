@@ -168,6 +168,8 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px)
 .ms-pick select { font: inherit; font-weight: 700; height: 40px; padding: 0 10px; border: 2px solid var(--stroke); border-radius: 12px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; cursor: pointer; }
 .mach-switch .btn { padding: 7px 14px; font-size: 14px; }
 .mach-switch .btn:not(.ghost) { box-shadow: 2px 2px 0 var(--stroke); }
+.mach-switch .ms-del { color: #c8202a; border-color: #c8202a; }
+.mach-switch .ms-del.armed { background: #c8202a; color: #fff; border-style: solid; }
 /* 逛機台的封面：連結區的一列＋裁切的對話框 */
 .cover-row { display: flex; gap: 12px; align-items: center; margin-top: 8px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); }
 .cover-row img { width: 64px; height: 64px; border-radius: 12px; border: 2px solid var(--stroke); object-fit: cover; background: var(--surface); flex: none; }
@@ -2135,6 +2137,7 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
           <label class="ms-pick"><small id="mach-count"></small><select id="mach-sel"></select></label>
           <button type="button" class="btn" id="mach-new" data-i18n="sw.new">＋ 新機台</button>
           <button type="button" class="btn ghost" id="mach-dup" data-i18n="sw.dup">複製這台</button>
+          <button type="button" class="btn ghost ms-del" id="mach-del" data-i18n="sw.del">刪除這台</button>
         </div>
         <button type="button" class="wallet-card" id="wallet-card" hidden>
           <span class="w-coin" aria-hidden="true"></span>
