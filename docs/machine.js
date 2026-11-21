@@ -894,29 +894,132 @@ export class Machine {
     return out;
   }
 
+  // 籤堆（使用者 2026-11-21：「浮起來的地方修正」）：一張一張丟進箱子，每張落到碰到箱底或下面的籤為止
+  //   （之前高度是亂數 → 很多張浮在半空，立著的那些又插進箱底）
   _heapSlips(N) {
     const I = SPECS.omikuji.inner;
     let seed = 12345;
     const R = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const cx = (I.x[0] + I.x[1]) / 2;
-    const hx = (I.x[1] - I.x[0]) / 2 - 0.05;
-    const hz = (I.z[1] - I.z[0]) / 2 - 0.05;
-    const H = 0.05 + 0.3 * Math.sqrt(N / MAX_SLIPS); // 最多堆到玻璃箱一半高
+    const hx = (I.x[1] - I.x[0]) / 2 - 0.04;
+    const hz = (I.z[1] - I.z[0]) / 2 - 0.04;
     const out = [];
     for (let i = 0; i < N; i++) {
-      const x = cx + (R() * 2 - 1) * hx;
-      const z = (R() * 2 - 1) * hz;
-      const d2 = ((x - cx) / hx) ** 2 * 0.6 + (z / hz) ** 2 * 0.4;
-      const top = H * (1 - 0.45 * d2); // 中間高、四周低
-      const y = I.floor + SLIP3.t + Math.pow(R(), 0.75) * top;
-      // 大多躺著（稍微斜），三成斜靠／立著（照片裡的籤是一張一張立在箱裡）
-      const stand = R() < 0.32;
-      const tilt = stand ? 0.7 + R() * 0.75 : R() * 0.45;
-      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2 + tilt * (R() < 0.5 ? 1 : -1), R() * Math.PI * 2, (R() - 0.5) * 0.4, 'YXZ'));
-      out.push({ p: new THREE.Vector3(x, y, z), q, ph: R() * 6.28, tint: R() });
+      // 中間多、四周少（兩個亂數相加＝三角分布）→ 堆起來中間高
+      const x = cx + (R() + R() - 1) * hx;
+      const z = (R() + R() - 1) * hz;
+      // 躺著順著下面的坡度；少數幾張斜靠（多翹一點）
+      const lean = R() < 0.08 ? (0.2 + R() * 0.2) * (R() < 0.5 ? 1 : -1) : (R() - 0.5) * 0.1;
+      out.push({ p: new THREE.Vector3(x, 0, z), x0: x, z0: z, q: new THREE.Quaternion(), yaw: R() * Math.PI * 2, lean, roll: (R() - 0.5) * 0.1, ph: R() * 6.28, tint: R(), ord: i });
     }
-    out.sort((a, b) => a.p.y - b.p.y);
+    this._settleSlips(out);
     return out;
+  }
+
+  // 照丟進去的順序重新放一次（拿走一張以後也重算 → 原本壓在它上面的籤掉下來，不會浮著）
+  //   8 mm 的高度圖：先量籤四個邊底下多高 → 順著坡度躺（最多 35°）→ 取底面每一點「下面有多高」的最大值當落點 → 把它的上面寫回高度圖
+  _settleSlips(P) {
+    const I = SPECS.omikuji.inner;
+    const G = 0.008;
+    const nx = Math.ceil((I.x[1] - I.x[0]) / G) + 1;
+    const nz = Math.ceil((I.z[1] - I.z[0]) / G) + 1;
+    const hm = new Float32Array(nx * nz).fill(I.floor);
+    const at = (x, z) => {
+      const i = Math.round((x - I.x[0]) / G);
+      const k = Math.round((z - I.z[0]) / G);
+      return i < 0 || k < 0 || i >= nx || k >= nz ? -1 : k * nx + i;
+    };
+    const hAt = (x, z) => {
+      const k = at(x, z);
+      return k < 0 ? I.floor : hm[k];
+    };
+    const w = SLIP3.w * SLIP3.pile;
+    const h = (SLIP3.h / SLIP3.n) * SLIP3.pile;
+    if (!this._slipPts) {
+      // 紙包的上下兩面各取 11×7 個點（間隔比格子小，才不會有縫讓下一張陷進去）
+      this._slipPts = [];
+      for (const t of [-SLIP3.t / 2, SLIP3.t / 2]) for (let a = 0; a <= 10; a++) for (let b = 0; b <= 6; b++) this._slipPts.push(new THREE.Vector3((a / 10 - 0.5) * w, (b / 6 - 0.5) * h, t));
+      this._slipD = this._slipPts.map(() => new THREE.Vector3());
+    }
+    const pts = this._slipPts;
+    const d = this._slipD;
+    const up = new THREE.Vector3(0, 1, 0);
+    const u = new THREE.Vector3();
+    const v = new THREE.Vector3();
+    const n = new THREE.Vector3();
+    const M = new THREE.Matrix4();
+    // 一條邊底下的最高點（沿著邊取 5 點）
+    const edge = (x, z, ex, ez, sx, sz, len) => {
+      let m = -Infinity;
+      for (let t = -0.5; t <= 0.5001; t += 0.25) m = Math.max(m, hAt(x + ex + sx * len * t, z + ez + sz * len * t));
+      return m;
+    };
+    P.sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));
+    const k = Math.tan(0.25); // 坡度最多 14°（紙會滑下去，不會一直疊陡）
+    const half = Math.hypot(w, h) / 2;
+    const qq = new THREE.Quaternion();
+    const ks = new Int32Array(pts.length);
+    // 放在 (x, z) 的話：順著坡度的角度 → qq，落點 → 回傳 y（不寫進高度圖）
+    const tryAt = (c, x, z) => {
+      const cy = Math.cos(c.yaw);
+      const sy = Math.sin(c.yaw);
+      const ax = [cy, -sy];
+      const ay = [sy, cy];
+      const hA = edge(x, z, (ax[0] * w) / 2, (ax[1] * w) / 2, ay[0], ay[1], h);
+      const hB = edge(x, z, (-ax[0] * w) / 2, (-ax[1] * w) / 2, ay[0], ay[1], h);
+      const hC = edge(x, z, (ay[0] * h) / 2, (ay[1] * h) / 2, ax[0], ax[1], w);
+      const hD = edge(x, z, (-ay[0] * h) / 2, (-ay[1] * h) / 2, ax[0], ax[1], w);
+      const gx = THREE.MathUtils.clamp((hA - hB) / w, -k, k) + Math.tan(c.roll);
+      const gy = THREE.MathUtils.clamp((hC - hD) / h, -k, k) + Math.tan(c.lean);
+      u.set(ax[0], gx, ax[1]).normalize();
+      v.set(ay[0], gy, ay[1]).normalize();
+      n.crossVectors(u, v).normalize();
+      if (n.dot(up) < 0) {
+        // 要保持右手座標（只翻 n 會變成鏡像，轉出來的角度是亂的）→ 一起翻 v
+        v.negate();
+        n.negate();
+      }
+      v.crossVectors(n, u).normalize();
+      qq.setFromRotationMatrix(M.makeBasis(u, v, n));
+      let x0 = 0, x1 = 0, z0 = 0, z1 = 0;
+      pts.forEach((p, j) => {
+        d[j].copy(p).applyQuaternion(qq);
+        x0 = Math.min(x0, d[j].x);
+        x1 = Math.max(x1, d[j].x);
+        z0 = Math.min(z0, d[j].z);
+        z1 = Math.max(z1, d[j].z);
+      });
+      // 整張都要在玻璃箱裡
+      x = THREE.MathUtils.clamp(x, I.x[0] + 0.006 - x0, I.x[1] - 0.006 - x1);
+      z = THREE.MathUtils.clamp(z, I.z[0] + 0.006 - z0, I.z[1] - 0.006 - z1);
+      let y = -Infinity;
+      d.forEach((p, j) => {
+        ks[j] = at(x + p.x, z + p.z);
+        y = Math.max(y, (ks[j] < 0 ? I.floor : hm[ks[j]]) - p.y);
+      });
+      return { x, z, y };
+    };
+    for (const c of P) {
+      if (c.yaw == null) continue;
+      // 每次都從丟進去的位置算（重算幾次結果都一樣，只有原本壓在拿走那張上面的會動）
+      const x = THREE.MathUtils.clamp(c.x0 ?? c.p.x, I.x[0] + half, I.x[1] - half);
+      const z = THREE.MathUtils.clamp(c.z0 ?? c.p.z, I.z[0] + half, I.z[1] - half);
+      // 附近試 7 個位置，選落點最低的（＝滑到低的地方，堆起來是平緩的小山）
+      let best = null;
+      for (let t = 0; t < 7; t++) {
+        const a = c.ord * 2.39996 + t * 0.8976;
+        const r = t ? 0.035 : 0;
+        const o = tryAt(c, x + Math.cos(a) * r, z + Math.sin(a) * r);
+        if (!best || o.y < best.y - 0.002) best = o;
+      }
+      const o = tryAt(c, best.x, best.z); // 重算一次（qq、d、ks 是這個位置的）
+      c.q.copy(qq);
+      c.p.set(o.x, o.y + 0.0004, o.z);
+      d.forEach((p, j) => {
+        if (ks[j] >= 0) hm[ks[j]] = Math.max(hm[ks[j]], c.p.y + p.y);
+      });
+    }
+    return P;
   }
 
   _syncSlips(colors = false) {
@@ -972,6 +1075,7 @@ export class Machine {
     });
     if (best < 0) return { p: new THREE.Vector3(hole.x, 0.12, hole.z), q: new THREE.Quaternion() };
     const [c] = P.splice(best, 1);
+    if (this.omiWrap !== 'capsule') this._settleSlips(P); // 壓在它上面的掉下來
     this._syncSlips(true);
     return c;
   }
