@@ -79,8 +79,30 @@ export async function saveMachine(token, cred, stock, price, wallet) {
 
 // 短 id → { data: 機台字串, shared: 有沒有共用庫存 }（每次都拿最新的，不用快取）
 // 第一版的短連結（共用庫存之前存的）stock 是空的 → shared＝false，庫存照舊記在各自的裝置
-export async function loadMachine(id) {
+// 公開範圍（supabase/13_visibility.sql）：走 machine_get() 帶看的人的錢包（＋自己手上的修改鑰匙）
+//   好友公開／非公開、看的人不夠格 → 丟 e.vis（err.lock＝{ vis, o 店主, on 暱稱, i_follow, f_me }）
+//   伺服器還沒裝 machine_get（PGRST202）→ 照舊直接讀資料表
+export async function loadMachine(id, viewer = null, mkey = null) {
   if (!isShortId(id)) throw new Error('e.format');
+  const g = await req('/rest/v1/rpc/machine_get', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: id, p_viewer: viewer?.id ?? null, p_vkey: viewer?.key ?? null, p_mkey: isKey(mkey) ? mkey : null }),
+  });
+  if (g.ok) {
+    const j = await g.json().catch(() => null);
+    if (j?.locked) {
+      const e = new Error('e.vis');
+      e.lock = j;
+      throw e;
+    }
+    if (typeof j?.data !== 'string') throw new Error('e.network');
+    return { data: j.data, shared: !!j.shared, vis: j.vis || 'link' };
+  }
+  const err = await g.json().catch(() => ({}));
+  if (err.code === 'P0002') throw new Error('e.notFound');
+  if (err.code !== 'PGRST202') throw new Error('e.network');
   const r = await req(`/rest/v1/machines?id=eq.${id}&select=data,stock`, { cache: 'no-store' });
   if (!r.ok) throw new Error('e.network');
   const rows = await r.json().catch(() => null);
@@ -260,5 +282,8 @@ export async function srpc(name, body) {
 // ---------- 逛機台（supabase/07_browse.sql） ----------
 // 店家自己公開（要機台的修改鑰匙）；meta＝列表用的小摘要（名稱、店名、種類、價錢、封面小圖…）
 export const setListed = (cred, on, meta) => rpc('set_listed', { p_id: cred.id, p_key: cred.key, p_listed: on, p_meta: meta || null });
+// 公開範圍：public 公開／link 限定公開／friends 好友公開／private 非公開（13_visibility.sql；還沒裝 → e.notReady）
+export const VIS = ['public', 'link', 'friends', 'private'];
+export const setVis = (cred, vis, meta) => srpc('set_vis', { p_id: cred.id, p_key: cred.key, p_vis: vis, p_meta: meta || null });
 // 列表：sort＝new（最近更新）／hot（被轉最多次），一次 24 台
 export const browseMachines = (sort, offset = 0) => rpc('browse_machines', { p_sort: sort, p_limit: 24, p_offset: offset });

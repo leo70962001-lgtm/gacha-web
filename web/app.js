@@ -34,7 +34,7 @@ function nowPlaying(box, m, o) {
   };
   return p;
 }
-import { CLOUD, machineStats, tradeMe, setListed, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales, srpc } from './cloud.js';
+import { CLOUD, machineStats, tradeMe, setListed, setVis, VIS, browseMachines, cloudReady, saveMachine, loadMachine, uploadMedia, pullCloud, pulledCounts, restockCloud, walletOpen, newWalletCred, isWalletCred, walletSales, srpc } from './cloud.js';
 import { Social, avatarEl, themeKey, themeName, themeOf } from './social.js';
 import { FORTUNES, fortuneOf, cleanOmi, sampleSlips, blankSlip, drawSlip, drawSlipTag, fortuneForRarity, omiFontsReady, defaultLabels, OMI_LIMITS, PAPER_COLORS, cleanPaper, FRAME_IDS, frameArt, cleanBox, BOX_LIMITS } from './omikuji.js';
 
@@ -2184,8 +2184,7 @@ function showLinkStatus(s) {
   $('restock').hidden = !s.short;
   $('btn-stats').hidden = !(s.short && draft.cloud);
   $('list-wrap').hidden = !(s.short && draft.cloud);
-  $('list-on').checked = !!draft.listed;
-  renderListExtra();
+  renderVis();
   renderCover();
   const meta = $('link-meta');
   const imgs = draft.items.filter((it) => it.img).length;
@@ -2425,6 +2424,68 @@ function playKey() {
   return 'clatter.play.' + play.id;
 }
 
+// ---------- 公開範圍（使用者 2026-11-21：「增加 限定公開 非公開 或好友公開的 轉蛋機」，supabase/13_visibility.sql） ----------
+//   draft.vis＝public 公開／link 限定公開／friends 好友公開（互相追蹤）／private 非公開；舊草稿只有 draft.listed
+const visOf = (d) => (VIS.includes(d?.vis) ? d.vis : d?.listed ? 'public' : 'link');
+// 看的人：這台裝置的錢包（不先開戶，伺服器只拿來比對是不是店主、是不是好友）
+function viewerCred() {
+  const c = store.get('clatter.wallet');
+  return isWalletCred(c) ? c : null;
+}
+// 自己的機台：我的商店裡有這台的修改鑰匙 → 非公開也打得開
+function mkeyFor(sid) {
+  for (const uid of shop.list) {
+    const d = uid === shop.cur ? draft : store.get(draftKey(uid));
+    if (d?.cloud?.id === sid) return d.cloud.key;
+  }
+  return null;
+}
+// 打不開的機台：好友限定（可以直接追蹤、看店主的頁面）／非公開
+function showLock(lock, link) {
+  const fr = lock?.vis === 'friends';
+  const who = (fr && lock.on) || t('lock.someone');
+  $('lk-title').textContent = t(fr ? 'lock.friendsT' : 'lock.privateT');
+  $('lk-text').textContent = !fr ? t('lock.private') : t(lock.i_follow ? 'lock.friendsHalf' : 'lock.friends', { who });
+  $('lk-ico').dataset.vis = fr ? 'friends' : 'private';
+  const fb = $('lk-follow');
+  const owner = fr && /^[0-9A-Za-z]{10}$/.test(lock.o || '') ? lock.o : null;
+  fb.hidden = !owner || !social;
+  fb.disabled = false;
+  fb.textContent = t(lock.i_follow ? 'lock.profile' : 'lock.follow', { who });
+  fb.onclick = async () => {
+    if (lock.i_follow) {
+      closeSheet('sheet-lock');
+      return social.openProfile(owner);
+    }
+    fb.disabled = true;
+    try {
+      await loadWallet(); // 追蹤要有錢包（第一次會開戶）
+      await social.call('follow_set', { p_to: owner, p_on: true });
+      sfx.toggle?.(true);
+      toast(t('soc.followed', { who }));
+      // 對方已經追蹤我 → 現在就是好友，直接再開一次
+      if (lock.f_me) {
+        closeSheet('sheet-lock');
+        return openLink(link);
+      }
+      showLock({ ...lock, i_follow: true }, link);
+    } catch (e) {
+      fb.disabled = false;
+      social.err(e);
+    }
+  };
+  $('lk-retry').onclick = () => {
+    closeSheet('sheet-lock');
+    openLink(link);
+  };
+  openSheet('sheet-lock', owner ? fb : $('lk-retry'));
+}
+function openLink(link) {
+  history.replaceState(null, '', location.pathname + location.search + '#' + link);
+  playSrc = 'link';
+  enterPlay(link);
+}
+
 // 玩家從哪裡進來轉的（機台的數據後台「從哪裡來」）：browse 逛機台／link 連結／album 收集簿／shop 我的商店、自己試玩
 let playSrc = 'other';
 async function enterPlay(token) {
@@ -2433,6 +2494,7 @@ async function enterPlay(token) {
   const from = app.dataset.mode;
   const back = nextBack || (from !== 'play' ? from : play?.back) || 'browse';
   nextBack = null;
+  const prevLast = lastPlay;
   lastPlay = { token, src: playSrc };
   const fromDraft = token === 'draft' ? shop.cur : null; // 開店的人自己試玩：收集簿用固定的 key（設定一改 play id 就會變）
   const sid = token.startsWith('s.') ? token.slice(2) : null;
@@ -2441,13 +2503,20 @@ async function enterPlay(token) {
   try {
     // 短連結 → 雲端上最新的機台字串＋每個獎品被轉走幾個（庫存大家共用）
     if (sid) {
-      const [m, p] = await Promise.all([loadMachine(sid), pulledCounts(sid)]);
+      const [m, p] = await Promise.all([loadMachine(sid, viewerCred(), mkeyFor(sid)), pulledCounts(sid)]);
       token = m.data;
       shared = m.shared;
       pulled = p;
     }
     cfg = token === 'draft' ? draft : await decodeConfig(token);
   } catch (e) {
+    // 好友公開／非公開、看的人不夠格（13_visibility.sql）→ 回到原本的頁面，跳出說明
+    if (e.message === 'e.vis') {
+      lastPlay = prevLast; // 「轉轉看」分頁還是回到上一台
+      if (location.hash === '#' + link) history.replaceState(null, '', location.pathname + location.search);
+      setMode(from && from !== 'play' ? from : 'browse');
+      return showLock(e.lock, link);
+    }
     toast(t('t.badLink', { msg: t(e.message) }));
     return setMode('create');
   }
@@ -2656,7 +2725,7 @@ async function insertCoin(fromX, fromY) {
 async function refreshPlay() {
   if (!play?.cloud || play.inserted > 0 || !['coin', 'soldout'].includes(play.phase)) return;
   try {
-    const [{ data }, pulled] = await Promise.all([loadMachine(play.cloud), pulledCounts(play.cloud)]);
+    const [{ data }, pulled] = await Promise.all([loadMachine(play.cloud, viewerCred(), mkeyFor(play.cloud)), pulledCounts(play.cloud)]);
     if (data !== play.token) {
       await enterPlay(play.link);
       toast(t('t.machineUpdated'));
@@ -3684,6 +3753,7 @@ async function dupMachine(uid) {
   const copy = { ...src, sample: false, name: t('shop.copyName', { name: src.name || t('defaultMachine') }).slice(0, LIMITS.title) };
   delete copy.cloud;
   delete copy.listed;
+  delete copy.vis;
   delete copy.listedCover;
   const nu = 'm' + newUid();
   store.set(draftKey(nu), copy);
@@ -3845,10 +3915,12 @@ async function renderShop() {
     const tt = document.createElement('div');
     const h = document.createElement('h2');
     h.textContent = d.name || t('defaultMachine');
-    if (d.listed && d.cloud) {
+    if (d.cloud) {
+      // 公開範圍：公開中／限定公開／好友限定／非公開
+      const v = visOf(d);
       const pub = document.createElement('span');
-      pub.className = 'mach-pub';
-      pub.textContent = t('browse.listed');
+      pub.className = 'mach-pub vis-' + v;
+      pub.textContent = t(v === 'public' ? 'browse.listed' : 'vis.tag.' + v);
       h.append(pub);
     }
     const sub = document.createElement('p');
@@ -5253,14 +5325,16 @@ async function listingMeta() {
   if (cover) meta.c = cover;
   return meta;
 }
-// 公開中 → 摘要（含封面）馬上更新
+// 公開中、好友公開 → 摘要（含封面）馬上更新；非公開 → 每次存完再設一次（開新連結的 id 一開始是限定公開）
 function pushListing() {
   const c = draft.cloud;
-  if (!c || !draft.listed || !cloudReady()) return;
+  const v = visOf(draft);
+  if (!c || v === 'link' || !cloudReady()) return;
+  if (v === 'private') return void setVis(c, v).catch(() => {});
   listingMeta()
     .then((meta) => {
       saveDraft();
-      return setListed(c, true, meta);
+      return v === 'public' ? setListed(c, true, meta) : setVis(c, v, meta);
     })
     .catch(() => {});
 }
@@ -5427,27 +5501,44 @@ function bindCover() {
 }
 // 公開中：參加每週主題、讓別人用外觀開新機台（社群）
 function renderListExtra() {
-  $('list-extra').hidden = $('list-wrap').hidden || !draft.listed;
+  $('list-extra').hidden = $('list-wrap').hidden || visOf(draft) !== 'public';
   $('theme-on-txt').textContent = t('soc.joinTheme', { t: themeName() });
   $('theme-on').checked = draft.wk === themeKey();
   $('remix-on').checked = !draft.noRemix;
 }
-async function toggleListed(on) {
+// 第 5 步「誰可以轉這台」：四個選項，選到的那個亮起來
+function renderVis() {
+  const v = visOf(draft);
+  for (const r of document.querySelectorAll('#vis-opts input[name="vis"]')) r.checked = r.value === v;
+  renderListExtra();
+}
+let visBusy = false;
+async function changeVis(v) {
   const c = draft.cloud;
-  if (!c) return;
-  $('list-on').disabled = true;
+  const prev = visOf(draft);
+  if (!c || !VIS.includes(v) || v === prev || visBusy) return renderVis();
+  visBusy = true;
+  $('vis-opts').setAttribute('aria-busy', 'true');
   try {
-    const meta = on ? await listingMeta() : null;
-    await setListed(c, on, meta);
-    draft.listed = on;
+    // 公開、好友公開：卡片要用的摘要（封面、名稱…）一起送
+    const meta = v === 'public' || v === 'friends' ? await listingMeta() : null;
+    try {
+      await setVis(c, v, meta);
+    } catch (e) {
+      // 伺服器還沒裝 13_visibility.sql：公開／限定公開照舊用以前的開關
+      if (e.message !== 'e.notReady' || (v !== 'public' && v !== 'link')) throw e;
+      await setListed(c, v === 'public', meta);
+    }
+    draft.vis = v;
+    draft.listed = v === 'public';
     saveDraft();
-    renderListExtra();
-    toast(t(on ? 'browse.on' : 'browse.off'));
+    toast(v === 'public' ? t('browse.on') : t('vis.set', { v: t('vis.' + v) }));
   } catch (e) {
-    $('list-on').checked = !!draft.listed;
-    toast(t(e.message));
+    toast(t(e.message === 'e.notReady' ? 'vis.notReady' : e.message));
   } finally {
-    $('list-on').disabled = false;
+    visBusy = false;
+    $('vis-opts').removeAttribute('aria-busy');
+    renderVis();
   }
 }
 
@@ -5629,6 +5720,13 @@ function browseCard(r) {
     const kd = document.createElement('span');
     kd.className = 'bcard-kind';
     kd.textContent = t('kind.' + kind);
+    // 好友公開的機台（好友在個人頁才看得到）
+    if (r.vis === 'friends') {
+      const fv = document.createElement('span');
+      fv.className = 'bcard-vis';
+      fv.textContent = t('vis.tag.friends');
+      cover.append(fv);
+    }
     const p = Array.isArray(m.p) ? m.p : [];
     const price = { coins: Math.max(1, Math.min(20, p[0] | 0)), unit: Number.isFinite(p[1]) ? p[1] : 0, cur: CURRENCIES.includes(p[2]) ? p[2] : 'NT$' };
     const pr = document.createElement('span');
@@ -5890,9 +5988,9 @@ async function boot() {
     },
     shopTheme: () => {
       setMode('create');
-      requestAnimationFrame(() => ($('list-on').closest('.step') || $('list-on')).scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      requestAnimationFrame(() => ($('list-wrap').closest('.step') || $('list-wrap')).scrollIntoView({ behavior: 'smooth', block: 'center' }));
       if (!draft.cloud) toast(t('soc.themeNeedLink'));
-      else if (!draft.listed) toast(t('soc.themeNeedList'));
+      else if (visOf(draft) !== 'public') toast(t('soc.themeNeedList'));
     },
     remix: (src) => remixFrom(src),
     // 選一張自己的圖 → 裁成正方形 → canvas（取消＝null）
@@ -5937,7 +6035,7 @@ async function boot() {
   };
   foldSums();
   new MutationObserver(foldSums).observe($('panel'), { subtree: true, attributes: true, attributeFilter: ['aria-checked'] });
-  $('list-on').onchange = () => toggleListed($('list-on').checked);
+  for (const r of document.querySelectorAll('#vis-opts input[name="vis"]')) r.onchange = () => r.checked && changeVis(r.value);
   $('theme-on').onchange = () => {
     draft.wk = $('theme-on').checked ? themeKey() : null;
     saveDraft();

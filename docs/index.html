@@ -1975,6 +1975,40 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
 .list-toggle.sub { padding: 8px 10px; }
 .list-extra { display: grid; gap: 6px; }
 .list-extra[hidden] { display: none; }
+/* 公開範圍（13_visibility.sql）：公開／限定公開／好友公開／非公開 */
+.vis-pick { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 6px; }
+.vis-pick[hidden] { display: none; }
+.vis-pick legend { padding: 0; margin-bottom: 6px; font-size: 14px; font-weight: 800; }
+.vis-opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.vis-opts[aria-busy="true"] { opacity: .6; pointer-events: none; }
+.vis-opt { --vc: var(--sun); position: relative; display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); border: 2px solid var(--line); cursor: pointer; transition: transform .12s, box-shadow .12s; }
+.vis-opt[data-v="link"] { --vc: var(--sky); }
+.vis-opt[data-v="friends"] { --vc: var(--mint); }
+.vis-opt[data-v="private"] { --vc: #a3abc0; }
+.vis-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.vis-opt span { display: grid; gap: 2px; min-width: 0; }
+.vis-opt b { font-size: 15px; }
+.vis-opt small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.vis-opt:has(input:checked) { border-color: var(--stroke); background: color-mix(in srgb, var(--vc) 20%, var(--surface)); box-shadow: 3px 3px 0 var(--stroke); transform: translate(-1px, -1px); }
+.vis-opt:has(input:focus-visible) { outline: 3px solid var(--sky); outline-offset: 2px; }
+.vis-ico, .lock-ico { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M3 12h18M12 3c3.2 3.2 3.2 14.8 0 18M12 3c-3.2 3.2-3.2 14.8 0 18'/%3E%3C/svg%3E"); display: block; width: 30px; height: 30px; border-radius: 50%; background: var(--vc); border: 2px solid var(--stroke); position: relative; flex: none; }
+.vis-ico::before, .lock-ico::before { content: ""; position: absolute; inset: 5px; background: #1c2340; -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat; }
+.vis-opt[data-v="link"] .vis-ico { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1'/%3E%3Cpath d='M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1'/%3E%3C/svg%3E"); }
+.vis-opt[data-v="friends"] .vis-ico, .lock-ico[data-vis="friends"] { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='8' r='3.5'/%3E%3Cpath d='M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5'/%3E%3Ccircle cx='17' cy='9' r='2.8'/%3E%3Cpath d='M16.5 14.6c2.6.1 4.4 1.8 5 4.6'/%3E%3C/svg%3E"); }
+.vis-opt[data-v="private"] .vis-ico, .lock-ico[data-vis="private"] { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='10.5' width='14' height='10' rx='2.5'/%3E%3Cpath d='M8 10.5V8a4 4 0 0 1 8 0v2.5'/%3E%3C/svg%3E"); }
+@media (max-width: 380px) { .vis-opts { grid-template-columns: 1fr; } }
+.mach-pub.vis-link { background: var(--sky); }
+.mach-pub.vis-friends { background: var(--mint); }
+.mach-pub.vis-private { background: var(--surface-2); }
+.bcard-vis { position: absolute; left: 8px; top: 33px; font-size: 11px; font-weight: 900; padding: 2px 9px; border-radius: 999px; background: var(--mint); color: #1c2340; border: 1.5px solid var(--stroke); }
+@media (max-width: 640px) { .bcard-vis { top: 29px; font-size: 10px; padding: 1px 7px; } }
+.fr-chip { display: inline-flex; align-items: center; font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 999px; border: 1.5px dashed var(--line); color: var(--muted); }
+.fr-chip.on { border: 1.5px solid var(--stroke); background: color-mix(in srgb, var(--mint) 25%, var(--surface)); color: var(--ink); }
+.lock-card { justify-items: center; text-align: center; }
+.lock-card .lock-ico { --vc: #a3abc0; width: 72px; height: 72px; }
+.lock-card .lock-ico[data-vis="friends"] { --vc: var(--mint); }
+.lock-card .lock-ico::before { inset: 16px; }
+.lock-acts { justify-content: center; flex-wrap: wrap; }
 
 /* 機台畫面：店主、讚、留言、外觀，以及飄過去的スタンプ／留言／轉蛋 */
 .shop-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
@@ -2280,7 +2314,16 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
                 <button class="btn" id="try" data-i18n="try">用買家畫面試玩</button>
               </div>
               <p class="meta-line" id="link-meta"></p>
-              <label class="list-toggle" id="list-wrap" hidden><input type="checkbox" id="list-on"><span><b data-i18n="browse.publish">公開到「逛機台」</b><small data-i18n="browse.publishHint">大家都能在逛機台找到這台、直接來轉（隨時可以取消）</small></span></label>
+              <!-- 公開範圍（使用者 2026-11-21：「增加 限定公開 非公開 或好友公開的 轉蛋機」，supabase/13_visibility.sql） -->
+              <fieldset class="vis-pick" id="list-wrap" hidden>
+                <legend data-i18n="vis.label">誰可以轉這台</legend>
+                <div class="vis-opts" id="vis-opts">
+                  <label class="vis-opt" data-v="public"><input type="radio" name="vis" value="public"><i class="vis-ico" aria-hidden="true"></i><span><b data-i18n="vis.public">公開</b><small data-i18n="vis.publicHint">上「逛機台」，大家都找得到；拿到連結的人也能轉</small></span></label>
+                  <label class="vis-opt" data-v="link"><input type="radio" name="vis" value="link"><i class="vis-ico" aria-hidden="true"></i><span><b data-i18n="vis.link">限定公開</b><small data-i18n="vis.linkHint">不上逛機台，只有拿到連結的人能轉</small></span></label>
+                  <label class="vis-opt" data-v="friends"><input type="radio" name="vis" value="friends"><i class="vis-ico" aria-hidden="true"></i><span><b data-i18n="vis.friends">好友公開</b><small data-i18n="vis.friendsHint">只有跟你互相追蹤的好友能轉；好友在你的個人頁也看得到這台</small></span></label>
+                  <label class="vis-opt" data-v="private"><input type="radio" name="vis" value="private"><i class="vis-ico" aria-hidden="true"></i><span><b data-i18n="vis.private">非公開</b><small data-i18n="vis.privateHint">只有你自己能打開（別人拿到連結也打不開）</small></span></label>
+                </div>
+              </fieldset>
               <!-- 每週主題、讓別人用外觀開新機台（社群） -->
               <div class="list-extra" id="list-extra" hidden>
                 <label class="list-toggle sub"><input type="checkbox" id="theme-on"><span><b id="theme-on-txt"></b></span></label>
@@ -2602,6 +2645,20 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
       <li data-i18n="pwa.ios3">按右上角的「新增」</li>
     </ol>
     <p class="tr-hint" data-i18n="pwa.other">Android／電腦的 Chrome、Edge：按網址列右邊或選單裡的「安裝應用程式」。</p>
+  </div>
+</div>
+
+<!-- 打不開的機台：好友限定／非公開（13_visibility.sql） -->
+<div class="sheet" id="sheet-lock" hidden>
+  <div class="sheet-card trade-card lock-card" role="dialog" aria-modal="true" aria-labelledby="lk-title">
+    <button class="icon-btn close-x" data-close data-i18n-aria="close" aria-label="關閉">✕</button>
+    <i class="lock-ico" id="lk-ico" aria-hidden="true"></i>
+    <h2 id="lk-title"></h2>
+    <p class="tr-hint" id="lk-text"></p>
+    <div class="row lock-acts">
+      <button class="btn primary" id="lk-follow"></button>
+      <button class="btn" id="lk-retry" data-i18n="lock.retry">再試一次</button>
+    </div>
   </div>
 </div>
 

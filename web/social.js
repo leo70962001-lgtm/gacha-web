@@ -746,6 +746,8 @@ export class Social {
       };
       acts.append(fb);
       acts.append(btn('btn ghost', t('soc.tradeWith'), () => this.c.invite(p.id)));
+      // 好友＝互相追蹤（好友公開的機台看這個，13_visibility.sql）
+      if (p.f_me) acts.append(el('span', 'fr-chip' + (p.i_follow ? ' on' : ''), t(p.i_follow ? 'soc.mutual' : 'soc.followsYou')));
     }
     card.append(acts);
     root.append(card);
@@ -1713,8 +1715,8 @@ addStrings({
     'soc.noUser': '找不到這個人', 'soc.notReady': '社群功能還在準備中，稍後再試', 'soc.linkCopied': '個人頁連結複製好了', 'soc.copyFail': '複製不了',
     'soc.ps.followers': '追蹤者', 'soc.ps.following': '追蹤中', 'soc.ps.sold': '被轉次數', 'soc.ps.likes': '收到的讚',
     'soc.follow': '＋ 追蹤', 'soc.following': '追蹤中 ✓', 'soc.followed': '開始追蹤 {who}', 'soc.tradeWith': '加好友交換', 'soc.missions': '每日任務',
-    'soc.showcase': '展示櫃', 'soc.noShow': '還沒放展示卡（編輯個人頁可以選 3 張）', 'soc.machines': '公開的機台 {n}',
-    'soc.noMachines': '還沒有公開的機台', 'soc.noMachinesMe': '在開店第 5 步勾「公開到逛機台」，機台就會出現在這裡',
+    'soc.showcase': '展示櫃', 'soc.noShow': '還沒放展示卡（編輯個人頁可以選 3 張）', 'soc.machines': '機台 {n}',
+    'soc.noMachines': '還沒有公開的機台', 'soc.noMachinesMe': '在開店第 5 步把「誰可以轉這台」選成「公開」（或「好友公開」給好友看），機台就會出現在這裡', 'soc.mutual': '互相追蹤・好友', 'soc.followsYou': '追蹤了你',
     'soc.posts': '貼文 {n}', 'soc.noPosts': '還沒有貼文',
     'soc.b.first': '第一抽', 'soc.b.first.d': '轉到第一個獎品', 'soc.b.ssr': 'SSR 得主', 'soc.b.ssr.d': '抽到過 SSR',
     'soc.b.col10': '收藏家', 'soc.b.col10.d': '收集 10 種', 'soc.b.col50': '大收藏家', 'soc.b.col50.d': '收集 50 種',
@@ -1744,7 +1746,7 @@ addStrings({
     'soc.joinTheme': '參加本週主題 {t}', 'soc.allowRemix': '讓別人可以用這台的外觀開新機台',
     'wallet.k.like': '收到讚', 'wallet.k.bonus': '任務獎勵',
     'browse.likes': '讚最多', 'browse.follow': '追蹤中', 'browse.emptyFollow': '追蹤的人還沒有公開的機台。看到喜歡的店主，點他的名字進個人頁按「追蹤」。', 'browse.emptyTheme': '這週主題還沒有機台參加，當第一個吧！（開店第 5 步）',
-    'soc.themeNeedLink': '先做好連結（第 5 步），公開到逛機台後就能參加主題', 'soc.themeNeedList': '勾「公開到逛機台」，下面就有「參加本週主題」',
+    'soc.themeNeedLink': '先做好連結（第 5 步），公開到逛機台後就能參加主題', 'soc.themeNeedList': '把「誰可以轉這台」選成「公開」，下面就有「參加本週主題」',
   },
   ja: {
     'soc.me': 'マイページ', 'soc.now': 'たった今', 'soc.player': 'プレイヤー {c}', 'soc.loading': '読み込み中…', 'soc.noName': '名前がまだありません',
@@ -1783,8 +1785,8 @@ addStrings({
     'soc.noUser': 'このユーザーは見つかりません', 'soc.notReady': 'コミュニティ機能は準備中です。少ししてからお試しください', 'soc.linkCopied': 'プロフィールのリンクをコピーしました', 'soc.copyFail': 'コピーできませんでした',
     'soc.ps.followers': 'フォロワー', 'soc.ps.following': 'フォロー中', 'soc.ps.sold': 'まわされた', 'soc.ps.likes': 'もらったいいね',
     'soc.follow': '＋ フォロー', 'soc.following': 'フォロー中 ✓', 'soc.followed': '{who} をフォローしました', 'soc.tradeWith': 'フレンド交換', 'soc.missions': 'デイリーミッション',
-    'soc.showcase': 'ショーケース', 'soc.noShow': 'まだ飾っていません（プロフィール編集で 3 枚まで）', 'soc.machines': '公開マシン {n}',
-    'soc.noMachines': '公開しているマシンはまだありません', 'soc.noMachinesMe': 'お店の設定ステップ 5 で「マシンをさがすに公開」をオンにするとここに並びます',
+    'soc.showcase': 'ショーケース', 'soc.noShow': 'まだ飾っていません（プロフィール編集で 3 枚まで）', 'soc.machines': 'マシン {n}',
+    'soc.noMachines': '公開しているマシンはまだありません', 'soc.noMachinesMe': 'お店の設定ステップ 5 の「だれが遊べるか」を「公開」（友達向けなら「友達に公開」）にするとここに並びます', 'soc.mutual': '相互フォロー・友達', 'soc.followsYou': 'フォローされています',
     'soc.posts': '投稿 {n}', 'soc.noPosts': '投稿はまだありません',
     'soc.b.first': 'はじめての 1 回', 'soc.b.first.d': 'はじめて景品をゲット', 'soc.b.ssr': 'SSR ゲッター', 'soc.b.ssr.d': 'SSR を当てた',
     'soc.b.col10': 'コレクター', 'soc.b.col10.d': '10 種類あつめた', 'soc.b.col50': '大コレクター', 'soc.b.col50.d': '50 種類あつめた',
@@ -1814,7 +1816,7 @@ addStrings({
     'soc.joinTheme': '今週のお題に参加 {t}', 'soc.allowRemix': 'このマシンの見た目を使った新しいマシン作りを許可',
     'wallet.k.like': 'いいねをもらった', 'wallet.k.bonus': 'ミッション報酬',
     'browse.likes': 'いいね順', 'browse.follow': 'フォロー中', 'browse.emptyFollow': 'フォロー中の人の公開マシンはまだありません。気になる店主の名前からページを開いて「フォロー」しよう。', 'browse.emptyTheme': '今週のお題にはまだ参加マシンがありません。一番乗りでどうぞ！（お店の設定ステップ 5）',
-    'soc.themeNeedLink': '先にリンクを作って（ステップ 5）、マシンをさがすに公開するとお題に参加できます', 'soc.themeNeedList': '「マシンをさがすに公開」をオンにすると、その下に「今週のお題に参加」が出ます',
+    'soc.themeNeedLink': '先にリンクを作って（ステップ 5）、マシンをさがすに公開するとお題に参加できます', 'soc.themeNeedList': '「だれが遊べるか」を「公開」にすると、その下に「今週のお題に参加」が出ます',
   },
   en: {
     'soc.me': 'Me', 'soc.now': 'just now', 'soc.player': 'Player {c}', 'soc.loading': 'Loading…', 'soc.noName': 'No name yet',
@@ -1853,8 +1855,8 @@ addStrings({
     'soc.noUser': "Can't find this player", 'soc.notReady': 'Community features are still being set up — try again soon', 'soc.linkCopied': 'Profile link copied', 'soc.copyFail': "Couldn't copy",
     'soc.ps.followers': 'Followers', 'soc.ps.following': 'Following', 'soc.ps.sold': 'Pulls', 'soc.ps.likes': 'Likes',
     'soc.follow': '+ Follow', 'soc.following': 'Following ✓', 'soc.followed': 'Following {who}', 'soc.tradeWith': 'Add as friend', 'soc.missions': 'Daily missions',
-    'soc.showcase': 'Showcase', 'soc.noShow': 'Nothing on show yet (pick up to 3 in Edit profile)', 'soc.machines': 'Listed machines {n}',
-    'soc.noMachines': 'No listed machines yet', 'soc.noMachinesMe': 'Tick “List in Browse” in step 5 of your shop and your machines appear here',
+    'soc.showcase': 'Showcase', 'soc.noShow': 'Nothing on show yet (pick up to 3 in Edit profile)', 'soc.machines': 'Machines {n}',
+    'soc.noMachines': 'No listed machines yet', 'soc.noMachinesMe': 'In step 5 of your shop, set “Who can play” to Public (or Friends for your friends) and your machines appear here', 'soc.mutual': 'Friends · follow each other', 'soc.followsYou': 'Follows you',
     'soc.posts': 'Posts {n}', 'soc.noPosts': 'No posts yet',
     'soc.b.first': 'First pull', 'soc.b.first.d': 'Got a first prize', 'soc.b.ssr': 'SSR getter', 'soc.b.ssr.d': 'Pulled an SSR',
     'soc.b.col10': 'Collector', 'soc.b.col10.d': '10 different prizes', 'soc.b.col50': 'Master collector', 'soc.b.col50.d': '50 different prizes',
@@ -1884,6 +1886,6 @@ addStrings({
     'soc.joinTheme': "Join this week's theme {t}", 'soc.allowRemix': 'Let others start a machine with this look',
     'wallet.k.like': 'Got a like', 'wallet.k.bonus': 'Mission reward',
     'browse.likes': 'Most liked', 'browse.follow': 'Following', 'browse.emptyFollow': "People you follow haven't listed machines yet. Tap an owner's name to open their page and Follow.", 'browse.emptyTheme': "No machines in this week's theme yet — be the first! (Shop step 5)",
-    'soc.themeNeedLink': 'Make the link first (step 5) and list it in Browse to join the theme', 'soc.themeNeedList': "Tick “List in Browse” and “Join this week's theme” appears below it",
+    'soc.themeNeedLink': 'Make the link first (step 5) and list it in Browse to join the theme', 'soc.themeNeedList': "Set “Who can play” to Public and “Join this week's theme” appears below it",
   },
 });

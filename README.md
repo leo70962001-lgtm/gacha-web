@@ -538,3 +538,16 @@ Gemini（gemini.google.com 圖片模式）生成兩張，原圖在 `D:\ai\gemini
 - **畫面**：留言板最上面 `#tk-rev`（social.js `loadReviews` / `drawReviews`：平均、分布、打星＋一句、清單）；結果畫面 `#r-rate`（app.js `paintRate`：雲端機台、不是自己的、這台還沒評過 → 點星＝`social.openTalk(n)` 星數先選好；評過的記在 `clatter.rated`）；逛機台卡片 `.bcard-rate`（`loadRatings` → `browse.ratings`）
 - 伺服器還沒裝 → `e.notReady` → `social.revOk = false`，三個地方都不顯示
 - 測試：沒有正式資料庫時，在 127.0.0.1 分頁把 `window.fetch` 換掉，攔 `/rpc/reviews|ratings|review_set` 回假資料
+
+## 公開範圍：公開／限定公開／好友公開／非公開（2026-11-21）
+
+使用者：「增加 限定公開 非公開 或好友公開的 轉蛋機」。伺服器 `supabase/13_visibility.sql`（2026-11-21 使用者同意後已在正式資料庫跑過；實測：好友公開在沒追蹤／單方面追蹤／冒用錢包 id 都打不開、互相追蹤後打得開、好友在個人頁看得到；非公開只有店主打得開、不透露是誰的）。注意 `machines` 是欄位權限（04_wallet.sql 只開 id、data、stock、price、created_at、updated_at），`vis` 直接讀會 permission denied，要看 vis 走 `machine_get`／`soc_mrow`。
+- **欄位** `machines.vis`：`public` 公開（上逛機台＋連結）／`link` 限定公開（只有拿到連結的人，預設、等於以前沒勾公開的短連結）／`friends` 好友公開（互相追蹤的人＋店主）／`private` 非公開（只有店主）。`listed` 跟著 vis（＝`vis = 'public'`），逛機台、個人頁、主題、動態的查詢都不用改
+- **擋住**：`machines` 的 RLS 讀取只剩 `public`、`link`；好友公開、非公開只能走 `machine_get(id, viewer, vkey, mkey)`：店主的錢包、這台的修改鑰匙（我的商店裡有）、或互相追蹤（`soc_friends`）才給 `data`，否則回 `{locked, vis, o, on, i_follow, f_me}`（非公開不告訴是誰的）
+- **改範圍** `set_vis(id, key, vis, meta)`；舊的 `set_listed` 照舊能用、會順便改 vis（取消公開 → 限定公開）。`soc_mrow` 多一欄 `vis`；`profile_get` 讓好友也看到好友公開的機台，多回 `f_me`（他有沒有追蹤我）
+- **畫面**：開店第 5 步「誰可以轉這台」四個選項（`#vis-opts`，app.js `renderVis` / `changeVis`；`draft.vis`，舊草稿用 `draft.listed` 推）；我的商店每台的標籤（公開中／限定公開／好友限定／非公開）；個人頁好友公開的卡片有「好友限定」標籤、名片上「互相追蹤・好友」「追蹤了你」；打不開的連結跳 `#sheet-lock`（好友限定：直接追蹤店主或看他的頁面、再試一次；非公開：只有說明）
+- 每次存完 `pushListing()`：公開 → `set_listed`；好友公開 → `set_vis` 帶摘要；非公開 → `set_vis`（開新連結的 id 一開始是限定公開）
+- 伺服器還沒裝：`machine_get` 404（PGRST202）→ 照舊直接讀資料表；選好友公開／非公開 → `vis.notReady` 提示、退回原本的選項；公開／限定公開改走 `set_listed`
+- 沒有擋的：`pull`、留言、評價、按讚這些拿 id 就能呼叫（拿不到機台內容也沒有畫面可以轉）；長連結（`#g1z.…`，雲端連不上時才出現）本來就整台在連結裡，擋不了
+- 測試：在 127.0.0.1 分頁把 `window.fetch` 換掉，攔 `/rpc/machine_get` 回 `{vis:'friends', locked:true, …}` 就能看鎖住的畫面
+- 兩個身分測真的流程：店主用 127.0.0.1:8790、訪客用 localhost:8790（不同網域 → 不同的 localStorage、不同的錢包）；測試機台 `xFaQ1yswuN`（店主錢包 `IMHuz2d347`，測完改回限定公開）
