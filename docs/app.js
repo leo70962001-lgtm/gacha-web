@@ -3738,7 +3738,7 @@ async function remixFrom(src) {
 }
 
 // Gemini「音楽を作成」做的效果音（tools/make_sfx.py → assets/sfx/）
-const SFX_SAMPLES = ['sfx_coin', 'sfx_coin_wood', 'sfx_tick', 'sfx_thud', 'sfx_pop', 'sfx_card', 'fx_sakura', 'fx_stars', 'fx_thunder', 'fx_hanabi', 'fx_gold', 'omi_daikichi', 'omi_kyo', 'omi_suzu'];
+const SFX_SAMPLES = ['sfx_coin', 'sfx_coin_wood', 'sfx_tick', 'sfx_tick2', 'sfx_tick3', 'sfx_thud', 'sfx_pop', 'sfx_card', 'omi_unfold', 'fx_sakura', 'fx_stars', 'fx_thunder', 'fx_hanabi', 'fx_gold', 'omi_daikichi', 'omi_kyo', 'omi_suzu', 'reveal_0', 'reveal_1', 'reveal_2', 'reveal_3'];
 
 // 開店頁最上面的機台切換：每台一個選項（名稱＋種類）
 const switchLabel = (i, d) => `${i + 1}. ${d?.name || t('defaultMachine')} · ${t('kind.' + (kindOf(d?.kind)))}`;

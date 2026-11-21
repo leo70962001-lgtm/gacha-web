@@ -224,7 +224,9 @@ export const sfx = {
   // 把手的棘輪：塑膠「喀」＋機身共鳴
   tick() {
     if (!ready()) return;
-    if (playSample('sfx_tick', { gain: 0.8, rate: vary(1, 0.06) })) return;
+    // 真的扭蛋把手錄音（ポケットサウンド）切成三聲，輪流放才不會像同一聲一直重複
+    const tk = ['sfx_tick', 'sfx_tick2', 'sfx_tick3'][(Math.random() * 3) | 0];
+    if (playSample(samples[tk] ? tk : 'sfx_tick', { gain: 0.6, rate: vary(1, 0.04), pan: rpan(0.1) })) return;
     const t = now();
     noise(t, 0.022, 0.32, 'bandpass', vary(3100, 0.06), 2600, 4, { wet: 0.05 });
     tone('triangle', vary(260, 0.04), 170, t, 0.05, 0.1, { wet: 0.05 });
@@ -272,7 +274,7 @@ export const sfx = {
   // 轉卡機：卡片從出卡口滑出來（紙擦過塑膠的沙一聲＋喀）
   cardOut() {
     if (!ready()) return;
-    if (playSample('sfx_card', { gain: 0.7 })) return; // 使用者 2026-11-21：「這個聲音太尖銳了」→ 檔案已低通，這裡再小聲一點
+    if (playSample('sfx_card', { gain: 0.8, rate: vary(1, 0.04) })) return; // 真的翻卡錄音（効果音ラボ）
     const t = now();
     noise(t, 0.24, 0.32, 'bandpass', 2800, 900, 1.2, { wet: 0.08 });
     noise(t, 0.2, 0.08, 'highpass', 6000, 6000, 1, { wet: 0.05 });
@@ -423,8 +425,9 @@ export const sfx = {
   },
   reveal(rarity) {
     if (!ready()) return;
-    if (playSample('reveal_' + rarity)) {
-      duckFn([1.2, 1.6, 2.6, 4.2][rarity]);
+    // Gemini 做的（第 5 首）：N 一聲鈴、R 往上的琶音、SR 往上走到高音拉長、SSR 漸強→大合奏
+    if (playSample('reveal_' + rarity, { gain: [1.4, 0.9, 0.9, 0.85][rarity] || 1, wet: rarity >= 2 ? 0.12 : 0.05 })) {
+      duckFn([1.0, 1.7, 2.3, 4.6][rarity]);
       return;
     }
     const t = now() + 0.05;
@@ -559,6 +562,8 @@ export const sfx = {
   // おみくじ：一段一段攤開（紙的「啪沙」）
   unfold(i = 0) {
     if (!ready()) return;
+    // 真的攤開紙（効果音ラボ「紙を広げる」），每一段音高稍微不同
+    if (playSample('omi_unfold', { gain: 0.55 - i * 0.06, rate: vary(1 + i * 0.04, 0.04), pan: rpan(0.2), wet: 0.06 })) return;
     const t = now();
     noise(t, 0.09, 0.3, 'bandpass', vary(2400 + i * 300, 0.1), 5200, 1.3, { pan: rpan(0.2), wet: 0.12 });
     noise(t, 0.03, 0.18, 'highpass', 5000, 5000, 1);

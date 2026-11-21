@@ -1263,6 +1263,8 @@ textarea.cs-in { resize: vertical; min-height: 90px; }
 #snd-now { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 /* 意見回饋 */
 .fb-open { justify-self: stretch; padding: 6px 12px; font-size: 13px; }
+.snd-credit { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.snd-credit a { color: inherit; text-decoration: underline; white-space: nowrap; }
 .fb-card { gap: 10px; }
 .fb-card h2 { padding-right: 40px; }
 .fb-card .mb-hint { margin: 0; }
@@ -2718,6 +2720,8 @@ button.cell { border: 0; background: none; padding: 0; font: inherit; color: inh
   <label class="snd-row"><span data-i18n="snd.bgm">背景音樂</span><input type="range" id="vol-bgm" min="0" max="1" step="0.05"></label>
   <label class="snd-mute"><input type="checkbox" id="snd-mute"><span data-i18n="snd.mute">全部靜音</span></label>
   <small id="snd-now"></small>
+  <!-- 效果音的出處（ポケットサウンド 的規約：作品裡要放連結；効果音ラボ 不用但一起寫） -->
+  <small class="snd-credit"><span data-i18n="snd.credit">效果音</span>：<a href="https://pocket-se.info/" target="_blank" rel="noopener">ポケットサウンド/効果音素材</a>・<a href="https://soundeffect-lab.info/" target="_blank" rel="noopener">効果音ラボ</a></small>
   <button type="button" class="btn ghost fb-open" id="btn-feedback"><span aria-hidden="true">💬</span> <span data-i18n="fb.open">意見回饋・回報問題</span></button>
 </div>
 
