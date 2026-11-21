@@ -241,6 +241,22 @@ export async function machineStats(cred) {
   return r.json();
 }
 
+// ---------- 社群（supabase/10_social.sql，social.js） ----------
+// 錯誤：e.locked（鑰匙不對）、e.gone（不在了）、e.tooMany（太快、太多）、e.notReady（伺服器還沒裝這個函式）、e.notDone（任務還沒做完）
+export async function srpc(name, body) {
+  const r = await req('/rest/v1/rpc/' + name, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, 15000);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error({ 42501: 'e.locked', P0002: 'e.gone', 54000: 'e.tooMany', PGRST202: 'e.notReady', P0001: 'e.notDone' }[err.code] || 'e.network');
+  }
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;
+}
+
 // ---------- 逛機台（supabase/07_browse.sql） ----------
 // 店家自己公開（要機台的修改鑰匙）；meta＝列表用的小摘要（名稱、店名、種類、價錢、封面小圖…）
 export const setListed = (cred, on, meta) => rpc('set_listed', { p_id: cred.id, p_key: cred.key, p_listed: on, p_meta: meta || null });

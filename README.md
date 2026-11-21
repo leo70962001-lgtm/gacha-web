@@ -52,6 +52,23 @@
 - **深度往裡面**（同一天，使用者截了浮出框的預覽＋「立體感往裡面做 參考寶可夢的立體卡效果」）：工房的卡改成窗戶式 — holo.js `frameOverlay` 把卡面挖掉卡圖那格（遊戲王風正方形、寶可夢風橫的、全圖卡整張但字的那幾塊留著）＋窗邊內陰影 → `--frame` 放在最前面；主體 `translateZ(-15px) scale(1.0197)`、背景 `translateZ(-38px) scale(1.05)`（退多少放大多少，perspective 760px 正面看剛好對齊）；主體層 `inset: 0`（以前 5% 會錯位，看起來像跑出框）。機台 3D 卡的深度：框 165、主體 130（只在卡圖那格）、背景 95。照片獎品的「浮出框」照舊
 - **全圖卡字那層的遮罩**（同一天，使用者圈了徽章＋「去背的部分」：以前用長方形挖，徽章旁邊的臉一半浮一半不浮、斜的時候後面還有一份錯開的字）：`drawFullCard(d, null, W, { uiOnly: true })` 只畫字那層 → `fullUiMask(d, W)`（白＝徽章星形、戰力的字、角色標籤、外框一圈＋532 以下整段）。用在：`drawDesignMask` 主體沿它切；holo.js `frameOverlay(url, style, ui)` 照它把卡面放回窗裡（沒有 ui 的舊卡才用 `KEEP` 長方形）、`backFill(url, ui)` 背景層把字挖掉、模糊的自己一層層墊回去（不會看到第二份字）；機台 `drawCardLayers(..., ui)` → `framedDepth(style, 128, mask, ui)` 字跟框一樣 165、`inpaintBehind` 連字一起補。放進機台存 `item.ui`（120 px PNG，約 1.5 KB）→ 草稿 b64、連結 `json.u = [[獎品編號, 長度, 格式]]`（圖接在台紙圖後面，舊版忽略）、`cutLayers` 的 `u`（data URL）→ 結果卡 `ui`、收集簿 item `u` → 大卡 `hdv.ui`
 
+## 社群：個人頁、追蹤、讚、留言＋スタンプ、廣場、每週主題、每日任務（2026-11-21）
+
+使用者：「參考網路上有的增加整體用戶跟製作跟交流跟互動感」。參考寶可夢 TCG Pocket（展示櫃、按讚送店主、好友）、Super Mario Maker 2（創作者頁、讚、留言＋スタンプ、排行）、ガチャメーカー（新作、排行）、創作平台的每週主題、每日任務。程式在 `web/social.js`（字也在裡面，用 `addStrings` 併進 i18n），伺服器是 `supabase/10_social.sql`。
+
+- **身分**＝錢包（好友碼＝錢包 id）。寫入都要帶錢包鑰匙；讀別人的東西不用，`p_viewer`＋`p_vkey` 對了才回「我按過讚沒」這類欄位
+- **個人頁** `#u.<好友碼>`（mode `profile`，屬於「玩」這組）：`profile_get` / `profile_save`（暱稱跟好友交換共用 `profiles.name`；頭像 96 px、展示卡 3 張 240 px，都是 webp data URL）。徽章：這台裝置算的（收集、開店、連續登入）送上去，被轉、讚、追蹤者、貼文由伺服器的數字算
+- **頂列的「我的」**（`#btn-me`）：通知（`notices`：讚、留言、追蹤、貼文的讚／スタンプ、轉我的機台；最近 30 天）、每日任務（`missions` / `mission_claim`，日期照玩家時區；登入 10→60 枚、轉一次 10、讚 2 個 10、留言 10、發文 15、更新機台 15）、追蹤中。數字＝未讀＋可以領的任務，60 秒、回到分頁時更新
+- **逛機台**：上面 LIVE 跑馬燈（`activity`，公開機台最近 3 天的轉蛋；`ledger.picks` ＋ 公開摘要 `meta.r`＝{獎品 key: 稀有度} 算出 SR/SSR）、機台／廣場／排行切換、每週主題卡。列表換成 `browse2`（多了 likes／follow／theme 排序、店主、讚、留言數），伺服器沒裝時退回 `browse_machines`
+- **每週主題**：第 0 週＝2026-11-16（週一 UTC），key `t<週數>`，12 個主題輪流（`WEEKLY`）。開店第 5 步公開後勾「參加本週主題」→ `draft.wk` → 公開摘要 `meta.w`；只有這週的 key 才算
+- **用這台的外觀開一台**（`remixFrom`）：複製種類、顏色、背景、卡背、表面加工、BGM、台紙樣式、價錢；不拿獎品和任何上傳的圖。轉卡機的範例獎品用 `cardFromPrize` 先畫成卡。`draft.rx` → `meta.rx`（靈感來源）；店主可以關掉（`draft.noRemix` → `meta.nr`）
+- **機台畫面**：右邊一排（店主頭像、讚、留言、スタンプ、用外觀），短連結的機台才有（`playSid()`）。`machine_social` 一次拿店主、讚、留言數、被當外觀幾次；每 12 秒抓新的留言跟轉蛋，別人的スタンプ從右下飄上去、文字從右邊滑過、SR/SSR 跳提示
+- **讚的獎勵**：第一次讚別人的機台 → 店主 +2 枚、貼文 → 作者 +1 枚（`like_rewards` 記過就不再給，每人每天最多 10 次）。錢包明細多了 `like`、`bonus` 兩種
+- **留言**：120 字或スタンプ，6 秒一則、一天 80 則；自己的、自己機台上的可以刪；3 個人檢舉先藏起來。**廣場貼文**：圖 ≤60k 字的 data URL，15 秒一篇、一天 12 篇；同樣有檢舉
+- **スタンプ**：Gemini 一張 4×3 手繪表（`D:\ai\gemini\gacha\stamps.png`，扭蛋寶寶）→ `tools/cut_stamps.py` → `web/assets/stamps/s0–s11.webp`（照畫的線切、程式加白色裁切邊）。圖讀不到時用 emoji
+- **pull()** 換成多記 `ledger.picks`（其他跟 09 一樣）
+- 測試：資料庫還沒開之前，用假的 fetch 回應（`web/__mock_social.js` / `__mock_boot.js`，發佈前刪掉）在 127.0.0.1 看畫面；CSS 新 class 先跟舊的比對（`.rk` 已經是稀有度小標，排行改叫 `.rank-row`；`.st-lb` 是貼紙工房的）
+
 ## 3D 閃卡 v3：SAR 全息閃卡（2026-11-20）
 
 使用者貼了 X 上 Gemini 做的「寶可夢 SAR／UR 全息閃卡 3D 懸浮動圖」（Python＋OpenCV 的提示詞：分區遮罩、光柵、虹彩、掃光、燙金、Sobel 微浮雕、四芒星、前後粒子、8 層厚度、金屬倒角、反向影子）＋「3d卡的效果參考這個 強化」。逐格看了參考影片，用 BOMB MAIDS 立繪合成的深色塔羅卡跟 `tools/maid_cards.js` 的明星卡對照。全部在 `web/holo.js`＋index.html 的「3D 閃卡 v3」那段 CSS。
@@ -270,7 +287,7 @@
 - **作品冊**（卡片工房最上面）：IndexedDB `clatter-cards`／`works`（設計含卡圖、音樂〔上傳的檔案也存〕、縮圖）。「作品帳に保存」（有 `wid` 就覆蓋）、放進機台時自動存；每張「編集」（讀回編輯器）、「マシンに入れる」（選機台＋張數，直接放）、🗑（按兩下）；「＋ 新しいカード」
 - **開店設定挑獎品**：獎品列多「🗂 作品冊から選ぶ」（轉卡機才出現，`#sheet-workpick`）、「🏷 シール帳から選ぶ」（`openStickerPicker(stickerToGacha)`）
 - **貼紙工房**：原本「做貼紙」的對話框拆成上方列一頁（`#page-stickers`，id 都沒變，`renderMaker`／`bindMaker` 照用）：上面「できたシール」（貼紙簿的貼紙，每張「ガチャに入れる」「マシンに貼る」），下面做貼紙。多了「包裝」：鋁箔袋（`createPack` kind foil → 先撕開）／台紙（照舊）／不包裝（`addSticker` 直接進貼紙簿），記在 `clatter.stkPack`
-- **包裝款式**（使用者：「追加貼紙可以選擇要不要包裝 再生成幾個包裝給玩家編輯設定」）：選「鋁箔袋」時下面多一塊設定 — 款式 6 種（`PACK_DESIGNS`：原本的彩虹、Gemini 一張畫四款的牛皮紙／星空／櫻花糖果／薄荷格紋〔`D:i\gemini\gacha\pack_sheet.png` → `py -I tools/cut_packs.py <sheet> web/assets/tex kraft,night,candy,gingham`：先在每兩款之間前景最少的直條切開，撕口從 6% 高度往下找（上緣鋸齒會干擾）〕、程式畫的銀色）、顏色（色相轉幾度，`hue-rotate`）、標籤的字（空著＝「シール ×N」）。記在包裝上（`pack.design／hue／label`）跟 `clatter.stkPackOpts`；貼紙簿下面那排的袋子也照款式＋顏色畫
+- **包裝款式**（使用者：「追加貼紙可以選擇要不要包裝 再生成幾個包裝給玩家編輯設定」）：選「鋁箔袋」時下面多一塊設定 — 款式 6 種（`PACK_DESIGNS`：原本的彩虹、Gemini 一張畫四款的牛皮紙／星空／櫻花糖果／薄荷格紋〔`D:\ai\gemini\gacha\pack_sheet.png` → `py -I tools/cut_packs.py <sheet> web/assets/tex kraft,night,candy,gingham`：先在每兩款之間前景最少的直條切開，撕口從 6% 高度往下找（上緣鋸齒會干擾）〕、程式畫的銀色）、顏色（色相轉幾度，`hue-rotate`）、標籤的字（空著＝「シール ×N」）。記在包裝上（`pack.design／hue／label`）跟 `clatter.stkPackOpts`；貼紙簿下面那排的袋子也照款式＋顏色畫
 - **上方列 7 個分頁**：開店設定、轉轉看也改成圖示＋字（窄的畫面只剩圖示），手機 375 px 塞得下
 - 測過：三張寶可夢風卡面（雷黃框、火 1 進化銀框＋特性、惡黑框）、表單換樣式／加能量／開特性、framed 'monster' 的連結來回＋3D 深度＋閃光遮罩、作品冊存／覆蓋／新卡／編集、作品冊與貼紙簿兩個挑選視窗、貼紙工房做一張鋁箔袋包裝的貼紙 → 撕開 → 「できたシール」出現；手機版
 

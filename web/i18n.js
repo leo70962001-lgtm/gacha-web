@@ -3086,6 +3086,11 @@ export function setLang(k) {
   applyDom();
 }
 
+// 其他檔案自己帶的字（social.js）：{ zh: {...}, ja: {...}, en: {...} } 併進來
+export function addStrings(more) {
+  for (const k of Object.keys(S)) Object.assign(S[k], more[k] || {});
+}
+
 export function t(key, vars) {
   let s = S[lang][key] ?? S.zh[key] ?? key;
   if (vars) s = s.replace(/\{(\w+)\}/g, (m, k) => (vars[k] ?? m));
